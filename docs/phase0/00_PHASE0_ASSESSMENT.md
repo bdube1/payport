@@ -85,7 +85,7 @@ It is a **gateway and aggregator without a ledger**. Money positions are inferre
 - DB does not enforce journal balance **[Tested]**;
 - trigger migrations half-apply without a DB setting **[Tested]**;
 - duplicate refund, dispute, settlement and reconciliation models;
-- Zimbabwe hard-coding (74 sites, currency CHECK);
+- Zimbabwe hard-coding (74 PSP code lines with ZW-specific literals, plus the currency CHECK);
 - QR non-conforming with the RBZ 2026 guidelines;
 - products built ahead of licensing (wallets, agents, FX).
 

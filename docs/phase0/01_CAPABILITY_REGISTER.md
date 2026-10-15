@@ -75,7 +75,7 @@
 | P23 | POS terminal API | Implemented but not verified | [Observed] No terminal hardware or certification. |
 | P24 | Payout rails, ID verifier, credit bureau | Stub or simulation | [Observed] Manual and sandbox adapters only. |
 | P25 | Cutover of legacy unsettled balances | Implemented but not verified | [Observed] |
-| P26 | Country / legal-entity configuration | **Missing** | [Observed] Zimbabwe assumptions hard-coded in 74 places (currencies, MSISDN prefixes, "HARARE", IMTT). |
+| P26 | Country / legal-entity configuration | **Missing** | [Observed] Zimbabwe assumptions hard-coded (74 PSP code lines contain ZW-specific literals: USD/ZWG/ZIG, MSISDN prefixes, network names, "HARARE", IMTT). |
 | P27 | Canonical payment model, ISO 20022 | **Missing** | |
 | P28 | Merchant webhooks for PSP events (settlement paid, dispute, payout) | **Missing** | Gateway webhooks cover checkout status only. |
 | P29 | Merchant portal and admin UI for PSP functions | **Missing** | APIs only; frontends not available to inspect. |

@@ -3,7 +3,7 @@
 - **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
 
 ## Context
-Zimbabwe assumptions are hard-coded in 74 places, and a CHECK constraint restricts the ledger to USD and ZWG. The platform must expand to other markets without rewriting the core.
+74 PSP code lines contain Zimbabwe-specific literals, and a CHECK constraint restricts the ledger to USD and ZWG. The platform must expand to other markets without rewriting the core.
 
 ## Options considered
 (a) Feature flags and conditionals. (b) Reference tables (countries, currencies, legal entities, country products, calendars) plus versioned, approved policy sets, with CountryPolicy implementations only where configuration is insufficient.

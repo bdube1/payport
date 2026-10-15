@@ -44,7 +44,7 @@
 |---|---|---|---|
 | R21 | Duplicate sources of truth: refunds, disputes, reconciliation and settlement exist in both the gateway and the PSP | P | ADR-0003: one owner per concept; gateway records become projections or are retired |
 | R22 | Single status field mixes payment, fulfilment and refund states | G | Phase 2: separate payment attempt, posting, fulfilment and settlement states |
-| R23 | Zimbabwe assumptions hard-coded in 74 places | P | Phase 1 country/currency reference data; Phase 7 full model |
+| R23 | Zimbabwe assumptions hard-coded (74 PSP code lines contain ZW-specific literals) | P | Phase 1 country/currency reference data; Phase 7 full model |
 | R24 | `ddl-auto=update` and `allow-bean-definition-overriding=true` hide schema drift and wiring errors | G | Phase 1: `validate`, overriding off |
 | R25 | Docker build broken; deployment is a single VM via `start.sh` | G | Phase 1 reproducible build; Phase 9 resilience |
 | R26 | Placeholder business values (tier limits, tariffs, routing costs, fraud thresholds) could reach production | P | Values must come from approved, versioned config; refuse to start with placeholders in production mode |
