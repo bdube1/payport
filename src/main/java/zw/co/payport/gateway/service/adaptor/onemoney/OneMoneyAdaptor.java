@@ -141,6 +141,7 @@ public class OneMoneyAdaptor implements PaymentProviderAdaptor {
             log.error("[ONEMONEY] C2B Push failed: {}", e.getMessage());
             return PaymentSubmitResult.builder()
                     .submitted(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("OneMoney API call failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

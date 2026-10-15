@@ -1,7 +1,8 @@
 package zw.co.payport.gateway.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import zw.co.payport.gateway.entity.Transaction;
 import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
@@ -11,23 +12,24 @@ import zw.co.payport.gateway.service.adaptor.onemoney.OneMoneyAdaptor;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * Asks the provider itself what happened to a payment (R4 containment).
+ * Asks the provider itself what happened to a payment.
  *
- * EcoCash and OneMoney callbacks carry no signature we can check, so their content is
- * never trusted on its own: a callback is only a hint that something changed. The
- * status and amount we act on come from a status query we make to the provider over
- * our authenticated API connection.
+ * Two uses:
+ *  - Callback trust (R4): for providers whose callbacks carry nothing we can verify
+ *    (payport.payments.query-providers, default ECOCASH,ONEMONEY,ZIMSWITCH), a callback is only a
+ *    hint; the status and amount we act on come from our own authenticated status query.
+ *  - Uncertain outcomes: the resolver uses verify() for every provider. EcoCash and
+ *    OneMoney have dedicated query calls; any other provider is asked through its
+ *    adaptor's queryStatus().
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PaymentStatusVerifier {
-
-    /** Providers whose callbacks must be confirmed by a status query before they change anything. */
-    public static final Set<String> VERIFIED_PROVIDERS = Set.of("ECOCASH", "ONEMONEY");
 
     /** Normalised provider answer. status is SUCCESS, FAILED, PENDING or UNKNOWN. amountCents/currency may be null. */
     public record Verified(String status, Long amountCents, String currency, String providerReference, String detail) {
@@ -36,15 +38,42 @@ public class PaymentStatusVerifier {
         }
     }
 
+    /**
+     * Providers whose callbacks are verified by status query. ZIMSWITCH is included because its
+     * webhook handler only checked the body's structure (no signature), so a forged webhook
+     * could mark a card payment paid (R45).
+     */
+    public static final String DEFAULT_QUERY_PROVIDERS = "ECOCASH,ONEMONEY,ZIMSWITCH";
+
     private final EcoCashAdaptor ecoCashAdaptor;
     private final OneMoneyAdaptor oneMoneyAdaptor;
+    private final AdaptorRegistry adaptorRegistry;
+    private final Set<String> queryProviders;
 
+    @Autowired
+    public PaymentStatusVerifier(EcoCashAdaptor ecoCashAdaptor, OneMoneyAdaptor oneMoneyAdaptor, AdaptorRegistry adaptorRegistry,
+                                 @Value("${payport.payments.query-providers:" + DEFAULT_QUERY_PROVIDERS + "}") String queryProviders) {
+        this.ecoCashAdaptor = ecoCashAdaptor;
+        this.oneMoneyAdaptor = oneMoneyAdaptor;
+        this.adaptorRegistry = adaptorRegistry;
+        this.queryProviders = Arrays.stream(queryProviders.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).map(String::toUpperCase)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** For unit tests of the pure rules. */
+    PaymentStatusVerifier(EcoCashAdaptor ecoCashAdaptor, OneMoneyAdaptor oneMoneyAdaptor) {
+        this(ecoCashAdaptor, oneMoneyAdaptor, null, DEFAULT_QUERY_PROVIDERS);
+    }
+
+    /** True if this provider's callbacks must be confirmed by a status query before they change anything. */
     public boolean requiresVerification(String provider) {
-        return provider != null && VERIFIED_PROVIDERS.contains(provider.toUpperCase());
+        return provider != null && queryProviders.contains(provider.toUpperCase());
     }
 
     /** Never throws: a failed query is reported as UNKNOWN so the caller leaves the payment untouched. */
     public Verified verify(String provider, Transaction tx) {
+        if (provider == null) return new Verified("UNKNOWN", null, null, null, "No provider recorded");
         try {
             switch (provider.toUpperCase()) {
                 case "ECOCASH": {
@@ -59,8 +88,17 @@ public class PaymentStatusVerifier {
                             toCents(r.getOrderAmt()), r.getCurrency(), r.getOrderNo(),
                             "OneMoney status query: orderStatus=" + r.getOrderStatus());
                 }
-                default:
-                    return new Verified("UNKNOWN", null, null, null, "No status query for provider " + provider);
+                default: {
+                    if (adaptorRegistry == null || !adaptorRegistry.hasPaymentAdaptor(provider)) {
+                        return new Verified("UNKNOWN", null, null, null, "No status query for provider " + provider);
+                    }
+                    String queryRef = firstNonBlank(tx.getPaymentCorrelator(), tx.getProviderReference(), tx.getReference());
+                    PaymentProviderAdaptor.PaymentStatusResult r = adaptorRegistry.getPaymentAdaptor(provider).queryStatus(queryRef);
+                    if (r == null) return new Verified("UNKNOWN", null, null, null, provider + " status query returned nothing");
+                    return new Verified(normalise(r.getStatus()), r.getAmountCents() > 0 ? r.getAmountCents() : null, null,
+                            r.getProviderReference(), provider + " status query: " + r.getStatus()
+                            + (r.getMessage() != null ? " (" + r.getMessage() + ")" : ""));
+                }
             }
         } catch (Exception e) {
             log.warn("[VERIFY] Status query to {} for {} failed: {}", provider, tx.getReference(), e.getMessage());
@@ -83,13 +121,14 @@ public class PaymentStatusVerifier {
     public PaymentProviderAdaptor.CallbackEvent toEvent(Transaction tx, Verified v, String trigger) {
         if (!v.isDefinite()) return null;
         if ("SUCCESS".equals(v.status())) {
-            if (v.amountCents() == null) {
-                log.warn("[VERIFY] {} confirmed SUCCESS for {} but reported no amount -- applying; amount not independently confirmed",
-                        trigger, tx.getReference());
-            } else if (!v.amountCents().equals(tx.getAmountCents())) {
+            if (isAmountMismatch(tx, v)) {
                 log.error("[VERIFY] AMOUNT MISMATCH for {}: expected {} cents, provider confirmed {} cents -- not applying; needs review",
                         tx.getReference(), tx.getAmountCents(), v.amountCents());
                 return null;
+            }
+            if (v.amountCents() == null) {
+                log.warn("[VERIFY] {} confirmed SUCCESS for {} but reported no amount -- applying; amount not independently confirmed",
+                        trigger, tx.getReference());
             }
             if (v.currency() != null && !v.currency().isBlank() && tx.getCurrency() != null
                     && !sameCurrency(v.currency(), tx.getCurrency())) {
@@ -106,6 +145,11 @@ public class PaymentStatusVerifier {
                 .timestamp(LocalDateTime.now().toString())
                 .rawPayload("Confirmed by provider status query (" + trigger + "): " + v.detail())
                 .build();
+    }
+
+    /** A definite SUCCESS for a different amount than we asked for: never applied automatically. */
+    public boolean isAmountMismatch(Transaction tx, Verified v) {
+        return "SUCCESS".equals(v.status()) && v.amountCents() != null && !v.amountCents().equals(tx.getAmountCents());
     }
 
     static String normalise(String s) {
@@ -132,5 +176,10 @@ public class PaymentStatusVerifier {
     private static String canonical(String c) {
         String u = c.trim().toUpperCase();
         return "ZIG".equals(u) ? "ZWG" : u;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String v : values) if (v != null && !v.isBlank()) return v;
+        return null;
     }
 }

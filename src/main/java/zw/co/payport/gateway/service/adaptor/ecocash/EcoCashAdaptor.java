@@ -126,6 +126,7 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
             log.error("[ECOCASH] Charge request failed: {}", e.getMessage());
             return PaymentSubmitResult.builder()
                     .submitted(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("EcoCash API call failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

@@ -22,10 +22,11 @@ class PaymentStatusVerifierTest {
     }
 
     @Test
-    void onlyEcoCashAndOneMoneyRequireVerification() {
+    void unsignedCallbackProvidersRequireVerificationByDefault() {
         assertTrue(verifier.requiresVerification("ECOCASH"));
         assertTrue(verifier.requiresVerification("onemoney"));
-        assertFalse(verifier.requiresVerification("ZIMSWITCH"));
+        assertTrue(verifier.requiresVerification("ZIMSWITCH"), "R45: ZimSwitch webhooks carry no signature check");
+        assertFalse(verifier.requiresVerification("OMARI"));
         assertFalse(verifier.requiresVerification(null));
     }
 

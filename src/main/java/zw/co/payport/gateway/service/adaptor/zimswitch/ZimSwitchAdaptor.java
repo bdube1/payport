@@ -151,6 +151,7 @@ public class ZimSwitchAdaptor implements PaymentProviderAdaptor {
             log.error("[ZIMSWITCH] submitPayment failed for ref={}: {}", request.getPayportReference(), e.getMessage());
             return PaymentSubmitResult.builder()
                     .submitted(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("ZimSwitch error: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

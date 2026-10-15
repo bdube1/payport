@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import zw.co.payport.gateway.payments.CallbackInbox;
 import zw.co.payport.gateway.repository.CheckoutSessionRepository;
 import zw.co.payport.gateway.repository.TransactionRepository;
 import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
@@ -38,6 +39,7 @@ import java.util.Map;
 public class ZimSwitchCallbackController {
 
     private final ZimSwitchAdaptor zimSwitchAdaptor;
+    private final CallbackInbox inbox;
     private final TransactionOrchestratorService orchestrator;
     private final TransactionRepository transactionRepository;
     private final CheckoutSessionRepository checkoutSessionRepository;
@@ -59,33 +61,16 @@ public class ZimSwitchCallbackController {
         log.info("[ZIMSWITCH] Webhook received | length={}", rawBody != null ? rawBody.length() : 0);
         log.debug("[ZIMSWITCH] Webhook body: {}", rawBody);
 
-        try {
-            // Step 1: Validate structure
-            PaymentProviderAdaptor.CallbackValidationResult validation =
-                    zimSwitchAdaptor.validateCallback(headers, rawBody);
-
-            if (!validation.isValid()) {
-                log.warn("[ZIMSWITCH] Webhook validation failed: {}", validation.getFailureReason());
-                return ResponseEntity.badRequest()
-                        .body(Map.of("status", "rejected", "reason", validation.getFailureReason()));
-            }
-
-            // Step 2: Parse into normalised CallbackEvent
-            PaymentProviderAdaptor.CallbackEvent event = zimSwitchAdaptor.parseCallback(rawBody);
-
-            log.info("[ZIMSWITCH] Webhook parsed | ref={} oppwaId={} status={}",
-                    event.getPayportReference(), event.getProviderReference(), event.getStatus());
-
-            // Step 3: Hand to orchestrator using the correct CallbackEvent signature
-            orchestrator.handlePaymentCallback(event);
-
-            return ResponseEntity.ok(Map.of("status", "received"));
-
-        } catch (Exception e) {
-            log.error("[ZIMSWITCH] Webhook processing error: {}", e.getMessage(), e);
-            // Always return 200 — OPPWa retries on non-2xx which would cause duplicate processing
-            return ResponseEntity.ok(Map.of("status", "error", "message", e.getMessage()));
+        // Stored in the callback inbox, validated (signature/structure), then applied idempotently.
+        Map<String, String> lower = new HashMap<>();
+        headers.forEach((k, v) -> lower.put(k.toLowerCase(), v));
+        CallbackInbox.Result r = inbox.receive("ZIMSWITCH", rawBody, lower, req.getRemoteAddr());
+        if (r.status() == CallbackInbox.Status.INVALID && r.detail() != null && r.detail().startsWith("validation failed")) {
+            log.warn("[ZIMSWITCH] Webhook validation failed: {}", r.detail());
+            return ResponseEntity.badRequest().body(Map.of("status", "rejected", "reason", r.detail()));
         }
+        // Always 200 otherwise -- OPPWa retries on non-2xx; the inbox absorbs duplicates anyway.
+        return ResponseEntity.ok(Map.of("status", r.status() == CallbackInbox.Status.ERROR ? "error" : "received"));
     }
 
     /**

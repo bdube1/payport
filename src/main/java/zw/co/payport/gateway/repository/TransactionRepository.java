@@ -18,6 +18,15 @@ import java.util.Optional;
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
     Optional<Transaction> findByReference(String reference);
+
+    /**
+     * Loads the transaction with a row lock (SELECT ... FOR UPDATE) held until the surrounding
+     * transaction ends. Every payment lifecycle change goes through this, so callbacks, the
+     * resolver, the timeout watchdog and the submit flow are serialised per payment.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.reference = :ref")
+    Optional<Transaction> lockByReference(@Param("ref") String reference);
     boolean existsByReference(String reference);
     List<Transaction> findByStatusIn(List<TransactionStatus> statuses);
 

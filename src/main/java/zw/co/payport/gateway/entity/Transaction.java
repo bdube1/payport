@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
  */
 @Data
 @Entity
+// Only changed columns are written: an UPDATE never rewrites status (or anything else) from stale in-memory state.
+@org.hibernate.annotations.DynamicUpdate
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor

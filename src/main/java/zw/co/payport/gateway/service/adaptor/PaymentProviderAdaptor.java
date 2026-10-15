@@ -56,6 +56,12 @@ public interface PaymentProviderAdaptor {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     class PaymentSubmitResult {
         private boolean submitted;
+        /**
+         * True when submitted == false but the request MAY have reached the provider (read
+         * timeout, 5xx, broken connection, unparseable response). The payment must then stay
+         * pending and be resolved by status query: it is neither failed nor re-sent.
+         */
+        private boolean outcomeUnknown;
         private String  providerReference;
         private String  message;
         private String  rawResponse;        // stored verbatim for audit
