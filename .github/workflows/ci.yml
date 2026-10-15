@@ -28,6 +28,10 @@ jobs:
       - name: mvn verify
         run: mvn -B -ntp verify
 
+      - name: Publish test totals
+        if: always()
+        run: scripts/ci/test-summary.sh build-and-test
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
