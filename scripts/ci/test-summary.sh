@@ -13,7 +13,10 @@ for p in glob.glob(d + "/TEST-*.xml"):
     t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
     for tc in r.iter("testcase"):
         name = tc.get("classname", "").split(".")[-1] + "." + tc.get("name", "")
-        if tc.find("failure") is not None or tc.find("error") is not None: bad.append(name)
+        fe = tc.find("failure") if tc.find("failure") is not None else tc.find("error")
+        if fe is not None:
+            msg = (fe.get("message") or fe.text or "").replace("\n", " ").replace("%", "%25")[:600]
+            bad.append(name + " -- " + msg)
         elif tc.find("skipped") is not None: skipped.append(name)
 print(f"::notice title={label} totals::tests={t} passed={t-f-e-s} failures={f} errors={e} skipped={s}")
 for b in bad[:40]: print(f"::error title={label} failed::{b}")
