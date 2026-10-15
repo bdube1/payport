@@ -6,11 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import zw.co.payport.gateway.entity.ApiKey;
 import zw.co.payport.gateway.entity.CheckoutSession;
 import zw.co.payport.gateway.entity.Merchant;
 import zw.co.payport.gateway.model.response.ApiResponse;
-import zw.co.payport.gateway.repository.ApiKeyRepository;
 import zw.co.payport.gateway.repository.MerchantRepository;
 import zw.co.payport.gateway.service.CheckoutSessionService;
 
@@ -33,7 +31,6 @@ public class CheckoutController {
 
     private final CheckoutSessionService checkoutSessionService;
     private final MerchantRepository merchantRepository;
-    private final ApiKeyRepository apiKeyRepository;
 
     public record PayBody(String customerPhone, String customerEmail, String paymentMethodCode) {}
 
@@ -50,7 +47,9 @@ public class CheckoutController {
             body.put("currency", session.getCurrency());
             body.put("description", session.getDescription());
             body.put("status", session.getStatus());
-            body.put("customerPhone", session.getCustomerPhone());
+            // Public endpoint keyed by a sequential id: never return the full phone number (R3).
+            body.put("customerPhone", maskPhone(session.getCustomerPhone()));
+            body.put("testMode", !Boolean.TRUE.equals(session.getLivemode()));
             return ResponseEntity.ok(ApiResponse.success(body, requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("NOT_FOUND", e.getMessage(), requestId(req)));
@@ -61,22 +60,17 @@ public class CheckoutController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> pay(
             @PathVariable Long id, @RequestBody PayBody body, HttpServletRequest req) {
         try {
-            CheckoutSession session = checkoutSessionService.getPublic(id);
-
-            boolean isTestMode = true; // default to the safe path if the key can't be resolved for any reason
-            if (session.getApiKeyId() != null) {
-                ApiKey key = apiKeyRepository.findById(session.getApiKeyId()).orElse(null);
-                isTestMode = key == null || !"LIVE".equals(key.getEnvironment());
-            }
+            // Refreshes status and applies expiry before payment is attempted.
+            checkoutSessionService.getPublic(id);
 
             String ip = req.getRemoteAddr();
             CheckoutSessionService.PaymentSubmissionResult result = checkoutSessionService.submitPayment(
-                    id, body.customerPhone(), body.customerEmail(), body.paymentMethodCode(), ip, isTestMode);
+                    id, body.customerPhone(), body.customerEmail(), body.paymentMethodCode(), ip);
 
             Map<String, Object> resultBody = new LinkedHashMap<>();
             resultBody.put("id", result.session().getId());
             resultBody.put("status", result.session().getStatus());
-            resultBody.put("testMode", isTestMode);
+            resultBody.put("testMode", !Boolean.TRUE.equals(result.session().getLivemode()));
             // Card payments (ZimSwitch) need the customer's browser to load
             // this script directly -- it's what renders the actual card
             // form. EcoCash/OneMoney/Omari leave these null; the frontend
@@ -107,5 +101,12 @@ public class CheckoutController {
     private String requestId(HttpServletRequest req) {
         String id = req.getHeader("X-Request-ID");
         return id != null ? id : UUID.randomUUID().toString();
+    }
+
+    /** "+263771234567" -> "+263*******567". Null/short values are returned fully masked or null. */
+    static String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) return null;
+        if (phone.length() <= 7) return "*".repeat(phone.length());
+        return phone.substring(0, 4) + "*".repeat(phone.length() - 7) + phone.substring(phone.length() - 3);
     }
 }

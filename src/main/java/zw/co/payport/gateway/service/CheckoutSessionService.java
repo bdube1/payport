@@ -9,6 +9,8 @@ import zw.co.payport.gateway.enums.TransactionStatus;
 import zw.co.payport.gateway.model.request.InitiateTransactionRequest;
 import zw.co.payport.gateway.model.request.PayTransactionRequest;
 import zw.co.payport.gateway.model.response.TransactionResponse;
+import zw.co.payport.gateway.entity.ApiKey;
+import zw.co.payport.gateway.repository.ApiKeyRepository;
 import zw.co.payport.gateway.repository.CheckoutSessionRepository;
 import zw.co.payport.gateway.repository.MerchantRepository;
 import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
@@ -44,6 +46,7 @@ public class CheckoutSessionService {
     private final EmailService emailService;
     private final CommissionService commissionService;
     private final RefundService refundService;
+    private final ApiKeyRepository apiKeyRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public record CreateSessionRequest(
@@ -66,6 +69,8 @@ public class CheckoutSessionService {
             throw new RuntimeException("currency must be USD or ZWG");
         }
 
+        boolean livemode = resolveLivemode(merchant, apiKeyId);
+
         CheckoutSession session = CheckoutSession.builder()
                 .merchantId(merchant.getId())
                 .reference(req.reference() != null ? req.reference() : "sess_" + randomToken())
@@ -79,12 +84,42 @@ public class CheckoutSessionService {
                 .cancelUrl(req.cancelUrl())
                 .metadata(req.metadata())
                 .apiKeyId(apiKeyId)
+                .livemode(livemode)
                 .expiresAt(LocalDateTime.now().plusMinutes(DEFAULT_EXPIRY_MINUTES))
                 .build();
 
         checkoutSessionRepository.save(session);
-        log.info("[CHECKOUT] Session created: id={} merchant={} amount={} {}", session.getId(), merchant.getId(), req.amountCents(), currency);
+        log.info("[CHECKOUT] Session created: id={} merchant={} amount={} {} livemode={}", session.getId(), merchant.getId(), req.amountCents(), currency, livemode);
         return session;
+    }
+
+    /**
+     * Decides, once, whether a session moves real money (R1 fix).
+     *
+     *   - Created with an API key: that key's environment (LIVE = real, TEST = simulated).
+     *   - Created without an API key (payment links, merchant-dashboard checkouts): live.
+     *     These are customer-facing features of an approved merchant; they were previously
+     *     simulated by accident, which marked unpaid sessions PAID and made them settleable.
+     *
+     * An API key id that no longer resolves to a key is refused rather than guessed.
+     */
+    boolean resolveLivemode(Merchant merchant, Long apiKeyId) {
+        ApiKey key = apiKeyId == null ? null : apiKeyRepository.findById(apiKeyId).orElse(null);
+        return decideLivemode(merchant.getId(), apiKeyId, key);
+    }
+
+    /** Pure rule behind resolveLivemode, unit-tested. */
+    static boolean decideLivemode(Long merchantId, Long apiKeyId, ApiKey key) {
+        if (apiKeyId == null) {
+            return true;
+        }
+        if (key == null) {
+            throw new RuntimeException("API key not found for this checkout session");
+        }
+        if (!merchantId.equals(key.getMerchantId())) {
+            throw new RuntimeException("API key does not belong to this merchant");
+        }
+        return "LIVE".equals(key.getEnvironment());
     }
 
     public List<CheckoutSession> listForMerchant(Long merchantId) {
@@ -107,6 +142,8 @@ public class CheckoutSessionService {
     public Map<String, CurrencyTotals> balanceByCurrency(Long merchantId) {
         Map<String, long[]> raw = new LinkedHashMap<>(); // [gross, commission, net]
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            // Test-mode sessions never represent money owed to the merchant.
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus()) && !"PARTIALLY_REFUNDED".equals(s.getStatus()) && !"REFUNDED".equals(s.getStatus())) continue;
             // Already claimed by a Settlement -- it's been moved from
             // "owed" to "settled", tracked in the settlements table now,
@@ -142,6 +179,7 @@ public class CheckoutSessionService {
     public List<MethodBreakdown> collectionsByPaymentMethod(Long merchantId) {
         Map<String, long[]> raw = new LinkedHashMap<>(); // key = "currency|method" -> [count, gross]
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus())) continue;
             String method = s.getPaymentMethodCode() != null ? s.getPaymentMethodCode() : "UNKNOWN";
             String key = s.getCurrency() + "|" + method;
@@ -170,6 +208,7 @@ public class CheckoutSessionService {
         }
 
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus())) continue;
             if (currency != null && !currency.equalsIgnoreCase(s.getCurrency())) continue;
             if (s.getCreatedAt().isBefore(cutoff)) continue;
@@ -222,8 +261,14 @@ public class CheckoutSessionService {
      */
     public record PaymentSubmissionResult(CheckoutSession session, String widgetJsUrl, String paymentCorrelator) {}
 
-    public PaymentSubmissionResult submitPayment(Long sessionId, String customerPhone, String customerEmail, String paymentMethodCode, String ipAddress, boolean isTestMode) throws Exception {
+    /**
+     * Test or live is a property of the session (decided at creation), never of the
+     * caller: the hosted page is public, so nothing the browser sends may choose
+     * whether a real provider is called.
+     */
+    public PaymentSubmissionResult submitPayment(Long sessionId, String customerPhone, String customerEmail, String paymentMethodCode, String ipAddress) throws Exception {
         CheckoutSession session = getOrThrow(sessionId);
+        boolean isTestMode = !Boolean.TRUE.equals(session.getLivemode());
         expireIfPastDue(session);
 
         if (!"CREATED".equals(session.getStatus())) {
@@ -261,9 +306,9 @@ public class CheckoutSessionService {
 
         TransactionResponse result;
         if (isTestMode) {
-            // Structural, not conventional: a TEST key never reaches the
-            // real submitPayment() call below at all.
-            log.info("[CHECKOUT] TEST-mode key -- simulating payment instead of calling a real provider for session {}", sessionId);
+            // Structural, not conventional: a test-mode session never reaches
+            // the real submitPayment() call below at all.
+            log.info("[CHECKOUT] Test-mode session -- simulating payment instead of calling a real provider for session {}", sessionId);
             result = orchestrator.simulateTestPayment(txReference, true);
         } else {
             PayTransactionRequest payReq = new PayTransactionRequest();

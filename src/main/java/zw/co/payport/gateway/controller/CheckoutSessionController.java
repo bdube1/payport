@@ -161,6 +161,7 @@ public class CheckoutSessionController {
         map.put("currency", s.getCurrency());
         map.put("description", s.getDescription());
         map.put("status", s.getStatus());
+        map.put("livemode", Boolean.TRUE.equals(s.getLivemode()));
         map.put("paymentMethodCode", s.getPaymentMethodCode());
         map.put("commissionAmountCents", s.getCommissionAmountCents());
         map.put("netAmountCents", s.getNetAmountCents());

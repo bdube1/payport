@@ -163,6 +163,8 @@ public class WebhookService {
         body.put("checkoutSessionId", session.getId());
         body.put("reference", session.getReference());
         body.put("status", session.getStatus());
+        // Lets the merchant's server tell real payments from simulated ones (never ship goods for livemode=false).
+        body.put("livemode", Boolean.TRUE.equals(session.getLivemode()));
         body.put("amountCents", session.getAmountCents());
         body.put("currency", session.getCurrency());
         body.put("customerPhone", session.getCustomerPhone());
