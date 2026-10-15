@@ -1,6 +1,6 @@
 # ADR-0006: Country, legal entity and currency as reference data with versioned policy sets
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 74 PSP code lines contain Zimbabwe-specific literals, and a CHECK constraint restricts the ledger to USD and ZWG. The platform must expand to other markets without rewriting the core.

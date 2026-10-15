@@ -1,6 +1,6 @@
 # ADR-0007: Test mode and live mode as a first-class attribute
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 Critical defect R1: a session without an API key is treated as test mode and simulated as paid, yet it remains settleable.

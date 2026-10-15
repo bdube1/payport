@@ -1,6 +1,6 @@
 # ADR-0001: Evolve the existing gateway into a modular monolith
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 PayPort's gateway is a working Spring Boot/MySQL application with production provider adaptors (EcoCash, OneMoney, O'mari, ZimSwitch, Econet, NetOne, Telecel, e-Solutions). The PSP needs strong financial consistency, and the team is small.

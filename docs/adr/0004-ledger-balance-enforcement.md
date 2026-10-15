@@ -1,6 +1,6 @@
 # ADR-0004: Where ledger balance is enforced
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15). Option (c) is implemented in Phase 1; see ADR-0008.
 
 ## Context
 Tested on MySQL 8.0.46: the database accepts an unbalanced journal line. Balance is enforced only in LedgerService. MySQL has no deferred constraints.

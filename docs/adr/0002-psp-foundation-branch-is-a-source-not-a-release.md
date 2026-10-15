@@ -1,6 +1,6 @@
 # ADR-0002: Treat the psp-foundation branch as a source of designs, not a release
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 The branch adds about 19k lines, compile-checked only against stub libraries and never run. It wires merchant gates, routing and fraud blocking into the live checkout path, and it includes products (wallets, agents, QR, USSD, WhatsApp, FX) whose licensing is unresolved. Its migrations do apply cleanly on MySQL 8.0.46, apart from the trigger privilege issue.

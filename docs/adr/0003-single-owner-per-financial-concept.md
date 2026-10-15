@@ -1,6 +1,6 @@
 # ADR-0003: One owning module per financial concept
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 Refunds, disputes, settlement and reconciliation each exist in both the gateway and the PSP branch.

@@ -1,6 +1,6 @@
 # ADR-0005: Canonical payment model with ISO 20022 as a mapping layer
 
-- **Status:** Proposed (Phase 0, 2026-10-15). Awaiting approval.
+- **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
 ISO 20022 interoperability is required, but most PayPort flows (mobile money, billers) have no ISO counterpart. Target scheme versions (ZIPSS, sponsor banks, PAPSS) are not yet confirmed.
