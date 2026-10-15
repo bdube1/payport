@@ -1,5 +1,8 @@
 # Integration status
 
+> **Superseded by Phase 0 (2026-10-15).** Statuses marked "Built" or "Live" in this document mean *implemented but not verified*: the code was never built with its real dependencies or run. See `docs/phase0/01_CAPABILITY_REGISTER.md` and `docs/phase0/02_RISK_REGISTER.md`. Do not deploy the `psp-foundation` branch as a unit (ADR-0002).
+
+
 **Live** means the gateway already has a working adaptor. **SPI ready** means the PSP has the interface and a manual or file path, plus a sandbox simulator for testing. The provider's real API still has to be wired once you have credentials and their specification.
 
 | Integration | Purpose | Status | Production path today |

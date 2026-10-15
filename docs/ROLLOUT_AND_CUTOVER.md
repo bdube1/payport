@@ -1,5 +1,8 @@
 # Rollout and cutover plan
 
+> **Superseded by Phase 0 (2026-10-15).** Statuses marked "Built" or "Live" in this document mean *implemented but not verified*: the code was never built with its real dependencies or run. See `docs/phase0/01_CAPABILITY_REGISTER.md` and `docs/phase0/02_RISK_REGISTER.md`. Do not deploy the `psp-foundation` branch as a unit (ADR-0002).
+
+
 The PSP is designed to go live **underneath the running gateway**. Collections keep working throughout. What changes is that every movement is now also posted to the ledger, and settlement moves from the old run to the engine.
 
 ## 0. Before anything: build and test locally

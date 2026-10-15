@@ -1,5 +1,8 @@
 # PayPort PSP: architecture
 
+> **Superseded by Phase 0 (2026-10-15).** Statuses marked "Built" or "Live" in this document mean *implemented but not verified*: the code was never built with its real dependencies or run. See `docs/phase0/01_CAPABILITY_REGISTER.md` and `docs/phase0/02_RISK_REGISTER.md`. Do not deploy the `psp-foundation` branch as a unit (ADR-0002).
+
+
 PayPort started as a payment gateway: it collected payments, fulfilled airtime and bills, and ran merchant checkout. This branch (`psp-foundation`) turns it into a payment service provider. The gateway stays in place as the collection and fulfilment engine. A PSP core is built around it, and that core is the financial source of truth: it controls merchants and agents, holds e-money wallets, and settles, reconciles and reports.
 
 It is a **modular monolith**. Each PSP module lives under `zw.co.payport.gateway.psp.<module>` and owns its own tables (`psp_*`). Modules communicate in two ways:
