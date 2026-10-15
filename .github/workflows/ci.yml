@@ -23,14 +23,21 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # Compiles everything, runs unit tests and the Testcontainers MySQL migration tests
+      # Testcontainers needs the Docker Engine API version the runner's daemon accepts.
+      - name: Docker diagnostics for Testcontainers
+        run: |
+          echo "::notice title=docker::$(docker version --format 'server {{.Server.Version}} api {{.Server.APIVersion}} min-api {{.Server.MinAPIVersion}}')"
+          echo "api.version=$(docker version --format '{{.Server.APIVersion}}')" > ~/.docker-java.properties
+          echo "DOCKER_API_VERSION=$(docker version --format '{{.Server.APIVersion}}')" >> "$GITHUB_ENV"
+
+      # Compiles everything, runs unit tests and the Testcontainers MySQL tests
       # (Docker is available on GitHub-hosted runners).
       - name: mvn verify
         run: mvn -B -ntp verify
 
       - name: Publish test totals
         if: always()
-        run: scripts/ci/test-summary.sh build-and-test
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest'
 
       - name: Upload test reports
         if: always()
