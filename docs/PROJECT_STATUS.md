@@ -12,7 +12,7 @@ _Last updated: 2026-10-15 (Phase 0.5 implementation). Living document; updated a
 | E3 atomicity | **Met** |
 | E4 least privilege | **Met**: 19 bypass attempts denied |
 | E5 shadow = legacy on a week of production-copy data | **Open**: needs a production data copy; tooling ready |
-| E6 supported Spring Boot | **Open**: needs CI |
+| E6 supported Spring Boot | **Open**: CI now exists, so the upgrade can be done safely |
 
 **Phase 0.5:** concluded on 2026-10-15 by owner decision. Its exit items are still open:
 - CI run (B1);
@@ -22,6 +22,31 @@ _Last updated: 2026-10-15 (Phase 0.5 implementation). Living document; updated a
 - R1 production check.
 
 Until CI passes, no Phase 0.5 or Phase 1 change counts as built.
+
+## CI evidence (GitHub Actions, bdube1/payport, 2026-10-15)
+
+Real Maven build with real dependencies, on GitHub-hosted runners.
+
+| Branch | Job | Result |
+|---|---|---|
+| `phase0.5-containment` | build-and-test (`mvn verify`) | **57 / 57 passed**, including the Testcontainers migration test (real Flyway + MySQL 8) and the full-application smoke test |
+| `phase0.5-containment` | migrations-production-like (binlog, non-SUPER user) | **Pass** |
+| `phase1-financial-foundation` | build-and-test (`mvn verify`) | **68 passed, 0 failed**; the 106 database tests are skipped here by design and run in `ledger-db` |
+| `phase1-financial-foundation` | ledger-db (real MySQL 8, migration user + least-privilege app user) | **106 / 106 passed** |
+| `phase1-financial-foundation` | migrations-production-like | **Pass** |
+
+This closes **B1** (no real build) and verifies Spring wiring, application start-up and the security chain: `ApplicationSmokeTest` boots the whole application on MySQL 8.
+
+**Found by CI and fixed:**
+- **Scripts not executable.** The repository has `core.fileMode=false`, so the scripts were recorded without the executable bit.
+- **Payment API reported unhealthy over email.** `/actuator/health` returned **503 DOWN** whenever SMTP was unavailable, although the database and disk were up. A container or load-balancer health check would restart the payment API, or take it out of service, over an email problem. Mail is now excluded from the health status (`management.health.mail.enabled=false`).
+
+**Still open:**
+- E5: shadow ledger vs legacy on a production data copy;
+- E6: Spring Boot upgrade, now unblocked because CI exists;
+- B2: consumer-app token change;
+- B3: schema drift check;
+- B4: restore drill.
 
 ## Branches
 | Branch | Content | Deployable? |
