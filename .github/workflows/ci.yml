@@ -58,3 +58,41 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply migrations in order as the non-SUPER app user
         run: scripts/phase0.5/apply-migrations.sh 127.0.0.1 3306 payport payport payport
+
+  ledger-db:
+    # Phase 1 ledger, shadow-posting and platform tests against real MySQL 8, exactly as
+    # production is meant to run: binlog on, migrations as a separate migration user, the
+    # app as a least-privilege user (scripts/db/grant-least-privilege.sh).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: payport
+        ports: [ '3306:3306' ]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Create migration and app users
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "
+            CREATE USER 'pp_migrate'@'%' IDENTIFIED BY 'mig'; GRANT ALL ON payport.* TO 'pp_migrate'@'%';
+            CREATE USER 'pp_app'@'%' IDENTIFIED BY 'app';"
+      - name: Apply migrations as the migration user
+        run: scripts/phase0.5/apply-migrations.sh 127.0.0.1 3306 payport pp_migrate mig
+      - name: Least-privilege grants for the app user
+        run: scripts/db/grant-least-privilege.sh 127.0.0.1 3306 root root payport pp_app %
+      - name: Ledger tests (real database)
+        run: >-
+          mvn -B -ntp test -Dgroups=ledger-db -Dsurefire.failIfNoSpecifiedTests=false
+          "-Dledger.test.appUrl=jdbc:mysql://127.0.0.1:3306/payport?user=pp_app&password=app&allowPublicKeyRetrieval=true&useSSL=false"
+          "-Dledger.test.adminUrl=jdbc:mysql://127.0.0.1:3306/payport?user=root&password=root&allowPublicKeyRetrieval=true&useSSL=false"
