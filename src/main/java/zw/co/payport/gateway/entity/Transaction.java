@@ -185,6 +185,15 @@ public class Transaction {
      */
     private Integer omariOtpAttempts;
 
+    /**
+     * SHA-256 (hex) of the per-transaction access token returned once from
+     * POST /initiate. Holding the token is what entitles an unauthenticated
+     * caller (the paying browser/app) to the full transaction view. The raw
+     * token is never stored. Null for transactions created before this column existed.
+     */
+    @Column(length = 64)
+    private String accessTokenHash;
+
     // ── Timestamps ────────────────────────────────────────────────
     @Column(nullable = false)
     private LocalDateTime initiatedAt;

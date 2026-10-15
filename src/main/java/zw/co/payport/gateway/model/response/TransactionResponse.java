@@ -62,6 +62,41 @@ public class TransactionResponse {
      * of the normal "check your phone" waiting state.
      */
     private boolean requiresOtpEntry;
+
+    /**
+     * Per-transaction access token, returned ONCE in the POST /initiate response and
+     * never again. The client sends it back as the X-Transaction-Token header to get
+     * the full view of this transaction (see TransactionAccessService).
+     */
+    private String accessToken;
+
+    /**
+     * What an unauthenticated caller without the access token may see (R3 containment).
+     * Keeps everything the payment screens need to progress (status, amount, card-widget
+     * and OTP fields) and drops personal and delivery data: phone numbers, recipient,
+     * provider references, the ZESA token / fulfilment data, refund details and the
+     * internal audit timeline. The customer still receives any token by SMS.
+     */
+    public static TransactionResponse publicView(TransactionResponse full) {
+        return TransactionResponse.builder()
+                .reference(full.getReference())
+                .status(full.getStatus())
+                .channel(full.getChannel())
+                .productTypeCode(full.getProductTypeCode())
+                .productName(full.getProductName())
+                .paymentMethodCode(full.getPaymentMethodCode())
+                .amountCents(full.getAmountCents())
+                .amountFormatted(full.getAmountFormatted())
+                .currency(full.getCurrency())
+                .failureReason(full.getFailureReason())
+                .initiatedAt(full.getInitiatedAt())
+                .paymentConfirmedAt(full.getPaymentConfirmedAt())
+                .completedAt(full.getCompletedAt())
+                .widgetJsUrl(full.getWidgetJsUrl())
+                .paymentCorrelator(full.getPaymentCorrelator())
+                .requiresOtpEntry(full.isRequiresOtpEntry())
+                .build();
+    }
     public static TransactionResponse from(Transaction tx) {
         TransactionResponse r = TransactionResponse.builder()
                 .reference(tx.getReference())
