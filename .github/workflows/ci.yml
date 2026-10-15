@@ -100,3 +100,6 @@ jobs:
           mvn -B -ntp test -Dgroups=ledger-db -Dsurefire.failIfNoSpecifiedTests=false
           "-Dledger.test.appUrl=jdbc:mysql://127.0.0.1:3306/payport?user=pp_app&password=app&allowPublicKeyRetrieval=true&useSSL=false"
           "-Dledger.test.adminUrl=jdbc:mysql://127.0.0.1:3306/payport?user=root&password=root&allowPublicKeyRetrieval=true&useSSL=false"
+      - name: Publish test totals
+        if: always()
+        run: scripts/ci/test-summary.sh ledger-db
