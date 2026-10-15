@@ -1,0 +1,60 @@
+# PayPort CI: the real build with real dependencies. This is the verification gate for
+# every phase: no change is considered built or tested until this workflow passes.
+name: ci
+
+on:
+  push:
+    branches: [ main, 'phase*' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Compiles everything, runs unit tests and the Testcontainers MySQL migration tests
+      # (Docker is available on GitHub-hosted runners).
+      - name: mvn verify
+        run: mvn -B -ntp verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: warn
+
+  migrations-production-like:
+    # Applies every migration with binary logging ON and as a user WITHOUT SUPER,
+    # which is how production MySQL is set up. Catches privilege problems the
+    # Testcontainers run (root-like user) cannot.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: payport
+          MYSQL_USER: payport
+          MYSQL_PASSWORD: payport
+        ports: [ '3306:3306' ]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations in order as the non-SUPER app user
+        run: scripts/phase0.5/apply-migrations.sh 127.0.0.1 3306 payport payport payport
