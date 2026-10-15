@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Boots the whole application (real Spring context, real Flyway migrations, real security
- * filter chain) against MySQL 8 and exercises the endpoints changed by Phase 0.5.
+ * filter chain) against MySQL 8 and exercises the endpoints changed by Phase 0.5 and the Phase 1 ledger wiring.
  * This is the "application starts and serves requests" gate. Needs Docker (runs in CI).
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -50,6 +50,20 @@ class ApplicationSmokeTest {
         ResponseEntity<String> health = http.getForEntity("/actuator/health", String.class);
         assertEquals(HttpStatus.OK, health.getStatusCode(), health.getBody());
         assertTrue(health.getBody().contains("UP"), health.getBody());
+    }
+
+    @Test
+    void ledgerIsWiredAndConsistentAfterMigrations() {
+        zw.co.payport.gateway.ledger.LedgerClient ledger = context.getBean(zw.co.payport.gateway.ledger.LedgerClient.class);
+        assertEquals(java.util.List.of(), ledger.integrityReport());
+        assertNotNull(context.getBean(zw.co.payport.gateway.ledger.LedgerJobs.class));
+        assertNotNull(context.getBean(zw.co.payport.gateway.billing.TaxRateService.class));
+    }
+
+    @Test
+    void ledgerAdminApiRequiresAuthentication() {
+        ResponseEntity<String> r = http.getForEntity("/api/v1/admin/ledger/integrity", String.class);
+        assertTrue(r.getStatusCode() == HttpStatus.UNAUTHORIZED || r.getStatusCode() == HttpStatus.FORBIDDEN, "got " + r.getStatusCode());
     }
 
     @Test
