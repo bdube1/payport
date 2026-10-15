@@ -3,7 +3,8 @@ package zw.co.payport.gateway.smoke;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -12,7 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -25,10 +26,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate
 class ApplicationSmokeTest {
 
     @Container
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
+    static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.0");
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
@@ -72,6 +74,17 @@ class ApplicationSmokeTest {
         ResponseEntity<String> r = http.getForEntity("/api/v1/transactions/PP-WEB-20261015-000001", String.class);
         assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode(), r.getBody());
         assertTrue(r.getBody().contains("TRANSACTION_NOT_FOUND"), r.getBody());
+    }
+
+    @Test
+    void jsonContractIsUnchangedByTheJacksonUpgrade() {
+        // Error envelope: success=false, error present, null "data" omitted (NON_NULL), no array-style dates.
+        String body = http.getForEntity("/api/v1/transactions/PP-WEB-20261015-000003", String.class).getBody();
+        assertNotNull(body);
+        assertTrue(body.startsWith("{\"success\":false"), "field order/shape changed: " + body);
+        assertFalse(body.contains("\"data\":null"), "nulls must be omitted: " + body);
+        assertTrue(body.contains("\"error\":{"), body);
+        assertFalse(body.matches(".*\\[20[0-9]{2},[0-9]{1,2},.*"), "dates must not be serialised as arrays: " + body);
     }
 
     @Test

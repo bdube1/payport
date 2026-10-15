@@ -2,7 +2,7 @@ package zw.co.payport.gateway.migration;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LivemodeMigrationTest {
 
     @Container
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
+    static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.0");
 
     private Flyway flyway(String target) {
         return Flyway.configure()
