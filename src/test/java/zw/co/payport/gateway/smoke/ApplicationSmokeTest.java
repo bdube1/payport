@@ -36,6 +36,7 @@ class ApplicationSmokeTest {
         r.add("DB_USERNAME", MYSQL::getUsername);
         r.add("DB_PASSWORD", MYSQL::getPassword);
         r.add("JWT_SECRET", () -> "smoke-test-secret-smoke-test-secret-smoke-test-secret-0123456789");
+        r.add("management.endpoint.health.show-details", () -> "always"); // test only: show which component is down
     }
 
     @Autowired
