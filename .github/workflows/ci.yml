@@ -37,7 +37,7 @@ jobs:
 
       - name: Publish test totals
         if: always()
-        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest'
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest'
 
       - name: Upload test reports
         if: always()
