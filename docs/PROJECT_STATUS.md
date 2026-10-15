@@ -3,18 +3,32 @@
 _Last updated: 2026-10-15 (Phase 0.5 implementation). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
-**Phase 0.5: containment and verified baseline.** Code complete on branch `phase0.5-containment` (based on `main`), awaiting:
-- your CI run, or Maven access;
-- frontend changes;
-- the production artefacts listed below.
+**Phase 1: financial foundation. Code complete on `phase1-financial-foundation`; exit evidence partial** (see `docs/phase1/PHASE1_REPORT.md`).
 
-Phase 0 was approved on 2026-10-15, including all of ADR-0001 to ADR-0007.
+| Exit criterion | Status |
+|---|---|
+| E1 balanced scenarios | **Met**: 55 scenarios on real MySQL |
+| E2 concurrency | **Met**: no overdraft, no double-post, no deadlock |
+| E3 atomicity | **Met** |
+| E4 least privilege | **Met**: 19 bypass attempts denied |
+| E5 shadow = legacy on a week of production-copy data | **Open**: needs a production data copy; tooling ready |
+| E6 supported Spring Boot | **Open**: needs CI |
+
+**Phase 0.5:** concluded on 2026-10-15 by owner decision. Its exit items are still open:
+- CI run (B1);
+- schema drift check (B3);
+- restore drill (B4);
+- consumer-app token (B2);
+- R1 production check.
+
+Until CI passes, no Phase 0.5 or Phase 1 change counts as built.
 
 ## Branches
 | Branch | Content | Deployable? |
 |---|---|---|
 | `main` | Gateway as uploaded | In production (per you) |
 | `phase0.5-containment` | R1–R4 and R6 fixes, V32, CI workflow, scripts, docs | **Yes**, after CI passes and the steps in `docs/phase0.5/PHASE0.5_CONTAINMENT_RELEASE.md` |
+| `phase1-financial-foundation` | Ledger (V33–V36), shadow posting, jobs, approvals, tax rates, admin API, `ledger-db` CI job | **Yes**, after CI passes. Shadow posting is off by default (`LEDGER_SHADOW_ENABLED`). |
 | `phase0-discovery` | Phase 0 documents (on top of `psp-foundation`) | Documents only |
 | `psp-foundation` | Earlier PSP build; harvested phase by phase (ADR-0002) | **No** |
 

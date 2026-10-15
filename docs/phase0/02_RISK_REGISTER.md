@@ -61,6 +61,15 @@
 | R36 | CORS allows `http://localhost:3000-3002/4321` with credentials in the production configuration | G | Open: Phase 1 (environment-specific origins) |
 | R37 | EcoCash adaptor `queryStatus()` always returns UNKNOWN; only `queryTransaction()` works | G | Worked around by `PaymentStatusVerifier`; fix the adaptor contract in Phase 5 |
 
+## Added during Phase 1
+
+| ID | Risk | Status |
+|---|---|---|
+| R38 | Ledger concurrency: a no-negative check that reads the transaction snapshot instead of the locked row allows overdrafts (163 of 200 spends against funds for 100) | **Found and fixed** before release; regression-tested by `LedgerConcurrencyTest` |
+| R39 | Refunds recorded after a settlement are never recovered from the merchant (legacy ignores settled sessions) | Open: business decision (claw back or write off). The ledger records these as shadow failures. |
+| R40 | Customer refunds are marked COMPLETED with no record that the money reached the customer | Open: Phase 3 refund payout tracking |
+| R41 | Chain seals are only tamper-evident if the latest seal is exported outside the database | Open: ops task in LEDGER_OPERATIONS.md section 3 |
+
 ## Low
 
 | ID | Risk |
