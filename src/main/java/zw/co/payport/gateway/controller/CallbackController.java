@@ -7,7 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
+import zw.co.payport.gateway.entity.Transaction;
+import zw.co.payport.gateway.repository.TransactionRepository;
 import zw.co.payport.gateway.service.AdaptorRegistry;
+import zw.co.payport.gateway.service.PaymentStatusVerifier;
 import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
 
 import java.util.Enumeration;
@@ -39,6 +42,8 @@ public class CallbackController {
     private final AdaptorRegistry              adaptorRegistry;
     private final TransactionOrchestratorService orchestratorService;
     private final ObjectMapper                 objectMapper;
+    private final PaymentStatusVerifier        verifier;
+    private final TransactionRepository        transactionRepository;
 
     /**
      * EcoCash Callback
@@ -109,7 +114,11 @@ public class CallbackController {
             // 4. Process asynchronously (return 200 immediately to provider)
             // Processing happens in orchestratorService which updates transaction state
             if (event.getPayportReference() != null && !event.getPayportReference().isBlank()) {
-                orchestratorService.handlePaymentCallback(event);
+                if (verifier.requiresVerification(provider)) {
+                    applyVerified(provider, event);
+                } else {
+                    orchestratorService.handlePaymentCallback(event);
+                }
             } else {
                 log.warn("[CALLBACK] {} callback missing payportReference - cannot process", provider);
             }
@@ -123,6 +132,33 @@ public class CallbackController {
             // Always return 200 to provider - never let them know our internal errors
             return ResponseEntity.ok("ACK");
         }
+    }
+
+    /**
+     * R4 containment: the callback content is not trusted. Ask the provider what really
+     * happened and apply only a definite, amount-matched answer. If the provider has no
+     * definite answer yet, nothing changes now; PaymentReconciliationScheduler keeps
+     * asking. Timeouts never turn into failures by themselves.
+     */
+    private void applyVerified(String provider, PaymentProviderAdaptor.CallbackEvent claimed) {
+        Transaction tx = transactionRepository.findByReference(claimed.getPayportReference()).orElse(null);
+        if (tx == null) {
+            log.warn("[CALLBACK] {} callback for unknown reference {} -- ignored", provider, claimed.getPayportReference());
+            return;
+        }
+        PaymentStatusVerifier.Verified verified = verifier.verify(provider, tx);
+        boolean claimedDefinite = "SUCCESS".equals(claimed.getStatus()) || "FAILED".equals(claimed.getStatus());
+        if (claimedDefinite && verified.isDefinite() && !claimed.getStatus().equals(verified.status())) {
+            log.error("[CALLBACK] CONTRADICTION for {}: callback says {}, {} status query says {} -- applying the provider query result; review this payment",
+                    tx.getReference(), claimed.getStatus(), provider, verified.status());
+        }
+        PaymentProviderAdaptor.CallbackEvent confirmed = verifier.toEvent(tx, verified, provider + " callback");
+        if (confirmed == null) {
+            log.info("[CALLBACK] {} callback for {} claimed {}, provider query says {} ({}) -- left for the reconciler",
+                    provider, tx.getReference(), claimed.getStatus(), verified.status(), verified.detail());
+            return;
+        }
+        orchestratorService.handlePaymentCallback(confirmed);
     }
 
     private Map<String, String> extractHeaders(HttpServletRequest request) {
