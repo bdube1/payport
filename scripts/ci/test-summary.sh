@@ -18,7 +18,9 @@ for p in glob.glob(d + "/TEST-*.xml"):
         name = tc.get("classname", "").split(".")[-1] + "." + tc.get("name", "")
         fe = tc.find("failure") if tc.find("failure") is not None else tc.find("error")
         if fe is not None:
-            msg = (fe.get("message") or fe.text or "").replace("\n", " ").replace("%", "%25")[:600]
+            causes = [l.strip() for l in (fe.text or "").splitlines() if l.strip().startswith("Caused by:")]
+            msg = (fe.get("message") or "")[:300] + (" || ROOT: " + " || ".join(c[:400] for c in causes[-3:]) if causes else "")
+            msg = msg.replace("\n", " ").replace("%", "%25")
             bad.append(name + " -- " + msg)
         elif tc.find("skipped") is not None: skipped.append(name)
 print(f"::notice title={label} totals::tests={t} passed={t-f-e-s} failures={f} errors={e} skipped={s}")
