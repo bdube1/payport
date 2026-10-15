@@ -25,7 +25,22 @@ public class SettlementService {
     private final MerchantRepository merchantRepository;
     private final RefundService refundService;
 
+    /**
+     * PSP: settlement now runs from the ledger (psp.settlement.SettlementEngine) with
+     * four-eyes approval and proof of payment. This old path recomputed balances from
+     * checkout-session statuses and is switched off unless explicitly re-enabled.
+     */
+    @org.springframework.beans.factory.annotation.Value("${payport.legacy.settlement.enabled:false}")
+    private boolean legacyEnabled;
+
+    private void requireLegacyEnabled() {
+        if (!legacyEnabled) {
+            throw new RuntimeException("Legacy settlement is retired: use the PSP settlement engine (/api/v1/psp/admin/settlement)");
+        }
+    }
+
     public List<Settlement> runForAllMerchants(LocalDateTime periodStart, LocalDateTime periodEnd) {
+        requireLegacyEnabled();
         List<Settlement> created = new java.util.ArrayList<>();
         for (Merchant merchant : merchantRepository.findAll()) {
             if (!"ACTIVE".equals(merchant.getStatus())) continue;
@@ -39,6 +54,7 @@ public class SettlementService {
     }
 
     public Settlement runForMerchant(Long merchantId, String currency, LocalDateTime periodStart, LocalDateTime periodEnd) {
+        requireLegacyEnabled();
         List<CheckoutSession> eligible = checkoutSessionRepository.findByMerchantIdAndSettlementIdIsNull(merchantId).stream()
                 .filter(s -> currency.equals(s.getCurrency()))
                 .filter(s -> isSettleableStatus(s.getStatus()))
@@ -103,6 +119,7 @@ public class SettlementService {
         return s;
     }
 
+    /** Still allowed after the PSP cutover so settlements already in flight under the old code can be closed out. */
     public Settlement markPaid(Long settlementId, String payoutReference) {
         Settlement s = getOrThrow(settlementId);
         if ("PAID".equals(s.getStatus())) {

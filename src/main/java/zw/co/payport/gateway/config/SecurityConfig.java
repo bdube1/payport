@@ -40,7 +40,8 @@ public class SecurityConfig {
                                                    JwtAuthenticationFilter jwtAuthFilter,
                                                    ApiKeyAuthenticationFilter apiKeyAuthFilter,
                                                    MerchantJwtAuthenticationFilter merchantJwtAuthFilter,
-                                                   RateLimitFilter rateLimitFilter) throws Exception {
+                                                   RateLimitFilter rateLimitFilter,
+                                                   zw.co.payport.gateway.psp.channel.SignedRequestFilter signedRequestFilter) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -102,6 +103,15 @@ public class SecurityConfig {
                         // for how each provider's payload is validated.
                         .requestMatchers("/api/v1/callbacks/**").permitAll()
 
+                        // PSP channels with their own authentication: USSD aggregator
+                        // (shared token + IP allow-list) and the WhatsApp webhook
+                        // (X-Hub-Signature-256 HMAC), both checked in the controller.
+                        .requestMatchers("/api/v1/psp/channels/ussd/**").permitAll()
+                        .requestMatchers("/api/v1/psp/channels/whatsapp/**").permitAll()
+                        // Partner API and POS terminals: HMAC-signed requests (SignedRequestFilter).
+                        .requestMatchers("/api/v1/partner/**").hasRole("PARTNER")
+                        .requestMatchers("/api/v1/psp/channels/pos/**").hasRole("TERMINAL")
+
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/actuator/info").permitAll()
                         .requestMatchers("/").permitAll()
@@ -123,6 +133,7 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(merchantJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(signedRequestFilter, UsernamePasswordAuthenticationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())
                 );

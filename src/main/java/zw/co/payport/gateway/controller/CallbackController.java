@@ -1,14 +1,11 @@
 package zw.co.payport.gateway.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
-import zw.co.payport.gateway.service.AdaptorRegistry;
-import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
+import zw.co.payport.gateway.psp.payment.CallbackInboxService;
 
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -20,11 +17,12 @@ import java.util.Map;
  * Handles incoming callbacks from payment providers.
  * These are called directly by EcoCash/OneMoney servers after customer approves payment.
  *
- * SECURITY MODEL:
- * 1. IP whitelist enforced by Cloudflare/firewall (not in app code for performance)
- * 2. Each provider's signature/auth is validated before any processing
- * 3. All processing is async - we return 200 OK immediately to prevent provider timeouts
- * 4. Idempotency: duplicate callbacks are safely ignored
+ * SECURITY MODEL (PSP):
+ * 1. IP allow-list at Cloudflare / firewall (defence in depth, not relied on alone)
+ * 2. Provider signature validated where the provider signs; where it does not
+ *    (EcoCash, OneMoney), SUCCESS is only applied after a status-API query agrees
+ * 3. Callback persisted to psp_callback_inbox before processing; failures are retried
+ * 4. Idempotency: duplicate deliveries are counted, never re-applied
  *
  * URLs (register these with each provider):
  * EcoCash:  POST https://api.payport.africa/api/v1/callbacks/ecocash
@@ -36,9 +34,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CallbackController {
 
-    private final AdaptorRegistry              adaptorRegistry;
-    private final TransactionOrchestratorService orchestratorService;
-    private final ObjectMapper                 objectMapper;
+    private final CallbackInboxService         callbackInbox;
 
     /**
      * EcoCash Callback
@@ -77,52 +73,25 @@ public class CallbackController {
 
     // ─── Core callback handler ────────────────────────────────────────────────
 
+    /**
+     * PSP: every callback is now persisted to the callback inbox BEFORE it is
+     * processed (see CallbackInboxService). Previously a processing exception
+     * was swallowed with a 200 "ACK" and the callback was lost for good, and
+     * EcoCash/OneMoney SUCCESS callbacks were applied without any check that
+     * they really came from the provider. Now: stored first, de-duplicated,
+     * SUCCESS confirmed with the provider's status API, retried on failure,
+     * and escalated to a reconciliation break if it still cannot be applied.
+     */
     private ResponseEntity<String> handleCallback(String provider, String rawBody, HttpServletRequest request) {
         log.info("[CALLBACK] Received {} callback from IP: {}", provider, request.getRemoteAddr());
-        log.debug("[CALLBACK] {} body: {}", provider, rawBody);
+        String ackBody = "ONEMONEY".equals(provider) ? "SUCCESS" : "OK";
+        CallbackInboxService.Ack ack = callbackInbox.receive(provider, rawBody, extractHeaders(request), clientIp(request), ackBody);
+        return ResponseEntity.status(ack.httpStatus()).body(ack.body());
+    }
 
-        try {
-            // 1. Get headers
-            Map<String, String> headers = extractHeaders(request);
-
-            // 2. Validate callback (signature, structure)
-            if (!adaptorRegistry.hasPaymentAdaptor(provider)) {
-                log.warn("[CALLBACK] No adaptor for provider: {}", provider);
-                return ResponseEntity.ok("ACK");
-            }
-
-            PaymentProviderAdaptor adaptor = adaptorRegistry.getPaymentAdaptor(provider);
-            PaymentProviderAdaptor.CallbackValidationResult validation =
-                    adaptor.validateCallback(headers, rawBody);
-
-            if (!validation.isValid()) {
-                log.error("[CALLBACK] {} callback validation FAILED: {}", provider, validation.getFailureReason());
-                // Return 403 to tell provider this callback was rejected
-                return ResponseEntity.status(403).body("INVALID_SIGNATURE");
-            }
-
-            // 3. Parse callback
-            PaymentProviderAdaptor.CallbackEvent event = adaptor.parseCallback(rawBody);
-            log.info("[CALLBACK] {} parsed - reference: {} status: {} providerRef: {}",
-                    provider, event.getPayportReference(), event.getStatus(), event.getProviderReference());
-
-            // 4. Process asynchronously (return 200 immediately to provider)
-            // Processing happens in orchestratorService which updates transaction state
-            if (event.getPayportReference() != null && !event.getPayportReference().isBlank()) {
-                orchestratorService.handlePaymentCallback(event);
-            } else {
-                log.warn("[CALLBACK] {} callback missing payportReference - cannot process", provider);
-            }
-
-            // 5. Return 200 immediately - OneMoney specifically requires "SUCCESS"
-            String ackBody = "ONEMONEY".equals(provider) ? "SUCCESS" : "OK";
-            return ResponseEntity.ok(ackBody);
-
-        } catch (Exception e) {
-            log.error("[CALLBACK] {} callback processing error: {}", provider, e.getMessage(), e);
-            // Always return 200 to provider - never let them know our internal errors
-            return ResponseEntity.ok("ACK");
-        }
+    private String clientIp(HttpServletRequest request) {
+        String fwd = request.getHeader("X-Forwarded-For");
+        return fwd != null && !fwd.isBlank() ? fwd.split(",")[0].trim() : request.getRemoteAddr();
     }
 
     private Map<String, String> extractHeaders(HttpServletRequest request) {

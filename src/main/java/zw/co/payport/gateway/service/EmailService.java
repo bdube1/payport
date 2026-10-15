@@ -33,6 +33,16 @@ public class EmailService {
     @Value("${payport.email.reset-link-base}")
     private String resetLinkBase;
 
+    /** PSP notifications module: plain-text email; throws on failure so the notification can be retried. */
+    public void sendGeneric(String toEmail, String subject, String body) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(toEmail);
+        message.setSubject(subject);
+        message.setText(body);
+        mailSender.send(message);
+    }
+
     public void sendPasswordReset(String toEmail, String fullName, String token) {
         String link = resetLinkBase + "?token=" + token;
 

@@ -143,6 +143,8 @@ public class TransactionOrchestratorService {
         transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
                 "TEST_MODE", "Simulated payment (merchant test API key)", null);
         tx.setPaymentSubmittedAt(LocalDateTime.now());
+        // PSP: marks the payment as simulated so the ledger, resolver and reports never treat it as real money.
+        tx.setPaymentProviderCode("TEST_MODE");
         transactionRepository.save(tx);
 
         PaymentProviderAdaptor.CallbackEvent simulatedEvent = PaymentProviderAdaptor.CallbackEvent.builder()
@@ -186,6 +188,7 @@ public class TransactionOrchestratorService {
             transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
                     "TEST_BYPASS", "Test bypass - moving to pending", null);
             tx.setPaymentSubmittedAt(LocalDateTime.now());
+            tx.setPaymentProviderCode("TEST_BYPASS");
             transactionRepository.save(tx);
 
             PaymentProviderAdaptor.CallbackEvent simulatedEvent = PaymentProviderAdaptor.CallbackEvent.builder()
@@ -431,6 +434,26 @@ public class TransactionOrchestratorService {
             smsNotificationService.sendPaymentFailed(tx, "Payment was not approved");
             log.info("[ORCHESTRATOR] Payment failed for: {}", tx.getReference());
         }
+    }
+
+    /**
+     * PSP: a payment whose outcome PayPort does not know yet (no callback
+     * within the timeout window). Moves PAYMENT_PENDING -> PAYMENT_TIMEOUT
+     * through the audited state machine. This is deliberately NOT a failure:
+     * the customer may have approved the payment, so the PSP
+     * UncertainPaymentResolver keeps asking the provider until it gets a
+     * definitive answer or a human resolves it with evidence.
+     */
+    @Transactional
+    public void markPaymentOutcomeUnknown(String reference, String reason) {
+        Transaction tx = loadTransaction(reference);
+        if (tx.getStatus() != TransactionStatus.PAYMENT_PENDING) {
+            return;
+        }
+        transitionStatus(tx, TransactionStatus.PAYMENT_TIMEOUT, "PSP_RESOLVER", reason, null);
+        tx.setFailureReason("We're confirming this payment with your provider. You'll get an SMS as soon as it's confirmed.");
+        tx.setFailureDetails(reason);
+        transactionRepository.save(tx);
     }
 
     @Transactional

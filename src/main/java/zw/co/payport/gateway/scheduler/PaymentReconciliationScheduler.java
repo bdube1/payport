@@ -23,7 +23,6 @@ public class PaymentReconciliationScheduler {
     private final EcoCashAdaptor ecoCashAdaptor;
     private final TransactionOrchestratorService orchestratorService;
 
-    private static final long GIVE_UP_AFTER_MINUTES = 30;
     /** Was 25s -- tightened since speed genuinely matters here: the
       * customer's own EcoCash confirmation on their phone is close to
       * instant, so a long gap before Payport even starts actively
@@ -32,8 +31,18 @@ public class PaymentReconciliationScheduler {
       * just a shorter one. */
     private static final long GRACE_PERIOD_SECONDS = 10;
 
+    /**
+     * PSP: superseded by psp.payment.UncertainPaymentResolver, which covers every
+     * rail with a status API, backs off, escalates, and never turns silence into
+     * a failure. Kept behind a flag (default off) for one release in case it is
+     * needed while the new resolver beds in.
+     */
+    @org.springframework.beans.factory.annotation.Value("${payport.legacy.ecocash-reconciler.enabled:false}")
+    private boolean enabled;
+
     @Scheduled(fixedDelay = 10_000, initialDelay = 10_000)
     public void reconcileStalledEcoCashPayments() {
+        if (!enabled) return;
         LocalDateTime graceThreshold = LocalDateTime.now().minusSeconds(GRACE_PERIOD_SECONDS);
 
         // PAYMENT_TIMEOUT transactions the watchdog already gave up
@@ -88,19 +97,8 @@ public class PaymentReconciliationScheduler {
             return;
         }
 
-        long minutesStalled = java.time.Duration.between(tx.getPaymentSubmittedAt(), LocalDateTime.now()).toMinutes();
-        if (minutesStalled >= GIVE_UP_AFTER_MINUTES) {
-            log.warn("[RECONCILE] {} still unresolved after {} minutes -- giving up, marking failed", tx.getReference(), minutesStalled);
-            PaymentProviderAdaptor.CallbackEvent giveUpEvent = PaymentProviderAdaptor.CallbackEvent.builder()
-                    .payportReference(tx.getReference())
-                    .providerReference(tx.getProviderReference())
-                    .status("FAILED")
-                    .amountCents(0)
-                    .currency(tx.getCurrency())
-                    .timestamp(LocalDateTime.now().toString())
-                    .rawPayload("Gave up after " + minutesStalled + " minutes of reconciliation attempts -- EcoCash never returned a definitive status.")
-                    .build();
-            orchestratorService.handlePaymentCallback(giveUpEvent);
-        }
+        // PSP: the old "give up after 30 minutes and mark FAILED" branch is removed.
+        // A customer may have been debited even though EcoCash never answered;
+        // silence is not failure. The PSP resolver escalates these to ops instead.
     }
 }

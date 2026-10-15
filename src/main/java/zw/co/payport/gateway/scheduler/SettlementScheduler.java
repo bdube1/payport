@@ -17,8 +17,12 @@ public class SettlementScheduler {
 
     private final SettlementService settlementService;
 
+    @org.springframework.beans.factory.annotation.Value("${payport.legacy.settlement.enabled:false}")
+    private boolean legacyEnabled;
+
     @Scheduled(cron = "0 0 6 * * *") // every day, 6am -- Zimbabwean merchants specifically asked for daily settlement, not weekly
     public void runDailySettlement() {
+        if (!legacyEnabled) return; // PSP settlement engine drafts batches instead (psp.settlement.SettlementEngineScheduler)
         try {
             LocalDateTime periodEnd = LocalDateTime.now();
             LocalDateTime periodStart = periodEnd.minusDays(1);

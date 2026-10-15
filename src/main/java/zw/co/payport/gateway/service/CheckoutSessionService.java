@@ -44,6 +44,10 @@ public class CheckoutSessionService {
     private final EmailService emailService;
     private final CommissionService commissionService;
     private final RefundService refundService;
+    // PSP modules: merchant controls (verification, products, limits, suspension), smart routing, fraud engine.
+    private final zw.co.payport.gateway.psp.merchant.MerchantControlService merchantControls;
+    private final zw.co.payport.gateway.psp.routing.RoutingService routing;
+    private final zw.co.payport.gateway.psp.common.RiskPorts.RiskAssessor risk;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public record CreateSessionRequest(
@@ -52,12 +56,6 @@ public class CheckoutSessionService {
             String successUrl, String cancelUrl, String metadata) {}
 
     public CheckoutSession createSession(Merchant merchant, Long apiKeyId, CreateSessionRequest req) {
-        if (req.reference() != null) {
-            checkoutSessionRepository.findByMerchantIdAndReference(merchant.getId(), req.reference())
-                    .ifPresent(existing -> {
-                        throw new RuntimeException("A checkout session with reference '" + req.reference() + "' already exists for this merchant");
-                    });
-        }
         if (req.amountCents() == null || req.amountCents() < 1) {
             throw new RuntimeException("amountCents must be a positive integer");
         }
@@ -65,6 +63,22 @@ public class CheckoutSessionService {
         if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
             throw new RuntimeException("currency must be USD or ZWG");
         }
+        if (req.reference() != null) {
+            // PSP: the merchant reference is the idempotency key for session creation.
+            // Same reference + same amount/currency returns the existing session
+            // (a safe retry); a different amount/currency is a genuine conflict.
+            var existing = checkoutSessionRepository.findByMerchantIdAndReference(merchant.getId(), req.reference());
+            if (existing.isPresent()) {
+                CheckoutSession e = existing.get();
+                if (e.getAmountCents().equals(req.amountCents()) && e.getCurrency().equals(currency)) {
+                    return e;
+                }
+                throw new RuntimeException("A checkout session with reference '" + req.reference()
+                        + "' already exists for this merchant with a different amount or currency");
+            }
+        }
+        // PSP: refuse sessions the merchant could never collect (not verified, suspended, outside limits).
+        merchantControls.assertCanCollect(merchant.getId(), null, currency, req.amountCents());
 
         CheckoutSession session = CheckoutSession.builder()
                 .merchantId(merchant.getId())
@@ -236,11 +250,26 @@ public class CheckoutSessionService {
             throw new RuntimeException("This merchant account is not currently active");
         }
 
+        // PSP: "MOBILE_MONEY" / "AUTO" lets smart routing pick the wallet rail from the customer's number.
+        if (paymentMethodCode == null || "MOBILE_MONEY".equalsIgnoreCase(paymentMethodCode) || "AUTO".equalsIgnoreCase(paymentMethodCode)) {
+            paymentMethodCode = isTestMode ? "ECOCASH" : routing.walletProviderFor(customerPhone, session.getCurrency(), session.getAmountCents());
+        }
+        if (!isTestMode) {
+            // PSP: product approval, limits and suspension for this method, then the fraud engine.
+            // TEST-mode keys never move money, so they are exempt (sandbox merchants are usually not yet verified).
+            merchantControls.assertCanCollect(merchant.getId(), paymentMethodCode, session.getCurrency(), session.getAmountCents());
+            var decision = risk.assess(new zw.co.payport.gateway.psp.common.RiskPorts.RiskContext("CHECKOUT", "WEB", "PAYER",
+                    customerPhone, "merchant:" + merchant.getId(), merchant.getId(), null, session.getCurrency(),
+                    session.getAmountCents(), customerPhone, null, ipAddress));
+            if (decision.blocked()) {
+                throw new RuntimeException("This payment cannot be processed. Please contact the merchant.");
+            }
+        }
+
         String productTypeCode = "ZWG".equals(session.getCurrency()) ? "MERCHANT_CHECKOUT_ZWG" : "MERCHANT_CHECKOUT";
-        String txReference = generateTransactionReference();
+        String txReference = null;
 
         InitiateTransactionRequest initiateReq = new InitiateTransactionRequest();
-        initiateReq.setReference(txReference);
         initiateReq.setProductTypeCode(productTypeCode);
         initiateReq.setRecipientIdentifier(customerPhone);
         initiateReq.setAmountCents(session.getAmountCents());
@@ -249,7 +278,18 @@ public class CheckoutSessionService {
         initiateReq.setCustomerEmail(customerEmail);
         initiateReq.setChannel("API");
 
-        orchestrator.initiateTransaction(initiateReq, ipAddress);
+        // PSP: references are 6 random digits per day, so collisions are expected at volume.
+        // Retry with a fresh reference instead of failing the customer's payment.
+        for (int attempt = 1; ; attempt++) {
+            txReference = generateTransactionReference();
+            initiateReq.setReference(txReference);
+            try {
+                orchestrator.initiateTransaction(initiateReq, ipAddress);
+                break;
+            } catch (zw.co.payport.gateway.exception.DuplicateReferenceException collision) {
+                if (attempt >= 8) throw collision;
+            }
+        }
 
         session.setTransactionReference(txReference);
         session.setCustomerPhone(customerPhone);

@@ -320,20 +320,36 @@ public class SmsNotificationService {
         send(phone, message, "PIN_RESET", "PIN_RESET");
     }
 
+    /**
+     * PSP notifications module entry point: sends an already-rendered message
+     * and reports whether the gateway accepted it, so failed notifications can
+     * be retried instead of silently lost.
+     */
+    public boolean sendCustom(String phone, String message, String reference, String messageType) {
+        return sendInternal(phone, message, reference, messageType);
+    }
+
     private void send(String phone, String message, String reference, String messageType) {
+        sendInternal(phone, message, reference, messageType);
+    }
+
+    private boolean sendInternal(String phone, String message, String reference, String messageType) {
         if (phone == null || phone.isBlank()) {
             log.debug("[SMS] No customer phone for {} - skipping SMS", reference);
-            return;
+            return false;
         }
 
         String formattedPhone = formatPhoneNumber(phone);
 
         log.info("[SMS] Sending {} SMS to {} for ref: {}", messageType, maskPhone(formattedPhone), reference);
-        log.info("[SMS] Message content:\n{}", message);
+        // Message bodies can contain PINs and prepaid tokens: never log them outside local debugging.
+        if (log.isDebugEnabled() && !"PIN_RESET".equals(messageType)) {
+            log.debug("[SMS] Message content:\n{}", message);
+        }
 
         if ("REPLACE_WITH_REAL_KEY".equals(apiKey)) {
-            log.warn("[SMS] Africa's Talking API key not configured. SMS would have been sent with content above.");
-            return;
+            log.warn("[SMS] Africa's Talking API key not configured. SMS {} for {} not sent.", messageType, reference);
+            return false;
         }
 
         try {
@@ -359,9 +375,11 @@ public class SmsNotificationService {
             if (response.getBody() != null && !response.getBody().isBlank()) {
                 log.debug("[SMS] Response: {}", response.getBody());
             }
+            return response.getStatusCode().is2xxSuccessful();
 
         } catch (Exception e) {
             log.error("[SMS] Failed to send {} SMS for {}: {}", messageType, reference, e.getMessage());
+            return false;
         }
     }
 

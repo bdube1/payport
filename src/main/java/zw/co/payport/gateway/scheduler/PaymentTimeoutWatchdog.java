@@ -5,8 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import zw.co.payport.gateway.entity.Transaction;
 import zw.co.payport.gateway.enums.TransactionStatus;
 import zw.co.payport.gateway.repository.TransactionRepository;
@@ -28,6 +26,7 @@ import java.util.List;
 public class PaymentTimeoutWatchdog {
 
     private final TransactionRepository transactionRepository;
+    private final zw.co.payport.gateway.service.impl.TransactionOrchestratorService orchestratorService;
 
     @Value("${payport.gateway.payment-timeout-seconds:90}")
     private int paymentTimeoutSeconds;
@@ -54,38 +53,18 @@ public class PaymentTimeoutWatchdog {
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /**
+     * PSP: delegates to the orchestrator so the PAYMENT_PENDING -> PAYMENT_TIMEOUT
+     * move goes through the audited state machine (it was a direct setStatus with
+     * no audit row and no status event). PAYMENT_TIMEOUT means "outcome unknown",
+     * never "failed": the PSP UncertainPaymentResolver keeps asking the provider.
+     */
     public void processTimeout(Transaction tx) {
         try {
-            String reference = tx.getReference();
-            LocalDateTime submittedAt = tx.getPaymentSubmittedAt();
-            long secondsPending = java.time.Duration.between(submittedAt, LocalDateTime.now()).getSeconds();
-            
-            log.warn("[WATCHDOG] Transaction {} timed out - pending for {} seconds (since {})",
-                    reference, secondsPending, submittedAt);
-
-            // Was PAYMENT_FAILED -- a terminal status with nowhere left
-            // to go. This class's own documented state machine says
-            // PAYMENT_PENDING -> PAYMENT_TIMEOUT, and PAYMENT_TIMEOUT can
-            // still resolve to PAYMENT_CONFIRMED later "after
-            // reconciliation" -- exactly what a late-arriving real
-            // provider callback is. handlePaymentCallback()'s own
-            // duplicate-guard already only accepts a late callback when
-            // status is PAYMENT_PENDING or PAYMENT_TIMEOUT, which strongly
-            // suggests this was the intended status all along. Jumping
-            // straight to PAYMENT_FAILED meant a completely real,
-            // successful payment -- customer just took more than 90
-            // seconds to notice the USSD prompt and enter their PIN --
-            // got silently dropped as a "duplicate" the moment the real
-            // confirmation arrived a few seconds later.
-            tx.setStatus(TransactionStatus.PAYMENT_TIMEOUT);
-            tx.setFailureReason(String.format("No response from customer after %d seconds -- still watching for a late confirmation.", secondsPending));
-            tx.setFailureDetails("Customer did not complete payment on USSD prompt within the timeout window. A late provider callback can still confirm this payment.");
-
-            transactionRepository.save(tx);
-            
-            log.info("[WATCHDOG] Transaction {} marked as PAYMENT_TIMEOUT (not PAYMENT_FAILED -- a late callback can still confirm it)", reference);
-
+            long secondsPending = java.time.Duration.between(tx.getPaymentSubmittedAt(), LocalDateTime.now()).getSeconds();
+            orchestratorService.markPaymentOutcomeUnknown(tx.getReference(),
+                    "No provider confirmation after " + secondsPending + "s -- still watching for a late confirmation");
+            log.info("[WATCHDOG] {} marked PAYMENT_TIMEOUT (outcome unknown, not failed)", tx.getReference());
         } catch (Exception e) {
             log.error("[WATCHDOG] Failed to process timeout for {}: {}", tx.getReference(), e.getMessage(), e);
         }

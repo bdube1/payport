@@ -374,7 +374,8 @@ public class OneMoneyAdaptor implements PaymentProviderAdaptor {
         return sb.toString();
     }
 
-    private String mapOneMoneyStatus(String oneMoneyStatus) {
+    /** Public so the PSP status verifier maps query results exactly like callbacks. */
+    public String mapOneMoneyStatus(String oneMoneyStatus) {
         if (oneMoneyStatus == null) return "PENDING";
         return switch (oneMoneyStatus) {
             case "30" -> "SUCCESS";

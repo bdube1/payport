@@ -210,7 +210,7 @@ public class OpsController {
             @PathVariable String ref,
             @RequestBody(required = false) Map<String, String> body,
             HttpServletRequest req) {
-        String operator = body != null ? body.getOrDefault("operator", "OPS") : "OPS";
+        String operator = authenticatedOperator(); // PSP: never trust an operator name sent by the client
         TransactionResponse tx = orchestratorService.manualRetryFulfilment(ref, operator);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
@@ -221,7 +221,7 @@ public class OpsController {
             @RequestBody Map<String, String> body,
             HttpServletRequest req) {
         String reason = body.getOrDefault("reason", "Ops-initiated refund");
-        String operator = body.getOrDefault("operator", "OPS");
+        String operator = authenticatedOperator(); // PSP: never trust an operator name sent by the client
         TransactionResponse tx = orchestratorService.initiateRefund(ref, operator, reason);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
@@ -242,7 +242,7 @@ public class OpsController {
         String refundReference = body.get("refundReference");
         String refundMethod = body.get("refundMethod");
         String reason = body.get("reason");
-        String operator = body.getOrDefault("operator", "OPS");
+        String operator = authenticatedOperator(); // PSP: never trust an operator name sent by the client
         TransactionResponse tx = orchestratorService.completeManualRefund(ref, operator, refundReference, refundMethod, reason);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
@@ -391,5 +391,11 @@ public class OpsController {
     private String requestId(HttpServletRequest req) {
         String id = req.getHeader("X-Request-ID");
         return id != null ? id : UUID.randomUUID().toString();
+    }
+
+    /** The logged-in staff user. The old code took "operator" from the request body, so the audit trail recorded whoever the caller claimed to be. */
+    private static String authenticatedOperator() {
+        org.springframework.security.core.Authentication a = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return a != null && a.getName() != null ? a.getName() : "UNKNOWN";
     }
 }
