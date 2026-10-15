@@ -272,6 +272,7 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
             log.error("[NETONE] Airtime delivery failed: {}", e.getMessage());
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("NetOne airtime failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

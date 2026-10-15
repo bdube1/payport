@@ -43,6 +43,12 @@ public interface FulfilmentProviderAdaptor {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     class FulfilmentResult {
         private boolean success;
+        /**
+         * True when success == false but the delivery MAY have happened (read timeout, broken
+         * connection, unparseable response). The orchestrator then never re-delivers; it asks
+         * queryDelivery() or hands the case to a person.
+         */
+        private boolean outcomeUnknown;
         private String  fulfilmentReference;     // provider's delivery reference
         private String  fulfilmentData;          // JSON - e.g. {"token":"1234-5678-9012"} for ZESA
         private String  message;

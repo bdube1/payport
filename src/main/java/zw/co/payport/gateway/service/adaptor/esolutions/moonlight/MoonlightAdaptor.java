@@ -164,6 +164,7 @@ public class MoonlightAdaptor implements FulfilmentProviderAdaptor {
             log.error("[MOONLIGHT] Resend itself failed for {}: {}", originalVendorRef, e.getMessage(), e);
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .fulfilmentReference(originalVendorRef)
                     .message("Could not confirm whether this payment already went through -- needs manual verification before retrying.")
                     .rawResponse("Resend attempt failed: " + e.getMessage())

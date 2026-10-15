@@ -75,6 +75,7 @@ class PaymentLifecycleScenarioTest {
         r.add("payport.payments.query-providers", () -> "ECOCASH,ONEMONEY,ZIMSWITCH,SIMQ");
         r.add("payport.payments.resolver.enabled", () -> "false"); // driven explicitly with runOnce
         r.add("payport.payments.watchdog.enabled", () -> "false");
+        r.add("payport.fulfilment.worker.enabled", () -> "false");
     }
 
     @TestConfiguration

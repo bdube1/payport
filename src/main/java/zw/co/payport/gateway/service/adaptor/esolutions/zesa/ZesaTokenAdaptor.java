@@ -197,6 +197,7 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
             log.error("[ZESA] Resend itself failed for {}: {}", originalVendorRef, e.getMessage(), e);
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .fulfilmentReference(originalVendorRef)
                     .message("Could not confirm whether this token was already generated -- needs manual verification before retrying.")
                     .rawResponse("Resend attempt failed: " + e.getMessage())

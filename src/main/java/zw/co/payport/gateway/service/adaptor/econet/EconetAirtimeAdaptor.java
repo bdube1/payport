@@ -158,6 +158,7 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
             log.error("[ECONET] XML-RPC delivery failed: {}", e.getMessage(), e);
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("Econet delivery failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();
@@ -219,6 +220,7 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
             log.error("[ECONET] Bundle purchase failed: {}", e.getMessage(), e);
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("Econet bundle purchase failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

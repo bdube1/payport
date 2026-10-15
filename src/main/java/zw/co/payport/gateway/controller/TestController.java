@@ -22,6 +22,9 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
+// R46: these endpoints buy ZESA tokens with PayPort's float and mark any payment PAID without a
+// provider, an audit row or a second approver. Off unless explicitly enabled (never in production).
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "payport.test-endpoints.enabled", havingValue = "true")
 @RequestMapping("/api/v1/test")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")

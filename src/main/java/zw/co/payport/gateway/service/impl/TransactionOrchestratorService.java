@@ -537,230 +537,245 @@ public class TransactionOrchestratorService {
         return CallbackOutcome.APPLIED;
     }
 
-    @Transactional
-    public void executeFulfilment(String reference) throws Exception {
+    /** What a delivery run did. retryAt is set when a definite failure has an automatic retry scheduled. */
+    public record FulfilmentOutcome(Kind kind, LocalDateTime retryAt, String detail) {
+        /** NOT_STARTED: the payment is still PAYMENT_CONFIRMED, so no delivery was ever sent; safe to queue again. */
+        public enum Kind { DELIVERED, FAILED, UNKNOWN, SKIPPED, NOT_STARTED }
+        static FulfilmentOutcome of(Kind k, String detail) { return new FulfilmentOutcome(k, null, detail); }
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${payport.fulfilment.auto-retry:false}")
+    private boolean autoRetryDefiniteFailures;
+
+    private static final int MAX_DELIVERY_ATTEMPTS = 4;
+    private static final int[] RETRY_DELAYS_SECONDS = {30, 120, 300, 600};
+
+    private record PreparedDelivery(String reference, String providerCode, String label,
+                                    FulfilmentProviderAdaptor.FulfilmentRequest request, String notSupported) {}
+
+    /**
+     * Delivers the service for a confirmed payment (Phase 2, same pattern as submitPayment):
+     * FULFILMENT_PENDING is committed before the provider is called; the provider call runs
+     * outside any database transaction; the outcome is recorded afterwards.
+     *
+     * A delivery whose outcome is unknown (timeout, broken connection, crash) is NEVER
+     * delivered again automatically: the payment stays in FULFILMENT_PENDING and
+     * resolveUnknownFulfilment() asks the provider (queryDelivery) or hands it to a person.
+     * Called by FulfilmentWorker for a claimed job.
+     */
+    public FulfilmentOutcome executeFulfilment(String reference) throws Exception {
         log.info("[ORCHESTRATOR] Executing fulfilment for: {}", reference);
 
-        Transaction tx = loadTransaction(reference);
-
-        if (tx.getStatus() != TransactionStatus.PAYMENT_CONFIRMED
-                && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
-            log.warn("[ORCHESTRATOR] Fulfilment attempted on transaction in status {}: {}",
-                    tx.getStatus(), reference);
-            return;
+        PreparedDelivery p = requiresNew().execute(s -> prepareDelivery(reference));
+        if (p == null) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "not in a deliverable state");
         }
 
-        // Was unconditional -- correct for the first attempt
-        // (PAYMENT_CONFIRMED -> FULFILMENT_PENDING is valid), but
-        // FULFILMENT_RETRY has no path to FULFILMENT_PENDING at all (it
-        // only allows COMPLETED or FULFILMENT_FAILED directly), so every
-        // single manual retry threw InvalidStateTransitionException here
-        // before the fulfilment attempt itself ever ran -- the provider
-        // was never actually contacted. FULFILMENT_RETRY already
-        // correctly represents "actively attempting again"; it doesn't
-        // need to pass through FULFILMENT_PENDING a second time.
+        FulfilmentProviderAdaptor.FulfilmentResult result;
+        if (p.notSupported() != null) {
+            result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).message(p.notSupported()).build();
+        } else {
+            log.info("[ORCHESTRATOR] Calling {} adaptor.deliver for {} ({})", p.providerCode(), reference, p.label());
+            try {
+                result = adaptorRegistry.getFulfilmentAdaptor(p.providerCode()).deliver(p.request());
+                if (result == null) {
+                    result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(true)
+                            .message("Provider adaptor returned no result").build();
+                }
+            } catch (Exception e) {
+                boolean unknown = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e);
+                log.error("[ORCHESTRATOR] {} deliver for {} threw {} -- outcome {}", p.providerCode(), reference,
+                        e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT DELIVERED");
+                result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(unknown)
+                        .message(p.providerCode() + " call failed: " + e.getMessage())
+                        .rawResponse(e.getClass().getName() + ": " + e.getMessage()).build();
+            }
+        }
+
+        final FulfilmentProviderAdaptor.FulfilmentResult outcome = result;
+        try {
+            return requiresNew().execute(s -> recordDeliveryOutcome(p, outcome));
+        } catch (RuntimeException e) {
+            // The provider answered but we could not record it: treat as unknown, never deliver again.
+            log.error("[ORCHESTRATOR] Could not record delivery outcome for {} (provider said success={}): {}",
+                    reference, outcome.isSuccess(), e.getMessage(), e);
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "outcome not recorded: " + e.getMessage());
+        }
+    }
+
+    private PreparedDelivery prepareDelivery(String reference) {
+        Transaction tx = lockTransactionOrNull(reference);
+        if (tx == null) return null;
+        if (tx.getStatus() != TransactionStatus.PAYMENT_CONFIRMED && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            log.warn("[ORCHESTRATOR] Fulfilment attempted on transaction in status {}: {}", tx.getStatus(), reference);
+            return null;
+        }
+        // FULFILMENT_RETRY is already "actively attempting again"; only a first attempt passes through FULFILMENT_PENDING.
         if (tx.getStatus() == TransactionStatus.PAYMENT_CONFIRMED) {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_PENDING,
-                    "SYSTEM", "Fulfilment started", null);
+            transitionStatus(tx, TransactionStatus.FULFILMENT_PENDING, "SYSTEM", "Fulfilment started", null);
         }
         tx.setFulfilmentStartedAt(LocalDateTime.now());
         transactionRepository.save(tx);
 
         String productCode = tx.getProductType().getCode();
-
-        if (productCode.startsWith("DATA_")) {
-            log.info("[ORCHESTRATOR] Processing DATA product: {}", productCode);
-            executeDataBundleFulfilment(tx);
-        } else if (productCode.contains("AIRTIME")) {
-            log.info("[ORCHESTRATOR] Processing AIRTIME product: {}", productCode);
-            executeAirtimeFulfilment(tx);
-        } else {
-            executeRegularFulfilment(tx);
+        String providerCode = deliveryProvider(tx);
+        String label = productCode.startsWith("DATA_") ? "data bundle" : productCode.contains("AIRTIME") ? "airtime" : "service";
+        String notSupported = null;
+        if (productCode.startsWith("DATA_") && !"ECONET".equals(providerCode)) {
+            notSupported = "Data bundles not supported for provider: " + tx.getProductType().getProviderCode();
+        } else if (!adaptorRegistry.hasFulfilmentAdaptor(providerCode)) {
+            notSupported = "No fulfilment adaptor for provider: " + providerCode;
         }
-    }
-
-    private void executeDataBundleFulfilment(Transaction tx) throws Exception {
-        String reference = tx.getReference();
-        String providerCode = tx.getProductType().getProviderCode();
-
-        log.info("[ORCHESTRATOR] Executing data bundle fulfilment for: {} provider: {}", reference, providerCode);
-
-        String productConfigJson = tx.getFulfilmentData();
-
-        log.info("[ORCHESTRATOR] Data bundle - Amount: {} cents, Currency: {}, ProductConfig: {}",
-                tx.getAmountCents(), tx.getCurrency(), productConfigJson);
-
-        if ("ECONET".equals(providerCode)) {
-            // Use the standard deliver method which now handles bundles
-            FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor("ECONET");
-
-            FulfilmentProviderAdaptor.FulfilmentRequest request = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
-                    .payportReference(tx.getReference())
-                    .recipientIdentifier(tx.getRecipientIdentifier())
-                    .amountCents(toInt(tx.getAmountCents()))
-                    .currency(tx.getCurrency())
-                    .productTypeCode(tx.getProductType().getCode())
-                    .productConfig(productConfigJson)
-                    .build();
-
-            log.info("[ORCHESTRATOR] Calling adaptor.deliver for data bundle: {}", tx.getReference());
-
-            FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(request);
-
-            if (result.isSuccess()) {
-                transitionStatus(tx, TransactionStatus.COMPLETED,
-                        providerCode + "_API",
-                        "Data bundle delivered successfully",
-                        result.getRawResponse());
-
-                tx.setFulfilmentReference(result.getFulfilmentReference());
-                tx.setFulfilmentData(result.getFulfilmentData());
-                tx.setCompletedAt(LocalDateTime.now());
-                transactionRepository.save(tx);
-
-                smsNotificationService.sendDeliverySuccess(tx);
-                log.info("[ORCHESTRATOR] COMPLETED: {} → Data bundle delivered to {}",
-                        tx.getReference(), maskPhone(tx.getRecipientIdentifier()));
-            } else {
-            handleFulfilmentFailure(tx, "Data bundle delivery failed: " + result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-            }
-        } else {
-            handleFulfilmentFailure(tx, "Data bundles not supported for provider: " + providerCode, null);
-        }
-    }
-
-    private void executeAirtimeFulfilment(Transaction tx) throws Exception {
-        String providerCode = tx.getProductType().getProviderCode();
-        FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor(providerCode);
 
         FulfilmentProviderAdaptor.FulfilmentRequest req = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
                 .payportReference(tx.getReference())
                 .recipientIdentifier(tx.getRecipientIdentifier())
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
-                .productTypeCode(tx.getProductType().getCode())
+                .productTypeCode(productCode)
                 .productConfig(tx.getFulfilmentData())
                 .build();
-
-        log.info("[ORCHESTRATOR] Calling airtime adaptor.deliver for {}", tx.getReference());
-
-        FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(req);
-
-        if (result.isSuccess()) {
-            transitionStatus(tx, TransactionStatus.COMPLETED,
-                    providerCode + "_API",
-                    "Airtime delivered successfully",
-                    result.getRawResponse());
-
-            tx.setFulfilmentReference(result.getFulfilmentReference());
-            tx.setFulfilmentData(result.getFulfilmentData());
-            tx.setCompletedAt(LocalDateTime.now());
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendDeliverySuccess(tx);
-            log.info("[ORCHESTRATOR] COMPLETED: {} → Airtime delivered to {}",
-                    tx.getReference(), maskPhone(tx.getRecipientIdentifier()));
-        } else {
-            handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-        }
+        return new PreparedDelivery(tx.getReference(), providerCode, label, req, notSupported);
     }
 
-    private void executeRegularFulfilment(Transaction tx) throws Exception {
+    private String deliveryProvider(Transaction tx) {
         String providerCode = tx.getProductType().getProviderCode();
-        FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor(providerCode);
-
-        FulfilmentProviderAdaptor.FulfilmentRequest req = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
-                .payportReference(tx.getReference())
-                .recipientIdentifier(tx.getRecipientIdentifier())
-                .amountCents(toInt(tx.getAmountCents()))
-                .currency(tx.getCurrency())
-                .productTypeCode(tx.getProductType().getCode())
-                .productConfig(tx.getFulfilmentData())
-                .build();
-
-        log.info("[ORCHESTRATOR] Calling adaptor.deliver for {}", tx.getReference());
-
-        FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(req);
-
-        if (result.isSuccess()) {
-            transitionStatus(tx, TransactionStatus.COMPLETED,
-                    providerCode + "_API",
-                    "Service delivered successfully",
-                    result.getRawResponse());
-
-            tx.setFulfilmentReference(result.getFulfilmentReference());
-            tx.setFulfilmentData(result.getFulfilmentData());
-            tx.setCompletedAt(LocalDateTime.now());
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendDeliverySuccess(tx);
-            log.info("[ORCHESTRATOR] COMPLETED: {} → {} delivered to {}",
-                    tx.getReference(), tx.getProductType().getName(),
-                    maskPhone(tx.getRecipientIdentifier()));
-        } else {
-            handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-        }
+        return providerCode == null ? "" : providerCode;
     }
 
-    private void handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse) {
-        handleFulfilmentFailure(tx, failureMessage, rawResponse, null);
+    private FulfilmentOutcome recordDeliveryOutcome(PreparedDelivery p, FulfilmentProviderAdaptor.FulfilmentResult result) {
+        Transaction tx = lockTransaction(p.reference());
+        if (tx.getStatus() != TransactionStatus.FULFILMENT_PENDING && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            log.error("[ORCHESTRATOR] Delivery outcome for {} (success={}) arrived but the payment is {} -- not changed; review",
+                    p.reference(), result.isSuccess(), tx.getStatus());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + tx.getStatus());
+        }
+        if (result.isSuccess()) {
+            completeDelivery(tx, p.providerCode(), capitalise(p.label()) + " delivered successfully",
+                    result.getFulfilmentReference(), result.getFulfilmentData(), result.getRawResponse());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, result.getFulfilmentReference());
+        }
+        if (result.isOutcomeUnknown()) {
+            tx.setFailureDetails(truncate(result.getRawResponse(), 4000));
+            transactionRepository.save(tx);
+            auditLogService.log(tx.getReference(), tx.getStatus(), tx.getStatus(), p.providerCode() + "_API",
+                    "Delivery outcome UNKNOWN (" + result.getMessage() + "); confirming with the provider, will not re-deliver",
+                    result.getRawResponse());
+            log.warn("[ORCHESTRATOR] Delivery outcome UNKNOWN for {} -- not retried; resolving by query", p.reference());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, result.getMessage());
+        }
+        LocalDateTime retryAt = handleFulfilmentFailure(tx, (p.label().equals("data bundle") ? "Data bundle delivery failed: " : "")
+                + result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
+        return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, result.getMessage());
+    }
+
+    private void completeDelivery(Transaction tx, String providerCode, String notes, String fulfilmentReference,
+                                  String fulfilmentData, String raw) {
+        transitionStatus(tx, TransactionStatus.COMPLETED, providerCode + "_API", notes, raw);
+        if (fulfilmentReference != null) tx.setFulfilmentReference(fulfilmentReference);
+        if (fulfilmentData != null) tx.setFulfilmentData(fulfilmentData);
+        tx.setCompletedAt(LocalDateTime.now());
+        transactionRepository.save(tx);
+        smsNotificationService.sendDeliverySuccess(tx);
+        log.info("[ORCHESTRATOR] COMPLETED: {} -> {} delivered to {}", tx.getReference(),
+                tx.getProductType().getName(), maskPhone(tx.getRecipientIdentifier()));
     }
 
     /**
-     * customerMessage is the already-translated, code-specific text an
-     * adaptor may supply (e.g. EconetAirtimeAdaptor.translateEconetStatusCode,
-     * built directly from Econet's own published status code table) --
-     * when present, it's used as-is rather than being re-run through the
-     * generic text-pattern CustomerMessageTranslator, which doesn't know
-     * about provider-specific numeric codes and would either mismatch it
-     * against an unrelated generic pattern or fail to match at all and
-     * fall back to the fully generic message, discarding a genuinely
-     * more specific translation that already existed. Null for callers
-     * that don't have one, which still fall back to the generic
-     * translator exactly as before.
+     * Resolves a delivery whose outcome is unknown by asking the provider. Never delivers.
+     * Returns DELIVERED/FAILED when the provider gives a definite answer, UNKNOWN otherwise.
      */
-    private void handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse, String customerMessage) {
+    public FulfilmentOutcome resolveUnknownFulfilment(String reference) {
+        Transaction snapshot = transactionRepository.findByReference(reference).orElse(null);
+        if (snapshot == null) return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "no such payment");
+        if (snapshot.getStatus() == TransactionStatus.PAYMENT_CONFIRMED) {
+            // FULFILMENT_PENDING is committed before any delivery is sent, so nothing went out.
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.NOT_STARTED, "delivery was never sent");
+        }
+        if (snapshot.getStatus() != TransactionStatus.FULFILMENT_PENDING && snapshot.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + snapshot.getStatus());
+        }
+        String providerCode = deliveryProvider(snapshot);
+        FulfilmentProviderAdaptor.FulfilmentStatusResult q;
+        try {
+            if (!adaptorRegistry.hasFulfilmentAdaptor(providerCode)) {
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "no adaptor to query for " + providerCode);
+            }
+            String queryRef = snapshot.getFulfilmentReference() != null ? snapshot.getFulfilmentReference() : reference;
+            q = adaptorRegistry.getFulfilmentAdaptor(providerCode).queryDelivery(queryRef);
+        } catch (Exception e) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "delivery query failed: " + e.getMessage());
+        }
+        String status = q == null || q.getStatus() == null ? "UNKNOWN" : q.getStatus().toUpperCase();
+        String detail = providerCode + " delivery query: " + status + (q != null && q.getMessage() != null ? " (" + q.getMessage() + ")" : "");
+        if (!"DELIVERED".equals(status) && !"FAILED".equals(status)) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, detail);
+        }
+        final FulfilmentProviderAdaptor.FulfilmentStatusResult answer = q;
+        return requiresNew().execute(s -> {
+            Transaction tx = lockTransaction(reference);
+            if (tx.getStatus() != TransactionStatus.FULFILMENT_PENDING && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + tx.getStatus());
+            }
+            if ("DELIVERED".equals(status)) {
+                completeDelivery(tx, providerCode, "Delivery confirmed by provider query", answer.getFulfilmentReference(), null, detail);
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, detail);
+            }
+            LocalDateTime retryAt = handleFulfilmentFailure(tx, "Provider confirmed not delivered: " + answer.getMessage(), detail, null);
+            return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, detail);
+        });
+    }
+
+    private static String capitalise(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /**
+     * Records a DEFINITE delivery failure (the provider said no). Returns when to retry, or
+     * null if no automatic retry is scheduled (then the customer is told delivery is delayed
+     * and ops decide: retry or refund).
+     *
+     * Automatic retries (payport.fulfilment.auto-retry, default off) apply only to definite
+     * failures. Before Phase 2 they never actually ran: the queued retry found the payment in
+     * FULFILMENT_FAILED, which executeFulfilment skipped. Default off keeps that behaviour
+     * until each provider's failure codes have been confirmed as safe to retry.
+     *
+     * customerMessage is the adaptor's own translation when it has one (e.g. Econet status
+     * codes); otherwise the generic CustomerMessageTranslator is used.
+     */
+    private LocalDateTime handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse, String customerMessage) {
         String reference = tx.getReference();
-        tx.setRetryCount(tx.getRetryCount() + 1);
-        // failureReason is what the customer actually sees (in the app and in SMS) —
-        // the raw provider text (e.g. Econet's "(8030) IN failure") stays available
-        // to ops in failureDetails and every log line below, unchanged.
+        tx.setRetryCount((tx.getRetryCount() == null ? 0 : tx.getRetryCount()) + 1);
         tx.setFailureReason(customerMessage != null && !customerMessage.isBlank()
                 ? customerMessage
                 : customerMessageTranslator.forFulfilmentFailure(failureMessage));
         tx.setFailureDetails(rawResponse);
 
-        int maxRetries = 4;
-        if (tx.getRetryCount() < maxRetries) {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED,
-                    "SYSTEM",
-                    "Delivery attempt " + tx.getRetryCount() + " failed: " + failureMessage,
-                    rawResponse);
-            transactionRepository.save(tx);
+        transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED, "SYSTEM",
+                "Delivery attempt " + tx.getRetryCount() + " failed: " + failureMessage, rawResponse);
 
-            int[] delaysSeconds = {30, 120, 300, 600};
-            int delaySeconds = delaysSeconds[Math.min(tx.getRetryCount() - 1, delaysSeconds.length - 1)];
-            fulfilmentQueueService.enqueueWithDelay(reference, delaySeconds);
+        if (autoRetryDefiniteFailures && tx.getRetryCount() < MAX_DELIVERY_ATTEMPTS) {
+            int delaySeconds = RETRY_DELAYS_SECONDS[Math.min(tx.getRetryCount() - 1, RETRY_DELAYS_SECONDS.length - 1)];
+            transitionStatus(tx, TransactionStatus.FULFILMENT_RETRY, "SYSTEM",
+                    "Automatic retry in " + delaySeconds + "s (provider definitely did not deliver)", null);
+            transactionRepository.save(tx);
             log.warn("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}), retry in {}s - Reason: {}",
                     reference, tx.getRetryCount(), delaySeconds, failureMessage);
-        } else {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED,
-                    "SYSTEM",
-                    "All " + maxRetries + " delivery attempts exhausted. Last error: " + failureMessage,
-                    rawResponse);
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendFulfilmentDelayed(tx);
-            log.error("[ORCHESTRATOR] MAX RETRIES EXHAUSTED for {}. Reason: {}. Manual intervention required.",
-                    reference, failureMessage);
+            return LocalDateTime.now().plusSeconds(delaySeconds);
         }
+
+        transactionRepository.save(tx);
+        smsNotificationService.sendFulfilmentDelayed(tx);
+        log.error("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}); no automatic retry. Reason: {}. Ops: retry or refund.",
+                reference, tx.getRetryCount(), failureMessage);
+        return null;
     }
 
     @Transactional
     public TransactionResponse manualRetryFulfilment(String reference, String operatorUsername) {
         log.info("[ORCHESTRATOR] Manual retry requested for {} by {}", reference, operatorUsername);
 
-        Transaction tx = loadTransaction(reference);
+        Transaction tx = lockTransaction(reference);
 
         if (tx.getStatus() != TransactionStatus.FULFILMENT_FAILED
                 && tx.getStatus() != TransactionStatus.MANUAL_FULFILMENT) {
