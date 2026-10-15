@@ -12,7 +12,7 @@ _Last updated: 2026-10-15 (Phase 0.5 implementation). Living document; updated a
 | E3 atomicity | **Met** |
 | E4 least privilege | **Met**: 19 bypass attempts denied |
 | E5 shadow = legacy on a week of production-copy data | **Open**: needs a production data copy; tooling ready |
-| E6 supported Spring Boot | **Open**: CI now exists, so the upgrade can be done safely |
+| E6 supported Spring Boot | **Met on branch `phase1-spring-boot-upgrade`**: Boot 4.1.1, all CI jobs green with no skipped required tests (`docs/phase1/SPRING_BOOT_4_UPGRADE.md`). Staging soak with real frontends still recommended |
 
 **Phase 0.5:** concluded on 2026-10-15 by owner decision. Its exit items are still open:
 - CI run (B1);
@@ -53,6 +53,7 @@ This closes **B1** (no real build) and verifies Spring wiring, application start
 |---|---|---|
 | `main` | Gateway as uploaded | In production (per you) |
 | `phase0.5-containment` | R1–R4 and R6 fixes, V32, CI workflow, scripts, docs | **Yes**, after CI passes and the steps in `docs/phase0.5/PHASE0.5_CONTAINMENT_RELEASE.md` |
+| `phase1-spring-boot-upgrade` | Phase 1 + Spring Boot 4.1.1 (3.x is out of support) | **Yes**, after a staging soak with the real frontends |
 | `phase1-financial-foundation` | Ledger (V33–V36), shadow posting, jobs, approvals, tax rates, admin API, `ledger-db` CI job | **Yes**, after CI passes. Shadow posting is off by default (`LEDGER_SHADOW_ENABLED`). |
 | `phase0-discovery` | Phase 0 documents (on top of `psp-foundation`) | Documents only |
 | `psp-foundation` | Earlier PSP build; harvested phase by phase (ADR-0002) | **No** |

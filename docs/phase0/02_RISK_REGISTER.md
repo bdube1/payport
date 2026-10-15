@@ -68,6 +68,9 @@
 | R38 | Ledger concurrency: a no-negative check that reads the transaction snapshot instead of the locked row allows overdrafts (163 of 200 spends against funds for 100) | **Found and fixed** before release; regression-tested by `LedgerConcurrencyTest` |
 | R39 | Refunds recorded after a settlement are never recovered from the merchant (legacy ignores settled sessions) | Open: business decision (claw back or write off). The ledger records these as shadow failures. |
 | R40 | Customer refunds are marked COMPLETED with no record that the money reached the customer | Open: Phase 3 refund payout tracking |
+| R42 | `RestTemplateConfig` routes EcoCash API traffic through a **Tor SOCKS proxy on localhost:9050**. This is a reliability dependency (no Tor means no EcoCash) and a compliance and security concern for a payment integration | Open: confirm why with the team; replace with an approved egress route |
+| R43 | Spring Boot 3.x out of open-source support (3.5 ended 30 Jun 2026) | **Fixed on `phase1-spring-boot-upgrade`** (4.1.1) |
+| R44 | CI could pass while Docker-backed suites silently skipped | **Fixed**: required-test skip guard |
 | R41 | Chain seals are only tamper-evident if the latest seal is exported outside the database | Open: ops task in LEDGER_OPERATIONS.md section 3 |
 
 ## Low
