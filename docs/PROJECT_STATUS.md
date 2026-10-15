@@ -1,8 +1,29 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-15 (Phase 0.5 implementation). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (Phase 2 payment lifecycle). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
+**Phase 2: payment lifecycle. Code complete and CI-verified on `phase2-payment-lifecycle`** (see `docs/phase2/PHASE2_REPORT.md`, ADR-0010, `docs/runbooks/PAYMENT_OPERATIONS.md`).
+
+| Phase 2 acceptance | Status |
+|---|---|
+| Duplicate, out-of-order and before-response callbacks → one effect | **Met** (`PaymentLifecycleScenarioTest`, real MySQL 8) |
+| Timeout → late success / definite failure; never failed by time | **Met** |
+| Provider down; concurrent identical `/pay` → one push; no blind retry | **Met** |
+| Durable delivery; unknown delivery never re-sent | **Met** (`FulfilmentJobScenarioTest`) |
+| Behaviour against real provider sandboxes | **Not verified**: needs sandbox or staging runs with forced timeouts |
+
+CI run 38819385755 (2026-10-16), all three jobs green:
+- `build-and-test`: **106 passed, 0 failed**; the required suites are guarded against skipping.
+- `ledger-db`: **106 / 106**.
+- `migrations-production-like` (V37, V38): pass.
+
+Found and fixed in Phase 2:
+- R45: forgeable ZimSwitch webhooks.
+- R46: unaudited staff "skip payment" endpoint, now off by default.
+- R47–R49 and R51 (risk register).
+
+### Phase 1 (previous)
 **Phase 1: financial foundation. Code complete on `phase1-financial-foundation`; exit evidence partial** (see `docs/phase1/PHASE1_REPORT.md`).
 
 | Exit criterion | Status |
@@ -53,6 +74,7 @@ This closes **B1** (no real build) and verifies Spring wiring, application start
 |---|---|---|
 | `main` | Gateway as uploaded | In production (per you) |
 | `phase0.5-containment` | R1–R4 and R6 fixes, V32, CI workflow, scripts, docs | **Yes**, after CI passes and the steps in `docs/phase0.5/PHASE0.5_CONTAINMENT_RELEASE.md` |
+| `phase2-payment-lifecycle` | Phase 1 + Boot 4.1.1 + Phase 2 lifecycle (V37–V38) | **Yes**, after a staging soak with provider sandboxes (timeouts forced) and the decisions in the Phase 2 report |
 | `phase1-spring-boot-upgrade` | Phase 1 + Spring Boot 4.1.1 (3.x is out of support) | **Yes**, after a staging soak with the real frontends |
 | `phase1-financial-foundation` | Ledger (V33–V36), shadow posting, jobs, approvals, tax rates, admin API, `ledger-db` CI job | **Yes**, after CI passes. Shadow posting is off by default (`LEDGER_SHADOW_ENABLED`). |
 | `phase0-discovery` | Phase 0 documents (on top of `psp-foundation`) | Documents only |

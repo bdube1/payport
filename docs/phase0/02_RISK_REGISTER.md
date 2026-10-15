@@ -73,6 +73,24 @@
 | R44 | CI could pass while Docker-backed suites silently skipped | **Fixed**: required-test skip guard |
 | R41 | Chain seals are only tamper-evident if the latest seal is exported outside the database | Open: ops task in LEDGER_OPERATIONS.md section 3 |
 
+## Added during Phase 2
+
+| ID | Risk | Status |
+|---|---|---|
+| R45 | ZimSwitch webhooks were checked for structure only: a forged body with the success result code marked a card payment paid | **Fixed on `phase2-payment-lifecycle`**: ZimSwitch callbacks are confirmed by status query |
+| R46 | Staff `/api/v1/test` endpoints buy ZESA tokens with PayPort's float and mark any payment PAID, with no provider, audit row or second approver | **Contained on `phase2-payment-lifecycle`**: off unless `PAYPORT_TEST_ENDPOINTS_ENABLED=true`. Confirm whether ops use them; if so, replace with a four-eyes ops action |
+| R47 | The provider was called inside the DB transaction: an exception rolled the payment back to INITIATED, allowing a second push | **Fixed** (commit before call) |
+| R48 | Read timeouts and 5xx responses marked payments FAILED with a failure SMS while the customer may have been charged | **Fixed** (UNKNOWN outcome, resolved by query) |
+| R49 | Fulfilment "automatic retries" never ran: the retry found the payment in FULFILMENT_FAILED and skipped it | **Fixed**: automatic retry of *definite* failures works, but is off by default pending per-provider review |
+| R50 | Econet airtime has no delivery query, so a timed-out delivery can only be resolved by a person | Open: request a status API from Econet; until then, MANUAL queue (runbook) |
+| R51 | The audit log used a separate transaction: an extra pooled connection per status change, and audit rows that survived a rolled-back change | **Fixed**: audit joins the caller's transaction |
+
+**Phase 2 status of earlier risks:**
+- **R4 / R6:** closed by design on the Phase 2 branch. The callback inbox and query-confirmed callbacks cover R4; the durable resolver, with no time-based failure, covers R6.
+- **R11 (schedulers):** the payment resolver now runs under a lease, and fulfilment jobs are claimed atomically.
+- **R12 (lost fulfilment jobs):** fixed by durable jobs.
+- **R22 (single status field):** partly addressed. Attempts, checks and jobs now carry their own states. The `transactions.status` field is unchanged for compatibility.
+
 ## Low
 
 | ID | Risk |
