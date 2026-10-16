@@ -23,9 +23,9 @@ CREATE TABLE service_lines (
     harvest_status    VARCHAR(30)   NOT NULL,
     updated_by        VARCHAR(160)  NOT NULL,
     updated_at        DATETIME(6)   NOT NULL,
-    CONSTRAINT chk_sl_status CHECK (licence_status IN ('NOT_ASSESSED','APPLIED','GRANTED','NOT_REQUIRED','REFUSED')),
-    CONSTRAINT chk_sl_enabled CHECK (enabled = FALSE OR licence_status IN ('GRANTED','NOT_REQUIRED')),
-    CONSTRAINT chk_sl_harvest CHECK (harvest_status IN ('BUILT','PARKED'))
+    CONSTRAINT chk_svl_status CHECK (licence_status IN ('NOT_ASSESSED','APPLIED','GRANTED','NOT_REQUIRED','REFUSED')),
+    CONSTRAINT chk_svl_enabled CHECK (enabled = FALSE OR licence_status IN ('GRANTED','NOT_REQUIRED')),
+    CONSTRAINT chk_svl_harvest CHECK (harvest_status IN ('BUILT','PARKED'))
 );
 
 INSERT INTO service_lines (code, name, description, licence_question, harvest_status, updated_by, updated_at) VALUES

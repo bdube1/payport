@@ -125,7 +125,14 @@ public class UssdService {
         ccys.retainAll(p.currencies());
         if (ccys.isEmpty()) return "END " + p.name() + " cannot be paid in this country's currencies.";
         if (s.length == 2) {
-            BillerAdaptor.Account a = biller.lookup(account, ccys.get(0), "+" + msisdn);
+            BillerAdaptor.Account a;
+            try {
+                a = biller.lookup(account, ccys.get(0), "+" + msisdn);
+            } catch (IllegalArgumentException e) {
+                return "END " + clip(e.getMessage(), 150);
+            } catch (Exception e) {
+                return "END " + clip(p.name() + " is not responding. Please try again later. No money was taken.", 150);
+            }
             if (!a.payable()) return "END " + clip(a.notPayableReason() == null ? "This account cannot be paid." : a.notPayableReason(), 150);
             List<String> accepted = new ArrayList<>(ccys);
             if (a.acceptedCurrencies() != null && !a.acceptedCurrencies().isEmpty()) accepted.retainAll(a.acceptedCurrencies());
