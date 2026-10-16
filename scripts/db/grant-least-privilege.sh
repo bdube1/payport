@@ -15,7 +15,7 @@ HOST=$1 PORT=$2 ADMIN=$3 PASS=$4 DB=$5 APP=$6 APPHOST=${7:-%} MODE=${8:-apply}
 export MYSQL_PWD="$PASS"
 m() { mysql --host="$HOST" --port="$PORT" --user="$ADMIN" --protocol=TCP -N -B "$@"; }
 
-PUBLIC_PROCS="ledger_open_account ledger_post ledger_reverse ledger_close_period ledger_reopen_period ledger_seal ledger_integrity_report"
+PUBLIC_PROCS="ledger_open_account ledger_post ledger_reverse ledger_close_period ledger_reopen_period ledger_seal ledger_integrity_report ref_upsert_country ref_set_country_enabled ref_upsert_currency ref_enable_currency ref_upsert_legal_entity"
 
 {
   echo "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '$APP'@'$APPHOST';"

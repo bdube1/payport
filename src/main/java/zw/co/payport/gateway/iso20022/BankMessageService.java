@@ -38,6 +38,8 @@ import java.util.Map;
 @Service
 public class BankMessageService {
 
+    public static final String HVPS_PLUS = "camt.053.001.08-HVPSPLUS";
+
     private final JdbcTemplate jdbc;
     private final Iso20022Schemas schemas;
     private final MarketRegistry markets;
@@ -97,8 +99,11 @@ public class BankMessageService {
             return out;
         }
         List<Camt053Parser.Statement> statements = Camt053Parser.parse(doc, 2);
+        java.util.Set<String> guidelines = new java.util.TreeSet<>();
         for (Camt053Parser.Statement s : statements) {
             MarketRegistry.Market market = markets.requireForCurrency(s.currency());
+            String g = market.bank().statementGuideline();
+            if (g != null && !g.isBlank()) guidelines.add(g);
             MarketRegistry.BankAccount account = markets.bankAccount(s.currency());
             if (!account.number().equals(s.accountId())) {
                 throw new Iso20022Schemas.InvalidMessageException("Statement " + s.statementId() + " is for account " + s.accountId()
@@ -112,6 +117,8 @@ public class BankMessageService {
                     s.accountId(), s.currency(), s.statementId());
             if (dup != null && dup > 0) throw new IllegalStateException("Statement " + s.statementId() + " was already imported from another file");
         }
+        // The market's bank may require its usage guideline (e.g. HVPS+) on top of the base schema.
+        for (String g : guidelines) schemas.validateGuideline(g, xml);
         long messageId = storeMessage("IN", Iso20022Schemas.CAMT_053, Xml.max(statements.isEmpty() ? "EMPTY" : statements.get(0).msgId(), 35), null, sha, xml, by);
         List<Map<String, Object>> results = new ArrayList<>();
         for (Camt053Parser.Statement s : statements) results.add(store(messageId, s, by));
@@ -203,6 +210,7 @@ public class BankMessageService {
     public Map<String, Boolean> schemaStatus() {
         Map<String, Boolean> m = new LinkedHashMap<>();
         for (String s : List.of(Iso20022Schemas.CAMT_053, Iso20022Schemas.PAIN_001, Iso20022Schemas.PAIN_002)) m.put(s, schemas.installed(s));
+        m.put("guideline:" + HVPS_PLUS, schemas.guidelineInstalled(HVPS_PLUS));
         return m;
     }
 

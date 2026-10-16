@@ -45,6 +45,33 @@ public class Iso20022Schemas {
         return getClass().getResource("/iso20022/xsd/" + message + ".xsd") != null;
     }
 
+    /** A bank or market usage guideline (a stricter profile of a base message), e.g. "camt.053.001.08-HVPSPLUS". */
+    public boolean guidelineInstalled(String guideline) {
+        return guideline != null && guideline.matches("[A-Za-z0-9._-]{1,80}")
+                && getClass().getResource("/iso20022/xsd/guidelines/" + guideline + ".xsd") != null;
+    }
+
+    /**
+     * Validates against a usage guideline on top of the base schema. The guideline's base message is the
+     * part of its name before the first '-'. Fails closed when the guideline is not installed.
+     */
+    public Document validateGuideline(String guideline, byte[] xml) {
+        if (!guidelineInstalled(guideline)) throw new InvalidMessageException("Usage guideline " + guideline + " is not installed");
+        String base = guideline.contains("-") ? guideline.substring(0, guideline.indexOf('-')) : guideline;
+        Document doc = validate(base, xml);
+        try {
+            Validator v = schema("guidelines/" + guideline).newValidator();
+            v.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            v.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            v.validate(new DOMSource(doc));
+        } catch (SAXException e) {
+            throw new InvalidMessageException("The statement conforms to " + base + " but not to the bank's usage guideline " + guideline + ": " + e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+        return doc;
+    }
+
     Schema schema(String message) {
         return cache.computeIfAbsent(message, m -> {
             InputStream in = getClass().getResourceAsStream("/iso20022/xsd/" + m + ".xsd");

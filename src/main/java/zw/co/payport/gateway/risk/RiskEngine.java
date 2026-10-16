@@ -64,6 +64,7 @@ public class RiskEngine {
             active = rules().stream().filter(r -> !"OFF".equals(r.mode())).toList();
         } catch (RuntimeException e) {
             log.error("[RISK] rules unavailable, payment {} not evaluated: {}", p.reference(), e.getMessage());
+            screeningUnavailable("risk rules unavailable: " + e.getMessage(), p.reference(), false);
             return;
         }
         if (p.customerName() == null && p.customerPhone() != null) {
@@ -96,6 +97,13 @@ public class RiskEngine {
                 block |= blocks;
             } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
                 log.error("[RISK] rule {} failed for {}: {}", r.code(), p.reference(), e.getMessage());
+                if ("SANCTIONS".equals(r.type())) {
+                    // A screening that failed is not a screening that passed: same handling as INCOMPLETE.
+                    boolean blocks = "ENFORCE".equals(r.mode()) && "BLOCK".equals(r.action()) && r.approved();
+                    boolean blockIncomplete = blocks && "BLOCK".equals(params.get("SCREENING.INCOMPLETE_PAYMENT_ACTION").asText());
+                    screeningUnavailable("screening failed: " + e.getMessage(), p.reference(), blockIncomplete);
+                    block |= blockIncomplete;
+                }
             }
         }
         if (block) throw new RiskDeclinedException(p.reference());
@@ -271,7 +279,7 @@ public class RiskEngine {
 
     /** After a new list version: every merchant under review or active, and every registered customer. */
     public Map<String, Integer> rescreenAll(String context) {
-        int merchants = 0, customers = 0, hits = 0;
+        int merchants = 0, customers = 0, hits = 0, incomplete = 0;
         for (Map<String, Object> m : jdbc.queryForList("SELECT m.id, m.business_name, m.registration_number, "
                 + "(SELECT u.full_name FROM merchant_users u WHERE u.merchant_id = m.id AND u.role = 'OWNER' LIMIT 1) AS owner "
                 + "FROM merchants m WHERE m.status IN ('PENDING','UNDER_REVIEW','UPDATE_REQUIRED','ACTIVE','SUSPENDED')")) {
@@ -279,13 +287,15 @@ public class RiskEngine {
                     (String) m.get("registration_number"), context);
             merchants++;
             if (!r.matches().isEmpty()) hits++;
+            if ("INCOMPLETE".equals(r.outcome())) incomplete++;
         }
         for (Map<String, Object> c : jdbc.queryForList("SELECT phone, full_name FROM users WHERE role = 'CUSTOMER' AND is_active = TRUE")) {
             ScreeningService.Result r = screenCustomer((String) c.get("phone"), (String) c.get("full_name"), context);
             customers++;
             if (!r.matches().isEmpty()) hits++;
+            if ("INCOMPLETE".equals(r.outcome())) incomplete++;
         }
-        log.info("[RISK] Re-screened {} merchants and {} customers after a list update: {} potential matches", merchants, customers, hits);
-        return Map.of("merchants", merchants, "customers", customers, "potentialMatches", hits);
+        log.info("[RISK] Re-screened {} merchants and {} customers ({}): {} potential matches, {} incomplete", merchants, customers, context, hits, incomplete);
+        return Map.of("merchants", merchants, "customers", customers, "potentialMatches", hits, "incomplete", incomplete);
     }
 }

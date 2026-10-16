@@ -27,6 +27,20 @@ class Iso20022MappingTest {
     }
 
     @Test
+    void bankUsageGuidelineIsAStricterLayer() throws Exception {
+        String hv = fixture("camt053-hvpsplus.xml").replace("{{E2E_PAID}}", "PO-1");
+        assertDoesNotThrow(() -> schemas.validateGuideline(BankMessageService.HVPS_PLUS, hv.getBytes(StandardCharsets.UTF_8)));
+        var s = Camt053Parser.parse(schemas.validate(Iso20022Schemas.CAMT_053, hv.getBytes(StandardCharsets.UTF_8)), 2).get(0);
+        assertEquals("BNK-REF-HV-1", s.entries().get(0).bankReference(), "HVPS+ carries the bank reference in TxDtls/Refs");
+        assertEquals(java.time.LocalDate.of(2026, 10, 16), s.entries().get(0).bookingDate());
+        // The base fixture is valid ISO 20022 but not HVPS+ (no pagination, no UTC offsets, a pending entry).
+        String base = fixture("camt053-sample.xml").replace("{{E2E_PAID}}", "PO-1");
+        var e = assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> schemas.validateGuideline(BankMessageService.HVPS_PLUS, base.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(e.getMessage().contains("usage guideline"), e.getMessage());
+        assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> schemas.validateGuideline("../../etc/passwd", base.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
     void camt053_validatesAndMapsBalancesEntriesAndReferences() throws Exception {
         byte[] xml = fixture("camt053-sample.xml").replace("{{E2E_PAID}}", "PO-USD-20261016-abcd1234-1").getBytes(StandardCharsets.UTF_8);
         var doc = schemas.validate(Iso20022Schemas.CAMT_053, xml);

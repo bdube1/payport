@@ -19,7 +19,7 @@ import java.util.List;
  *   Ntry Amt, CdtDbtInd             -> entry amount and direction
  *   Ntry Sts (BOOK, PDNG, INFO)     -> only BOOK entries count towards the balance check and tracing
  *   Ntry BookgDt / ValDt            -> booking and value dates
- *   Ntry AcctSvcrRef                -> the bank's reference
+ *   Ntry AcctSvcrRef (or TxDtls/Refs/AcctSvcrRef, as in HVPS+) -> the bank's reference
  *   TxDtls/Refs/EndToEndId          -> PayPort's payout instruction_ref for outgoing payouts
  *   TxDtls/RltdPties Cdtr or Dbtr   -> counterparty name; RmtInf/Ustrd -> remittance text
  */
@@ -74,7 +74,8 @@ public final class Camt053Parser {
                 String direction = Xml.text(ntry, "CdtDbtInd");
                 String party = "DBIT".equals(direction) ? Xml.text(tx, "RltdPties", "Cdtr", "Pty", "Nm") : Xml.text(tx, "RltdPties", "Dbtr", "Pty", "Nm");
                 entries.add(new Entry(n, direction, Xml.minor(amt.getTextContent(), minorUnits), amt.getAttribute("Ccy"), status,
-                        date(Xml.child(ntry, "BookgDt")), date(Xml.child(ntry, "ValDt")), Xml.text(ntry, "AcctSvcrRef"),
+                        date(Xml.child(ntry, "BookgDt")), date(Xml.child(ntry, "ValDt")),
+                        Xml.text(ntry, "AcctSvcrRef") != null ? Xml.text(ntry, "AcctSvcrRef") : Xml.text(tx, "Refs", "AcctSvcrRef"),
                         Xml.text(tx, "Refs", "EndToEndId"), party, Xml.text(tx, "RmtInf", "Ustrd")));
             }
             out.add(new Statement(msgId, Xml.text(st, "Id"), accountId, ccy, dateTime(Xml.text(st, "FrToDt", "FrDtTm")),

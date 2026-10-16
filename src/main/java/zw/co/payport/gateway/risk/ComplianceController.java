@@ -162,7 +162,8 @@ public class ComplianceController {
     /** Ad-hoc check (no alert): who on the lists matches these names/identifiers. */
     @PostMapping("/screening/check")
     public ResponseEntity<ApiResponse<List<ScreeningService.Match>>> check(@RequestBody ScreenBody b, HttpServletRequest req) {
-        return ok(screening.screen("ADHOC:" + officer(), "ADHOC", b.names(), b.identifiers(), parameters.number("SCREENING.MIN_SCORE")).matches(), req);
+        // The whole result: an INCOMPLETE screening (lists unavailable or outdated) must never look like "no matches".
+        return ok(screening.screen("ADHOC:" + officer(), "ADHOC", b.names(), b.identifiers(), parameters.number("SCREENING.MIN_SCORE")), req);
     }
 
     @GetMapping("/screening/status")

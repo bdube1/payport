@@ -77,7 +77,11 @@ public class PaymentLinkService {
     }
 
     /** Public -- called when a customer visits the link. Creates a fresh CheckoutSession and returns its id. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channels;
+
     public Long startCheckoutFromLink(String slug, Long customAmountCents) {
+        if (channels != null) channels.require("PAYMENT_LINK");
         PaymentLink link = getBySlug(slug);
         if (!"ACTIVE".equals(link.getStatus())) {
             throw new RuntimeException("This payment link is no longer active");

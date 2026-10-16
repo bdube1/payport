@@ -71,12 +71,31 @@ public class TransactionOrchestratorService {
             throw new DuplicateReferenceException(dto.getReference());
         }
 
+        // Channel switched off from the portal: refuse before anything is created or sent. Merchant
+        // checkout ("API") is checked by CheckoutSessionService (API key, payment link, hosted page).
+        String channel = dto.getChannel() == null ? "WEB" : dto.getChannel().toUpperCase(java.util.Locale.ROOT);
+        if (channelService != null && !"API".equals(channel)) channelService.require(channel);
+
         ProductType product = productTypeRepository
                 .findByCodeAndIsActiveTrue(dto.getProductTypeCode())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Product type not found or inactive: " + dto.getProductTypeCode()));
 
         product.validateAmount(dto.getAmountCents());
+
+        // Currency switches from the portal: the platform must accept the currency (and, outside merchant
+        // checkout, take live money in it), and the product must have it switched on.
+        String payCcy = dto.getCurrency() == null ? "USD" : dto.getCurrency().toUpperCase(java.util.Locale.ROOT);
+        if (marketRegistry != null) {
+            boolean ok = "API".equals(channel) ? marketRegistry.supportedCurrency(payCcy) : marketRegistry.liveCurrency(payCcy);
+            if (!ok) throw new IllegalArgumentException("Payments in " + payCcy + " are not available at the moment");
+        }
+        Integer productCurrencies = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_currencies WHERE product_type_id = ?", Integer.class, product.getId());
+        if (productCurrencies != null && productCurrencies > 0) {
+            Integer active = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_currencies WHERE product_type_id = ? AND currency = ? AND is_active = TRUE",
+                    Integer.class, product.getId(), payCcy);
+            if (active == null || active == 0) throw new IllegalArgumentException(product.getName() + " is not available in " + payCcy + " at the moment");
+        }
 
         // Phase 6: transaction monitoring (OBSERVE = alert only; ENFORCE + BLOCK refuses here, before payment).
         if (riskEngine != null) {
@@ -250,6 +269,12 @@ public class TransactionOrchestratorService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.risk.RiskEngine riskEngine;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channelService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.markets.MarketRegistry marketRegistry;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.integration.IntegrationRegister integrationRegister;

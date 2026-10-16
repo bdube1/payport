@@ -83,6 +83,11 @@ public class SecurityConfig {
                         // permitted.
                         .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/checkout/*/pay").permitAll()
+                        // Phase 8: QR for an open session, QR resolution, USSD aggregator (HMAC-signed), FX quotes
+                        .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*/qr").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/qr/resolve").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ussd").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/fx/quote").permitAll()
 
                         // Payment Links -- a customer visiting a shareable
                         // link has no more auth than a hosted checkout page

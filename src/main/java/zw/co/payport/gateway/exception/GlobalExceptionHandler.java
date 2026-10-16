@@ -111,6 +111,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("PROVIDER_UNAVAILABLE", ex.getMessage(), requestId(req)));
     }
 
+    /** A channel switched off from the portal: nothing was sent. 503 CHANNEL_UNAVAILABLE. */
+    @ExceptionHandler(zw.co.payport.gateway.channels.ChannelUnavailableException.class)
+    public ResponseEntity<ApiResponse<?>> handleChannelUnavailable(zw.co.payport.gateway.channels.ChannelUnavailableException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] channel {} switched off: {} {}", ex.getChannel(), req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "300")
+                .body(ApiResponse.error("CHANNEL_UNAVAILABLE", ex.getMessage(), requestId(req)));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<?>> handleRuntimeException(RuntimeException ex, HttpServletRequest req) {
         log.warn("[GATEWAY] {} on {} {}: {}",

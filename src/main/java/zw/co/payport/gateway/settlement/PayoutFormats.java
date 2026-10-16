@@ -18,14 +18,16 @@ public class PayoutFormats {
     public PayoutFormats(List<PayoutFileAdapter> adapters, MarketRegistry markets) {
         this.byFormat = adapters.stream().collect(Collectors.toMap(PayoutFileAdapter::format, Function.identity()));
         this.markets = markets;
-        for (MarketRegistry.Market m : markets.all()) {
-            if (!byFormat.containsKey(m.bank().payoutFormat())) {
-                throw new IllegalStateException(m.country() + ": no adapter for payout format " + m.bank().payoutFormat());
-            }
-        }
+    }
+
+    public boolean supports(String format) {
+        return byFormat.containsKey(format);
     }
 
     public PayoutFileAdapter forCurrency(String currency) {
-        return byFormat.get(markets.requireForCurrency(currency).bank().payoutFormat());
+        String format = markets.requireForCurrency(currency).bank().payoutFormat();
+        PayoutFileAdapter a = byFormat.get(format);
+        if (a == null) throw new IllegalStateException("No adapter for payout format " + format);
+        return a;
     }
 }

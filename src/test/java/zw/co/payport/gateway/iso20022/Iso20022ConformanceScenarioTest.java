@@ -59,11 +59,15 @@ class Iso20022ConformanceScenarioTest {
         r.add("payport.settlement.mode", () -> "LIVE");
         r.add("payport.settlement.require-reconciled", () -> "false");
         r.add("payport.screening.un.enabled", () -> "false");
-        // Deployment configuration, not code: this ZW deployment's bank takes ISO 20022.
-        r.add("payport.markets.ZW.bank.payout-format", () -> "ISO20022_PAIN_001_001_09");
-        r.add("payport.markets.ZW.bank.accounts.USD.number", () -> ACCOUNT);
-        r.add("payport.markets.ZW.bank.bic", () -> "PPTSZWHA");
-        r.add("payport.markets.ZW.bank.name", () -> "Test Sponsor Bank");
+    }
+
+    /** Market settings are data (set from the ops console in real life): this ZW bank takes ISO 20022. */
+    @org.junit.jupiter.api.BeforeEach
+    void bankSettings() {
+        jdbc.update("UPDATE markets SET payout_format = 'ISO20022_PAIN_001_001_09', bank_bic = 'PPTSZWHA', bank_name = 'Test Sponsor Bank', "
+                + "statement_guideline = NULL WHERE country = 'ZW'");
+        jdbc.update("UPDATE market_currencies SET bank_account_number = ? WHERE currency = 'USD'", ACCOUNT);
+        markets.reload();
     }
 
     @MockitoBean SmsNotificationService sms;
@@ -106,8 +110,8 @@ class Iso20022ConformanceScenarioTest {
 
     @Test
     void payoutFlow_pain001_pain002_camt053_tracedThroughTheLedger() throws Exception {
-        assertEquals(Map.of(Iso20022Schemas.CAMT_053, true, Iso20022Schemas.PAIN_001, true, Iso20022Schemas.PAIN_002, true), bank.schemaStatus(),
-                "official schemas must be installed (scripts/iso20022/fetch-schemas.sh)");
+        assertEquals(Map.of(Iso20022Schemas.CAMT_053, true, Iso20022Schemas.PAIN_001, true, Iso20022Schemas.PAIN_002, true,
+                "guideline:" + BankMessageService.HVPS_PLUS, true), bank.schemaStatus(), "schemas must be installed and pinned (scripts/iso20022)");
         assertEquals(List.of(), markets.referenceDataProblems());
 
         long alpha = merchant("Alpha Store", "BANK", "1234567890", "Test Bank Harare", "Samora Machel Ave");
@@ -181,8 +185,22 @@ class Iso20022ConformanceScenarioTest {
         assertTrue(unbalanced.getMessage().contains("does not balance"), unbalanced.getMessage());
         assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> bank.importStatement(
                 stmt.replace("<CdtDbtInd>DBIT</CdtDbtInd>", "<CdtDbtInd>DEBIT</CdtDbtInd>").getBytes(StandardCharsets.UTF_8), "fin.carol"));
-        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM bank_statements WHERE account_id IN (?, 'SOMEONE-ELSE')", Integer.class, ACCOUNT),
-                "nothing stored from refused files");
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM bank_statements WHERE account_id IN (?, 'SOMEONE-ELSE') AND statement_id <> 'STMT-HV-20261016-USD'",
+                Integer.class, ACCOUNT), "nothing stored from refused files");
+
+        // The bank's usage guideline (HVPS+) switched on for ZW from the market settings: a base-only statement is
+        // now refused; one that follows the guideline is accepted and traced to the same journal.
+        jdbc.update("UPDATE markets SET statement_guideline = ? WHERE country = 'ZW'", BankMessageService.HVPS_PLUS);
+        markets.reload();
+        var notGuideline = assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> bank.importStatement(
+                stmt.replace("STMT-20261016-USD", "S4").getBytes(StandardCharsets.UTF_8), "fin.carol"));
+        assertTrue(notGuideline.getMessage().contains("usage guideline"), notGuideline.getMessage());
+        String hv = Iso20022MappingTest.fixture("camt053-hvpsplus.xml").replace("{{E2E_PAID}}", refs.get(alpha));
+        @SuppressWarnings("unchecked") Map<String, Object> hvSt = ((List<Map<String, Object>>) bank.importStatement(hv.getBytes(StandardCharsets.UTF_8), "fin.carol")
+                .get("statements")).get(0);
+        assertEquals(Map.of("TRACED", 1), hvSt.get("trace"));
+        assertEquals(entryRef, jdbc.queryForObject("SELECT ledger_entry_ref FROM bank_statement_entries WHERE bank_reference = 'BNK-REF-HV-1'", String.class),
+                "HVPS+ references (TxDtls/Refs/AcctSvcrRef) trace to the same journal");
 
         assertEquals(List.of(), ledger.integrityReport());
     }

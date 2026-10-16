@@ -51,6 +51,9 @@ public class CheckoutSessionService {
     private final zw.co.payport.gateway.markets.MarketRegistry markets;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channels;
+
     public record CreateSessionRequest(
             String reference, Long amountCents, String currency, String description,
             String customerPhone, String customerEmail,
@@ -73,6 +76,7 @@ public class CheckoutSessionService {
             throw new RuntimeException(e.getMessage());
         }
 
+        if (channels != null && apiKeyId != null) channels.require("API");
         boolean livemode = resolveLivemode(merchant, apiKeyId);
         if (livemode) requireLiveCurrency(merchant.getId(), currency);
 
@@ -111,7 +115,7 @@ public class CheckoutSessionService {
      * page's pay step (an enablement can be withdrawn after a session was created).
      */
     public boolean isSupportedCurrency(String currency) {
-        return markets.forCurrency(currency).isPresent();
+        return markets.supportedCurrency(currency);
     }
 
     public void requireLiveCurrency(Long merchantId, String currency) {
@@ -303,6 +307,7 @@ public class CheckoutSessionService {
         if (!"CREATED".equals(session.getStatus())) {
             throw new RuntimeException("This checkout session cannot accept payment (status: " + session.getStatus() + ")");
         }
+        if (channels != null) channels.require("HOSTED_CHECKOUT");
 
         Merchant merchant = merchantRepository.findById(session.getMerchantId())
                 .orElseThrow(() -> new RuntimeException("Merchant not found"));

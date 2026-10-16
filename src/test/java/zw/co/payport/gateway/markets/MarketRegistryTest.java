@@ -1,85 +1,52 @@
 package zw.co.payport.gateway.markets;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** The country and entity model is configuration: invariants, lookups, and no market-specific code for the sandbox country. */
+/** Market settings rules (no database), and no market-specific code for the sandbox country. */
 class MarketRegistryTest {
 
-    private final MarketRegistry markets = new MarketRegistry(new MockEnvironment(), null);
-
-    MarketRegistryTest() throws Exception {}
-
-    @Test
-    void liveAndSandboxMarketsLoadFromConfiguration() {
-        MarketRegistry.Market zw = markets.require("ZW"), zm = markets.require("ZM");
-        assertTrue(zw.live());
-        assertEquals("PAYPORT_ZW", zw.legalEntity());
-        assertEquals("SANDBOX", zm.status());
-        assertEquals("PAYPORT_ZM_SANDBOX", zm.legalEntity());
-        assertTrue(markets.liveCurrency("USD"));
-        assertTrue(markets.liveCurrency("zwg"));
-        assertFalse(markets.liveCurrency("ZMW"), "a sandbox market's currency never takes live money");
-        assertFalse(markets.liveCurrency("EUR"));
-        assertEquals("ZMW", markets.requireSupportedCurrency("zmw"));
-        var e = assertThrows(IllegalArgumentException.class, () -> markets.requireSupportedCurrency("EUR"));
-        assertTrue(e.getMessage().contains("USD") && e.getMessage().contains("ZMW"), e.getMessage());
-        assertEquals("ZM", markets.requireForCurrency("ZMW").country());
-        assertEquals("ISO20022_PAIN_001_001_09", zm.bank().payoutFormat());
-        assertEquals("PAYPORT_CSV_V1", zw.bank().payoutFormat(), "ZW keeps the interim CSV until the sponsor bank confirms its format");
-        assertEquals("MERCHANT_CHECKOUT_ZWG", markets.checkoutProductType("ZWG"));
-        assertEquals("K", markets.symbol("ZMW"));
+    static MarketRegistry.Market market(String status, boolean live, String account) {
+        return new MarketRegistry.Market("XX", "Example", status, null, "PAYPORT_XX", "Africa/Harare", "999", Pattern.compile("^7[0-9]{8}$"),
+                List.of(new MarketRegistry.Currency("XXA", true, live, "A ", "MERCHANT_CHECKOUT", "999")), "CALENDAR.XX.HOLIDAYS", Map.of(), "NOT_CONFIGURED",
+                List.of("UN-CONSOLIDATED"), new MarketRegistry.Bank("Bank", null, "PAYPORT_CSV_V1", "ISO20022_CAMT_053_001_08", null, null,
+                Map.of("XXA", new MarketRegistry.BankAccount("XXA", account, "Settlement", "SETTLEMENT_XXA"))), 1);
     }
 
     @Test
-    void phoneNumbersFollowEachMarketsNumberingPlan() {
-        assertEquals("263771234567", markets.normaliseMobile("+263 77 123 4567", "ZW").orElseThrow());
-        assertEquals("263771234567", markets.normaliseMobile("0771234567", "ZW").orElseThrow());
-        assertTrue(markets.normaliseMobile("0961234567", "ZW").isEmpty());
-        assertEquals("260961234567", markets.normaliseMobile("0961234567", "ZM").orElseThrow());
+    void validSettingsPass() {
+        assertEquals(List.of(), MarketRegistry.validate(market("LIVE", true, "0123456789")));
+        assertEquals(List.of(), MarketRegistry.validate(market("SANDBOX", false, "0123456789")));
     }
 
     @Test
-    void deploymentCanOverrideBankDetailsWithoutCodeChanges() throws Exception {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("payport.markets.ZW.bank.payout-format", "ISO20022_PAIN_001_001_09")
-                .withProperty("payport.markets.ZW.bank.accounts.USD.number", "ACC-123");
-        MarketRegistry r = new MarketRegistry(env, null);
-        assertEquals("ISO20022_PAIN_001_001_09", r.require("ZW").bank().payoutFormat());
-        assertEquals("ACC-123", r.bankAccount("USD").number());
-        assertTrue(r.summary().toString().contains("****-123"), "account numbers are masked in the summary");
-    }
-
-    @Test
-    void invariantsAreEnforced() throws Exception {
-        ObjectMapper om = new ObjectMapper();
-        var zm = (com.fasterxml.jackson.databind.node.ObjectNode) om.readTree(getClass().getResourceAsStream("/markets/ZM.json"));
-        ((com.fasterxml.jackson.databind.node.ObjectNode) zm.path("currencies").get(0)).put("live", true);
-        var e = assertThrows(IllegalStateException.class, () -> MarketRegistry.validate(MarketRegistry.parse(zm, new MockEnvironment())));
-        assertTrue(e.getMessage().contains("SANDBOX"), e.getMessage());
-
-        var zw = (com.fasterxml.jackson.databind.node.ObjectNode) om.readTree(getClass().getResourceAsStream("/markets/ZW.json"));
-        ((com.fasterxml.jackson.databind.node.ObjectNode) zw.path("bank")).put("payoutFormat", "SOMETHING_ELSE");
-        assertThrows(IllegalStateException.class, () -> MarketRegistry.validate(MarketRegistry.parse(zw, new MockEnvironment())));
-
-        var noAccount = (com.fasterxml.jackson.databind.node.ObjectNode) om.readTree(getClass().getResourceAsStream("/markets/ZW.json"));
-        ((com.fasterxml.jackson.databind.node.ObjectNode) noAccount.path("bank").path("accounts")).remove("ZWG");
-        assertThrows(IllegalStateException.class, () -> MarketRegistry.validate(MarketRegistry.parse(noAccount, new MockEnvironment())));
+    void invariantsAreEnforced() {
+        assertTrue(MarketRegistry.validate(market("SANDBOX", true, "0123")).toString().contains("SANDBOX"), "a sandbox market never takes live money");
+        assertFalse(MarketRegistry.validate(market("LIVE", true, "")).isEmpty(), "every currency needs a bank account");
+        assertFalse(MarketRegistry.validate(market("OPEN", false, "1")).isEmpty(), "unknown status");
+        MarketRegistry.Market disabledLive = new MarketRegistry.Market("XX", "Example", "LIVE", null, "E", "Africa/Harare", "999", Pattern.compile("x"),
+                List.of(new MarketRegistry.Currency("XXA", false, true, "A", "P", null)), "C", Map.of(), "F", List.of(),
+                new MarketRegistry.Bank("B", "NOT A BIC", "SOMETHING_ELSE", "ISO20022_CAMT_053_001_08", null, null,
+                        Map.of("XXA", new MarketRegistry.BankAccount("XXA", "1", "n", "O"))), 1);
+        String p = MarketRegistry.validate(disabledLive).toString();
+        assertTrue(p.contains("cannot be live while disabled"), p);
+        assertTrue(p.contains("unknown payout format"), p);
+        assertTrue(p.contains("not a valid BIC"), p);
+        assertEquals("****6789", MarketRegistry.mask("0123456789"));
     }
 
     /**
-     * Phase 7 acceptance: "adding a sandbox country needs configuration plus adapters only".
-     * The sandbox country appears in configuration and reference data, never in application code.
+     * "Adding or switching on a country needs configuration only": no application code names the
+     * sandbox country, its currency or entity. Its settings live in the database (markets).
      */
     @Test
     void noApplicationCodeNamesTheSandboxCountry() throws Exception {

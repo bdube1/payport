@@ -109,10 +109,24 @@ public class ScreeningService {
                 + "source_generated_at, last_checked_at, last_check_status, last_error, loaded_by, loaded_at FROM screening_lists ORDER BY code");
     }
 
-    /** Health of the lists: which required ones are current. Null reason = complete. */
+    /**
+     * Health of the lists: which required ones are current. Null reason = complete.
+     * Never null unless at least one required list is active and every list a market requires is
+     * active and required: an empty or switched-off configuration is INCOMPLETE, not CLEAR.
+     */
     public String incompleteReason() {
         double maxAgeHours = params.number("SCREENING.MAX_LIST_AGE_HOURS");
         List<String> problems = new ArrayList<>();
+        Integer requiredActive = jdbc.queryForObject("SELECT COUNT(*) FROM screening_lists WHERE status = 'ACTIVE' AND required_for_clear = TRUE", Integer.class);
+        if (requiredActive == null || requiredActive == 0) problems.add("no required screening list is active");
+        java.util.Set<String> marketLists = new java.util.TreeSet<>();
+        for (String j : jdbc.queryForList("SELECT required_lists_json FROM markets WHERE status <> 'SUSPENDED'", String.class)) {
+            try { json.readTree(j).forEach(x -> marketLists.add(x.asText())); } catch (Exception e) { problems.add("a market's required lists are unreadable"); }
+        }
+        for (String code : marketLists) {
+            Integer ok = jdbc.queryForObject("SELECT COUNT(*) FROM screening_lists WHERE code = ? AND status = 'ACTIVE' AND required_for_clear = TRUE", Integer.class, code);
+            if (ok == null || ok == 0) problems.add(code + " (required by a market) is not an active required list");
+        }
         for (Map<String, Object> l : jdbc.queryForList("SELECT code, version, entry_count, last_checked_at, list_kind FROM screening_lists "
                 + "WHERE status = 'ACTIVE' AND required_for_clear = TRUE")) {
             String code = (String) l.get("code");
@@ -159,11 +173,6 @@ public class ScreeningService {
             log.error("[SCREENING] could not record screening run for {}: {}", subjectKey, e.getMessage());
         }
         return new Result(outcome, matches, versions, incomplete, runId);
-    }
-
-    /** Backwards-compatible: matches only (records a run with context ADHOC). */
-    public List<Match> screen(String subjectKey, List<String> names, List<String> identifiers, double minScore) {
-        return screen(subjectKey, "ADHOC", names, identifiers, minScore).matches();
     }
 
     List<Match> match(String subjectKey, List<String> names, List<String> identifiers, double minScore) {

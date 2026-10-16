@@ -82,14 +82,21 @@ public class MerchantPlatformService {
             if ((openCase != null && openCase > 0) || (confirmed != null && confirmed > 0)) {
                 throw new IllegalStateException("Compliance review pending for this merchant: approval is on hold");
             }
-            requireClearScreening(merchantId);
+            var screened = requireClearScreening(merchantId);
+            // The sanctions item is never a person's tick: it is the system's CLEAR result, recorded with its run.
+            checklist = new java.util.LinkedHashMap<>(checklist == null ? Map.of() : checklist);
+            checklist.put("sanctions_screened", true);
+            checklist.put("sanctions_screening_run_" + screened.runId(), true);
             for (String item : KYB_CHECKLIST) {
-                if (checklist == null || !Boolean.TRUE.equals(checklist.get(item))) {
+                if (!Boolean.TRUE.equals(checklist.get(item))) {
                     throw new IllegalArgumentException("checklist item not confirmed: " + item);
                 }
             }
-        } else if (note == null || note.isBlank()) {
-            throw new IllegalArgumentException("a reason is required to recommend rejection");
+        } else {
+            if (note == null || note.isBlank()) throw new IllegalArgumentException("a reason is required to recommend rejection");
+            // A rejection never records "screened" on someone's word.
+            checklist = new java.util.LinkedHashMap<>(checklist == null ? Map.of() : checklist);
+            checklist.remove("sanctions_screened");
         }
         String cl;
         try {
@@ -143,8 +150,9 @@ public class MerchantPlatformService {
      * KYB approval needs a CLEAR screening now: a match opens a compliance case (approval on hold);
      * INCOMPLETE (sanctions list unavailable or outdated) is never treated as cleared.
      */
-    void requireClearScreening(long merchantId) {
-        if (riskEngine == null) return;
+    zw.co.payport.gateway.risk.ScreeningService.Result requireClearScreening(long merchantId) {
+        // No screening service means no screening: never treated as cleared.
+        if (riskEngine == null) throw new IllegalStateException("Sanctions screening is not available: approval is not possible");
         Map<String, Object> m = jdbc.queryForMap("SELECT business_name, registration_number, "
                 + "(SELECT u.full_name FROM merchant_users u WHERE u.merchant_id = merchants.id AND u.role = 'OWNER' LIMIT 1) AS owner FROM merchants WHERE id = ?", merchantId);
         var res = riskEngine.screenMerchant(merchantId, (String) m.get("business_name"), (String) m.get("owner"), (String) m.get("registration_number"), "KYB");
@@ -152,6 +160,7 @@ public class MerchantPlatformService {
             throw new IllegalStateException("Sanctions screening could not be completed (screening list unavailable or outdated). Approval is not possible until screening is current.");
         }
         if (!res.clear()) throw new IllegalStateException("Compliance review pending for this merchant: approval is on hold");
+        return res;
     }
 
     public Map<String, Object> get(long caseId) {
