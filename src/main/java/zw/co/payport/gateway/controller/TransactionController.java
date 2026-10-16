@@ -49,6 +49,20 @@ public class TransactionController {
     private final TransactionRepository transactionRepository;
     private final TransactionAccessService accessService;
     private final zw.co.payport.gateway.payments.TransactionOutcomeService outcomes;
+    private final zw.co.payport.gateway.scheduler.PaymentTimeoutWatchdog paymentWindows;
+
+    /**
+     * One-session channels: wait for the final outcome; if the customer-facing wait ends while the
+     * payment is still open, close it now (final provider query, else TIMED_OUT / NO_RESPONSE --
+     * never FAILED), so what the customer is told and what PayPort does can never differ: a payment
+     * the customer was told timed out is never fulfilled.
+     */
+    private void answerOnTheSpot(String reference, int waitSeconds) throws InterruptedException {
+        var r = outcomes.waitForFinal(reference, waitSeconds);
+        if (r.isPresent() && r.get().status() == zw.co.payport.gateway.enums.TransactionStatus.PAYMENT_PENDING) {
+            paymentWindows.closeForCustomer(reference);
+        }
+    }
 
     /**
      * Step 1: Initiate a transaction
@@ -94,7 +108,7 @@ public class TransactionController {
         TransactionResponse tx = orchestratorService.submitPayment(request);
         if (waitSeconds > 0) {
             // One-session channels (USSD) can ask for the final outcome in the same call.
-            outcomes.waitForFinal(request.getReference(), waitSeconds);
+            answerOnTheSpot(request.getReference(), waitSeconds);
             TransactionResponse latest = orchestratorService.getTransaction(request.getReference());
             latest.setWidgetJsUrl(tx.getWidgetJsUrl());
             latest.setPaymentCorrelator(tx.getPaymentCorrelator());
@@ -229,9 +243,10 @@ public class TransactionController {
 
     /**
      * The final answer for one-session channels (USSD): waits up to waitSeconds (max 180) for
-     * SUCCEEDED, FAILED (with the provider's message), TIMED_OUT or NO_RESPONSE and returns
-     * whatever the outcome is by then (PROCESSING if the payment window is still open).
-     * Waiting never changes anything; the payment window is closed by the expiry job.
+     * SUCCEEDED, FAILED (with the provider's message), TIMED_OUT or NO_RESPONSE. If the wait ends
+     * while the payment is still open, the payment is closed for the customer (TIMED_OUT or
+     * NO_RESPONSE, never FAILED). PROCESSING is returned only when the payment was received and the
+     * delivery is still running. With waitSeconds=0 nothing is waited for or changed.
      */
     @GetMapping("/{reference}/outcome")
     public ResponseEntity<ApiResponse<TransactionResponse>> outcome(
@@ -241,7 +256,7 @@ public class TransactionController {
         String requestId = getRequestId(httpRequest);
         Access access = accessService.accessFor(reference, httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
         if (access == Access.NONE) return notFound(reference, requestId);
-        outcomes.waitForFinal(reference, waitSeconds);
+        if (waitSeconds > 0) answerOnTheSpot(reference, waitSeconds);
         return ResponseEntity.ok(ApiResponse.success(view(orchestratorService.getTransaction(reference), access), requestId));
     }
 

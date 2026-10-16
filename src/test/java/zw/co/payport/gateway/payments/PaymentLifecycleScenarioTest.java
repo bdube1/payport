@@ -97,7 +97,7 @@ class PaymentLifecycleScenarioTest {
     @Autowired PaymentCheckStore checks;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionOutcomeService outcomes;
-    @Autowired zw.co.payport.gateway.recon.LatePaymentService latePayments;
+    @Autowired zw.co.payport.gateway.recon.ReconExceptionStore reconExceptions;
     @Autowired org.springframework.boot.resttestclient.TestRestTemplate http;
 
     private static final AtomicInteger SEQ = new AtomicInteger((int) (System.nanoTime() % 400_000));
@@ -435,7 +435,7 @@ class PaymentLifecycleScenarioTest {
     }
 
     @Test
-    void windowClose_toldTimedOut_thenLatePaymentIsHeldForReview_thenHonouredWithFourEyes() throws Exception {
+    void windowClose_toldTimedOut_thenLatePaymentIsNeverFulfilled_onlyRefunded() throws Exception {
         String ref = newPayment(2000);
         pay(ref, "SIM");
         assertTrue(watchdog.runOnce(LocalDateTime.now().plusMinutes(5)) >= 1);
@@ -443,7 +443,7 @@ class PaymentLifecycleScenarioTest {
         assertEquals(TransactionOutcomeService.Outcome.TIMED_OUT, outcomes.current(ref).orElseThrow().outcome());
         assertEquals("The transaction timed out.", outcomes.current(ref).orElseThrow().message());
 
-        // The provider confirms after the customer was told "timed out": not applied, held for a person.
+        // The provider confirms after the customer was told "timed out": never fulfilled, refund required.
         assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 2000).status());
         assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
         assertNeverConfirmed(ref);
@@ -451,12 +451,48 @@ class PaymentLifecycleScenarioTest {
         callback("SIM", ref, "SUCCESS", 2000); // a repeat does not add a second exception
         assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
 
-        // Honour: requested by one person, approved by another; the requester cannot approve.
-        var request = latePayments.requestHonour(ref, "Customer confirmed, wants the service", "ops.alice");
-        assertThrows(Exception.class, () -> latePayments.approveHonour(request.id(), "ops.alice", java.util.Set.of("FINANCE"), "self"));
-        latePayments.approveHonour(request.id(), "fin.bob", java.util.Set.of("FINANCE"), "checked with provider");
-        assertConfirmedExactlyOnce(ref);
-        assertEquals(0, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+        // No path to fulfilment exists: the state machine refuses it, and the resolver cannot do it either.
+        assertFalse(TransactionStatus.PAYMENT_TIMEOUT.canTransitionTo(TransactionStatus.PAYMENT_CONFIRMED));
+        SimulatorPaymentAdaptor.script(ref).query = Query.SUCCESS;
+        resolveAt(LocalDateTime.now().plusMinutes(10));
+        assertNeverConfirmed(ref);
+
+        // The only way to close it is a refund decision.
+        long id = ((Number) reconExceptions.forTransaction(ref).get(0).get("id")).longValue();
+        assertThrows(IllegalArgumentException.class, () -> reconExceptions.resolveById(id, "WRITTEN_OFF", "fin.bob", "no"));
+        assertEquals(1, reconExceptions.resolveById(id, "REFUNDED", "fin.bob", "EcoCash refund TC260101.0001.A1"));
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void ussdWaitEnds_customerToldTimedOut_paymentClosedNotFailed_andLateSuccessIsNeverFulfilled() {
+        String ref = String.format("PP-USD-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
+        String body = "{\"reference\":\"" + ref + "\",\"productTypeCode\":\"MERCHANT_CHECKOUT\",\"recipientIdentifier\":\"+263771234567\","
+                + "\"amountCents\":2100,\"currency\":\"USD\",\"customerPhone\":\"+263771234567\",\"channel\":\"USSD\"}";
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        var init = http.exchange("/api/v1/transactions/initiate", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+        assertEquals(201, init.getStatusCode().value(), init.getBody());
+        String token = init.getBody().replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
+        h.set("X-Transaction-Token", token);
+
+        // The customer never approves; the provider keeps saying PENDING. The USSD session waits 2 s.
+        long t0 = System.currentTimeMillis();
+        var pay = http.exchange("/api/v1/transactions/pay?waitSeconds=2", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>("{\"reference\":\"" + ref + "\",\"paymentMethodCode\":\"SIM\",\"customerPhone\":\"+263771234567\"}", h),
+                String.class);
+        assertEquals(200, pay.getStatusCode().value(), pay.getBody());
+        assertTrue(pay.getBody().contains("\"outcome\":\"TIMED_OUT\""), pay.getBody());
+        assertTrue(System.currentTimeMillis() - t0 < 15_000);
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus(), "closed for the customer, not failed");
+        assertNull(tx(ref).getFailedAt());
+
+        // The customer approves on the phone afterwards: refunded, never fulfilled.
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 2100).status());
+        assertNeverConfirmed(ref);
+        assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
     }
 
     @Test

@@ -10,7 +10,7 @@ import java.util.Set;
  *
  * Failure paths:
  * PAYMENT_PENDING    → PAYMENT_FAILED | PAYMENT_TIMEOUT
- * PAYMENT_TIMEOUT    → PAYMENT_CONFIRMED | PAYMENT_FAILED (after reconciliation)
+ * PAYMENT_TIMEOUT    → PAYMENT_FAILED only (never confirmed: the customer was told it timed out)
  * FULFILMENT_PENDING → FULFILMENT_FAILED
  * FULFILMENT_FAILED  → FULFILMENT_RETRY → COMPLETED | FULFILMENT_FAILED
  * FULFILMENT_FAILED  → MANUAL_FULFILMENT → COMPLETED | REFUND_PENDING
@@ -46,7 +46,9 @@ public enum TransactionStatus {
             case INITIATED         -> EnumSet.of(PAYMENT_PENDING, CANCELLED);
             case PAYMENT_PENDING   -> EnumSet.of(PAYMENT_CONFIRMED, PAYMENT_FAILED, PAYMENT_TIMEOUT);
             case PAYMENT_CONFIRMED -> EnumSet.of(FULFILMENT_PENDING);
-            case PAYMENT_TIMEOUT   -> EnumSet.of(PAYMENT_CONFIRMED, PAYMENT_FAILED);
+            // The customer has been told the payment timed out: it can never be confirmed for fulfilment (owner rule).
+            // A provider's definite failure may still be recorded; a late success is refunded.
+            case PAYMENT_TIMEOUT   -> EnumSet.of(PAYMENT_FAILED);
             case FULFILMENT_PENDING-> EnumSet.of(COMPLETED, FULFILMENT_FAILED);
             case FULFILMENT_FAILED -> EnumSet.of(FULFILMENT_RETRY, MANUAL_FULFILMENT, REFUND_PENDING);
             case FULFILMENT_RETRY  -> EnumSet.of(COMPLETED, FULFILMENT_FAILED);

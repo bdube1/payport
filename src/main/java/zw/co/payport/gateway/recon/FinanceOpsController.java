@@ -37,14 +37,12 @@ public class FinanceOpsController {
 
     private final ReconciliationService recon;
     private final ReconExceptionStore exceptions;
-    private final LatePaymentService latePayments;
     private final SettlementBatchService settlement;
 
-    public FinanceOpsController(ReconciliationService recon, ReconExceptionStore exceptions, LatePaymentService latePayments,
+    public FinanceOpsController(ReconciliationService recon, ReconExceptionStore exceptions,
                                 SettlementBatchService settlement) {
         this.recon = recon;
         this.exceptions = exceptions;
-        this.latePayments = latePayments;
         this.settlement = settlement;
     }
 
@@ -79,24 +77,6 @@ public class FinanceOpsController {
     @PostMapping("/recon/exceptions/{id}/resolve")
     public ResponseEntity<ApiResponse<Integer>> resolve(@PathVariable long id, @RequestBody Resolve body, HttpServletRequest req) {
         return ok(exceptions.resolveById(id, body.resolution(), actor(), body.note()), req);
-    }
-
-    // ─── late payments (maker-checker) ────────────────────────────────────────
-
-    public record Reason(String reason) {}
-
-    @PostMapping("/late-payments/{reference}/honour-request")
-    public ResponseEntity<ApiResponse<Object>> requestHonour(@PathVariable String reference, @RequestBody Reason body, HttpServletRequest req)
-            throws Exception {
-        return ok(latePayments.requestHonour(reference, body.reason(), actor()), req);
-    }
-
-    public record Note(String note) {}
-
-    @PostMapping("/late-payments/approvals/{approvalId}/approve")
-    public ResponseEntity<ApiResponse<Object>> approveHonour(@PathVariable long approvalId, @RequestBody(required = false) Note body,
-                                                             HttpServletRequest req) throws Exception {
-        return ok(latePayments.approveHonour(approvalId, actor(), roles(), body == null ? null : body.note()), req);
     }
 
     // ─── settlement ───────────────────────────────────────────────────────────

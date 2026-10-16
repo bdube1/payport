@@ -488,12 +488,6 @@ public class TransactionOrchestratorService {
         UNKNOWN_REF
     }
 
-    /** What happens when a provider confirms a payment AFTER the customer was told it timed out. */
-    public enum LatePaymentPolicy { REVIEW, HONOUR }
-
-    @org.springframework.beans.factory.annotation.Value("${payport.payments.late-success:REVIEW}")
-    private LatePaymentPolicy latePaymentPolicy = LatePaymentPolicy.REVIEW;
-
     /**
      * Applies a definite provider answer. Idempotent and safe under concurrency: the row is
      * locked, so of several identical or racing events exactly one changes the payment, and
@@ -563,13 +557,13 @@ public class TransactionOrchestratorService {
             return CallbackOutcome.CONFLICT;
         }
 
-        if (success && current == TransactionStatus.PAYMENT_TIMEOUT && latePaymentPolicy == LatePaymentPolicy.REVIEW) {
-            // The customer was told the payment timed out (or got no response). Confirming now could deliver to
-            // someone who already paid again; a person decides: honour (deliver) or refund.
+        if (success && current == TransactionStatus.PAYMENT_TIMEOUT) {
+            // Owner rule: once the customer has been told the transaction timed out, it is NEVER fulfilled -- not
+            // automatically and not by a person. The money the provider took must be refunded.
             reconExceptions.raise("PAID_AFTER_TIMEOUT", provider, tx.getReference(), event.getProviderReference(),
                     tx.getAmountCents(), event.getAmountCents() > 0 ? event.getAmountCents() : tx.getAmountCents(), tx.getCurrency(),
-                    "Provider confirmed payment after the customer was told " + tx.getPaymentOutcome(), "LIFECYCLE");
-            log.error("[ORCHESTRATOR] LATE PAYMENT for {}: provider confirmed after {} -- held for review (honour or refund)",
+                    "Provider confirmed payment after the customer was told " + tx.getPaymentOutcome() + ": refund required", "LIFECYCLE");
+            log.error("[ORCHESTRATOR] LATE PAYMENT for {}: provider confirmed after the customer was told {} -- not fulfilled; refund required",
                     tx.getReference(), tx.getPaymentOutcome());
             return CallbackOutcome.CONFLICT;
         }
@@ -618,31 +612,6 @@ public class TransactionOrchestratorService {
         // No SMS here: the customer gets one SMS, when the transaction completes (owner decision).
         fulfilmentQueueService.enqueue(tx.getReference());
         log.info("[ORCHESTRATOR] Payment confirmed and fulfilment enqueued for: {}", tx.getReference());
-    }
-
-    /**
-     * Ops decision on a late payment (PAID_AFTER_TIMEOUT): honour it, i.e. confirm and
-     * deliver. Requires an APPROVED maker-checker request (platform_approvals) of type
-     * HONOUR_LATE_PAYMENT for this payment; the decider is a different person than the
-     * requester (enforced by ApprovalStore and the database).
-     */
-    @Transactional
-    public TransactionResponse honourLatePayment(String reference, String approvalRef, String operator) {
-        Transaction tx = lockTransaction(reference);
-        if (tx.getStatus() != TransactionStatus.PAYMENT_TIMEOUT) {
-            throw new IllegalStateException("Only a timed-out payment can be honoured (status " + tx.getStatus() + ")");
-        }
-        Integer approved = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM platform_approvals WHERE approval_ref = ? "
-                + "AND action_type = 'HONOUR_LATE_PAYMENT' AND subject_ref = ? AND status = 'APPROVED'", Integer.class, approvalRef, reference);
-        if (approved == null || approved == 0) {
-            throw new IllegalStateException("No approved HONOUR_LATE_PAYMENT request " + approvalRef + " for " + reference);
-        }
-        PaymentProviderAdaptor.CallbackEvent ev = PaymentProviderAdaptor.CallbackEvent.builder()
-                .payportReference(reference).status("SUCCESS").amountCents(tx.getAmountCents()).currency(tx.getCurrency())
-                .rawPayload("Late payment honoured by " + operator + " under approval " + approvalRef).build();
-        confirmPayment(tx, "OPS:" + operator, "Late payment honoured (approval " + approvalRef + ")", ev);
-        reconExceptions.resolve("PAID_AFTER_TIMEOUT", reference, "HONOURED", operator, "approval " + approvalRef);
-        return TransactionResponse.from(tx);
     }
 
     /** What a delivery run did. retryAt is set when a definite failure has an automatic retry scheduled. */

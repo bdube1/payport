@@ -24,8 +24,12 @@ public class ReconExceptionStore {
         PAID_AFTER_TIMEOUT, PAID_AFTER_FAILURE, FAILED_AFTER_PAID, PAID_ON_SUPERSEDED_ATTEMPT
     }
 
-    /** Recorded decisions. HONOURED is only set by the approved honour-late-payment action. */
-    public enum Resolution { EXPLAINED_TIMING, REFUND_REQUIRED, REFUNDED, HONOURED, PROVIDER_CORRECTED, WRITTEN_OFF, FALSE_POSITIVE }
+    /** Recorded decisions. There is no "deliver anyway": a payment the customer was told timed out is refunded. */
+    public enum Resolution { EXPLAINED_TIMING, REFUND_REQUIRED, REFUNDED, PROVIDER_CORRECTED, WRITTEN_OFF, FALSE_POSITIVE }
+
+    /** Late payments may only end as a refund (or the provider reversing it itself). */
+    static final java.util.Set<Resolution> LATE_PAYMENT_RESOLUTIONS = java.util.EnumSet.of(Resolution.REFUND_REQUIRED, Resolution.REFUNDED,
+            Resolution.PROVIDER_CORRECTED);
 
     private final JdbcTemplate jdbc;
 
@@ -62,12 +66,14 @@ public class ReconExceptionStore {
                 resolution, by, LocalDateTime.now(), trunc(note, 1000), category, txRef);
     }
 
-    /** Records a person's decision on one exception. HONOURED cannot be set here (it needs the approved action). */
+    /** Records a person's decision on one exception. */
     public int resolveById(long id, String resolution, String by, String note) {
-        if (Resolution.valueOf(resolution) == Resolution.HONOURED) {
-            throw new IllegalArgumentException("HONOURED is set only by the approved honour-late-payment action");
-        }
+        Resolution r = Resolution.valueOf(resolution);
         if (note == null || note.isBlank()) throw new IllegalArgumentException("a resolution note is required");
+        String category = jdbc.queryForObject("SELECT category FROM recon_exceptions WHERE id = ?", String.class, id);
+        if (List.of("PAID_AFTER_TIMEOUT", "PAID_ON_SUPERSEDED_ATTEMPT", "PAID_AFTER_FAILURE").contains(category) && !LATE_PAYMENT_RESOLUTIONS.contains(r)) {
+            throw new IllegalArgumentException(category + " can only be resolved as REFUND_REQUIRED, REFUNDED or PROVIDER_CORRECTED");
+        }
         return jdbc.update("UPDATE recon_exceptions SET status = 'RESOLVED', resolution = ?, resolved_by = ?, resolved_at = ?, "
                 + "resolution_note = ? WHERE id = ? AND status = 'OPEN'", resolution, by, LocalDateTime.now(), trunc(note, 1000), id);
     }

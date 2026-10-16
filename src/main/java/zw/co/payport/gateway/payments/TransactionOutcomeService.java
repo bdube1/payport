@@ -32,6 +32,8 @@ public class TransactionOutcomeService {
 
     public record Result(String reference, Outcome outcome, String message, TransactionStatus status, int attempts) {}
 
+    static final String DELIVERING = "Payment received. Your purchase is being delivered; you will get an SMS when it is complete.";
+
     private final TransactionRepository transactions;
     private final FulfilmentQueueService jobs;
 
@@ -50,7 +52,8 @@ public class TransactionOutcomeService {
         String msg = tx.getFailureReason();
         switch (s) {
             case INITIATED -> { o = Outcome.REQUIRES_PAYMENT; msg = null; }
-            case PAYMENT_PENDING, PAYMENT_CONFIRMED, FULFILMENT_RETRY -> { o = Outcome.PROCESSING; msg = null; }
+            case PAYMENT_PENDING -> { o = Outcome.PROCESSING; msg = null; }
+            case PAYMENT_CONFIRMED, FULFILMENT_RETRY -> { o = Outcome.PROCESSING; msg = DELIVERING; }
             case PAYMENT_TIMEOUT -> {
                 o = "NO_RESPONSE".equals(tx.getPaymentOutcome()) ? Outcome.NO_RESPONSE : Outcome.TIMED_OUT;
                 if (msg == null) msg = o == Outcome.NO_RESPONSE ? "No response from the provider. The transaction timed out." : "The transaction timed out.";
@@ -63,7 +66,7 @@ public class TransactionOutcomeService {
                     msg = "No response from the service provider. We are confirming whether it was delivered.";
                 } else {
                     o = Outcome.PROCESSING;
-                    msg = null;
+                    msg = DELIVERING;
                 }
             }
             case COMPLETED -> { o = Outcome.SUCCEEDED; msg = null; }

@@ -73,9 +73,8 @@ The provider said no, with a code its specification marks as final (`docs/phase2
 | `FULFILMENT_WORKER_ENABLED` | `true` | Delivery worker |
 | `FULFILMENT_UNKNOWN_MANUAL_AFTER_MINUTES` | `120` | Unknown delivery → MANUAL |
 | `FULFILMENT_AUTO_RETRY` | `true` | Automatic retry of delivery failures whose code the provider spec marks as temporary |
-| `PAYMENT_TIMEOUT_SECONDS` | `180` | Payment window; `ZIMSWITCH_TIMEOUT_SECONDS` 1800, `OMARI_TIMEOUT_SECONDS` 300 |
+| `PAYMENT_TIMEOUT_SECONDS` | `180` | Payment window; `ZIMSWITCH_TIMEOUT_SECONDS` 1800, `OMARI_TIMEOUT_SECONDS` 300. Per-channel overrides `payport.payments.window-seconds.<CHANNEL>[.<PROVIDER>]` (none set). **Owner approval required to change any window** |
 | `PAYMENT_LATE_DETECTION_HOURS` | `24` | How long after the window closes PayPort keeps asking, to detect a late payment |
-| `PAYMENT_LATE_SUCCESS` | `REVIEW` | Late payment after "timed out": REVIEW (four-eyes honour or refund) or HONOUR (deliver automatically) |
 | `PAYMENT_MAX_ATTEMPTS` | `3` | Attempts per transaction after definite failures |
 | `ZIMSWITCH_WEBHOOK_SECRET` | none | AES-256-GCM key of the OPPWA webhook; without it encrypted webhooks are rejected (the resolver still confirms payments) |
 | `SETTLEMENT_MODE` | `PARALLEL` | PARALLEL: draft and approve only. LIVE: legacy settlement stops, batches can be instructed |
@@ -85,10 +84,10 @@ The provider said no, with a code its specification marks as final (`docs/phase2
 
 ## 7. Late payments (`recon_exceptions.category = 'PAID_AFTER_TIMEOUT'`)
 
-The provider confirmed a payment after the customer was told it timed out (or got no response). It is not delivered automatically (`PAYMENT_LATE_SUCCESS=REVIEW`).
+The provider confirmed a payment after the customer was told it timed out (or got no response): when the payment window closed, or when a USSD session's wait ended. **It is never fulfilled**: no person or process can confirm it (the state machine has no path from PAYMENT_TIMEOUT to PAYMENT_CONFIRMED). The money must go back:
 
-- **Honour (deliver):** `POST /api/v1/admin/finance/late-payments/{ref}/honour-request` with a reason; a different FINANCE user approves with `POST /api/v1/admin/finance/late-payments/approvals/{approvalId}/approve`. The payment is then confirmed and delivered, and the customer gets the success SMS.
-- **Refund:** refund through the provider, then record it: `POST /api/v1/admin/finance/recon/exceptions/{id}/resolve` with `{"resolution":"REFUNDED","note":"<provider refund reference>"}`.
+1. Refund through the provider (EcoCash refund, OneMoney refund, O'mari void, ZimSwitch back office).
+2. Record it: `POST /api/v1/admin/finance/recon/exceptions/{id}/resolve` with `{"resolution":"REFUNDED","note":"<provider refund reference>"}`. Only REFUND_REQUIRED, REFUNDED or PROVIDER_CORRECTED are accepted for this category.
 
 ## 8. Statement reconciliation
 
