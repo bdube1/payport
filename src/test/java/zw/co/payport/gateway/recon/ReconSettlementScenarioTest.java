@@ -318,6 +318,10 @@ class ReconSettlementScenarioTest {
         long m = merchant("Zig Traders " + SEQ.get());
         session(m, z1, 40_000, 1_200, true, "ZWG");
         session(m, z2, 60_000, 1_800, true, "ZWG");
+        // Automatic approval only pays to a destination PayPort staff verified (merchant adds, staff verifies).
+        jdbc.update("INSERT INTO merchant_settlement_destinations (merchant_id, currency, type, account_name, account_number, institution, status, "
+                + "requested_by, requested_at, verified_by, verified_at) VALUES (?, 'ZWG', 'BANK', 'Zig Traders', '9988776655', 'CBZ', 'VERIFIED', "
+                + "'merchant:owner', NOW(), 'ops.verifier', NOW())", m);
 
         var r = automation.runOnce();
         assertEquals(1, r.drafted().size(), r.toString());
@@ -326,6 +330,8 @@ class ReconSettlementScenarioTest {
         long batchId = jdbc.queryForObject("SELECT id FROM stl_batches WHERE batch_ref = ?", Long.class, r.drafted().get(0));
         assertEquals("INSTRUCTED", settlement.get(batchId).status());
         assertEquals(97_000L, settlement.get(batchId).totalNetMinor());
+        assertTrue(jdbc.queryForObject("SELECT destination FROM stl_items WHERE batch_id = ?", String.class, batchId).contains("9988776655"),
+                "paid to the verified destination, not the signup details");
         assertEquals(List.of("SYSTEM:auto-approval-policy"), jdbc.queryForList("SELECT approver FROM stl_batch_approvals WHERE batch_id = ?", String.class, batchId));
         assertEquals("SYSTEM:settlement-automation", jdbc.queryForObject("SELECT created_by FROM stl_batches WHERE id = ?", String.class, batchId));
 

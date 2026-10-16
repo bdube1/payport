@@ -123,6 +123,11 @@ public class TransactionOrchestratorService {
      */
     @Transactional
     public TransactionResponse simulateTestPayment(String reference, boolean simulateSuccess) {
+        return simulateTestPayment(reference, simulateSuccess, null);
+    }
+
+    /** Test mode only: a simulated provider answer (failureMessage = the simulated provider's words on a decline). */
+    public TransactionResponse simulateTestPayment(String reference, boolean simulateSuccess, String failureMessage) {
         log.info("[ORCHESTRATOR] TEST MODE: simulating {} payment for: {}", simulateSuccess ? "successful" : "failed", reference);
 
         Transaction tx = loadTransaction(reference);
@@ -140,6 +145,7 @@ public class TransactionOrchestratorService {
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
                 .rawPayload("{\"status\":\"TEST_MODE\",\"message\":\"Simulated by merchant test API key, no real provider was called\"}")
+                .failureMessage(simulateSuccess ? null : failureMessage)
                 .build();
 
         handlePaymentCallback(simulatedEvent);

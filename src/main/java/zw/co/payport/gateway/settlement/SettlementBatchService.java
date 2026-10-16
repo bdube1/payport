@@ -51,6 +51,12 @@ public class SettlementBatchService {
     private final long holdHours;
     private final boolean requireReconciled;
     private final PayoutFileAdapter payoutAdapter;
+    private org.springframework.beans.factory.ObjectProvider<zw.co.payport.gateway.service.WebhookService> webhooks;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setWebhooks(org.springframework.beans.factory.ObjectProvider<zw.co.payport.gateway.service.WebhookService> webhooks) {
+        this.webhooks = webhooks;
+    }
 
     public SettlementBatchService(JdbcTemplate jdbc, Environment env, PayoutFileAdapter payoutAdapter,
                                   @Value("${payport.settlement.mode:PARALLEL}") Mode mode,
@@ -138,8 +144,7 @@ public class SettlementBatchService {
             long fee = list.stream().mapToLong(EligibleSession::fee).sum();
             long refunds = list.stream().mapToLong(EligibleSession::refunded).sum();
             long net = list.stream().mapToLong(EligibleSession::net).sum();
-            String destination = jdbc.queryForObject("SELECT CONCAT(COALESCE(payout_account_type,''), ': ', COALESCE(payout_account_details,'')) "
-                    + "FROM merchants WHERE id = ?", String.class, e.getKey());
+            String destination = destinationFor(e.getKey(), ccy);
             String instructionRef = "PO-" + batchRef.substring(4) + "-" + n;
             long itemId = insert("INSERT INTO stl_items (batch_id, merchant_id, currency, session_count, gross_minor, fee_minor, refund_minor, "
                             + "net_minor, destination, instruction_ref, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)",
@@ -152,6 +157,20 @@ public class SettlementBatchService {
         }
         log.info("[SETTLEMENT] Drafted {} ({}): {} merchants, {} sessions, net {} {}", batchRef, mode, byMerchant.size(), sessions.size(), total, ccy);
         return get(batchId);
+    }
+
+    /**
+     * Where a merchant is paid: the staff-verified settlement destination for the currency (Phase 4);
+     * until a merchant has one, the payout details captured at signup (legacy). Automatic approval
+     * only accepts verified destinations (SettlementAutomation).
+     */
+    String destinationFor(long merchantId, String currency) {
+        List<String> verified = jdbc.queryForList("SELECT CONCAT(type, ': ', institution, ' ', COALESCE(CONCAT(branch, ' '), ''), account_number, "
+                + "' (', account_name, ')') FROM merchant_settlement_destinations WHERE merchant_id = ? AND currency = ? AND status = 'VERIFIED' "
+                + "ORDER BY id DESC LIMIT 1", String.class, merchantId, currency);
+        if (!verified.isEmpty()) return verified.get(0);
+        return jdbc.queryForObject("SELECT CONCAT(COALESCE(payout_account_type,''), ': ', COALESCE(payout_account_details,'')) "
+                + "FROM merchants WHERE id = ?", String.class, merchantId);
     }
 
     /** Records an approval. The creator cannot approve; nobody approves twice. Moves to APPROVED when enough. */
@@ -229,7 +248,8 @@ public class SettlementBatchService {
         if (proofSha256 == null || proofSha256.isBlank()) throw new IllegalArgumentException("proof (file hash) is required");
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (PayoutResult r : results) {
-            List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, batch_id, status FROM stl_items WHERE instruction_ref = ? FOR UPDATE", r.instructionRef());
+            List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, batch_id, status, merchant_id, currency, net_minor FROM stl_items "
+                    + "WHERE instruction_ref = ? FOR UPDATE", r.instructionRef());
             if (rows.isEmpty()) { counts.merge("UNKNOWN_INSTRUCTION", 1, Integer::sum); continue; }
             long itemId = ((Number) rows.get(0).get("id")).longValue();
             String current = (String) rows.get(0).get("status");
@@ -249,10 +269,31 @@ public class SettlementBatchService {
                 jdbc.update("DELETE FROM stl_session_claims WHERE item_id = ?", itemId);
             }
             counts.merge(target, 1, Integer::sum);
+            notifyPayout(rows.get(0), r, target, now);
             completeIfDone(((Number) rows.get(0).get("batch_id")).longValue());
         }
         log.info("[SETTLEMENT] Payout results applied by {} from {}: {}", by, proofRef, counts);
         return counts;
+    }
+
+    /** payout.paid / payout.returned / payout.failed to the merchant's webhooks (sent after commit). */
+    private void notifyPayout(Map<String, Object> item, PayoutResult r, String target, LocalDateTime at) {
+        if (webhooks == null) return;
+        zw.co.payport.gateway.service.WebhookService ws = webhooks.getIfAvailable();
+        if (ws == null) return;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("payoutId", r.instructionRef());
+        data.put("status", target);
+        data.put("currency", item.get("currency"));
+        data.put("amountMinor", ((Number) item.get("net_minor")).longValue());
+        if (r.bankReference() != null) data.put("bankReference", r.bankReference());
+        if (r.reason() != null) data.put("reason", r.reason());
+        data.put("at", at.toString());
+        try {
+            ws.notifyMerchantEvent(((Number) item.get("merchant_id")).longValue(), "payout." + target.toLowerCase(), data, true);
+        } catch (RuntimeException e) {
+            log.warn("[SETTLEMENT] payout webhook for {} not queued: {}", r.instructionRef(), e.getMessage());
+        }
     }
 
     private void completeIfDone(long batchId) {

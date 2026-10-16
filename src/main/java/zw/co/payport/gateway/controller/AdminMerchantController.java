@@ -41,6 +41,7 @@ public class AdminMerchantController {
     private final UserRepository userRepository;
     private final CommissionService commissionService;
     private final MerchantRepository merchantRepository;
+    private final zw.co.payport.gateway.merchant.MerchantPlatformService platform;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> list(
@@ -75,23 +76,36 @@ public class AdminMerchantController {
         return ResponseEntity.ok(ApiResponse.success(body, requestId(req)));
     }
 
+    /**
+     * Approval is four-eyes (Phase 4): one staff member recommends on the KYB case
+     * (POST /api/v1/admin/platform/kyb/{id}/recommend), a different one decides. This endpoint is
+     * the decision step kept at its old address: it accepts an existing APPROVE recommendation
+     * made by someone else, and refuses otherwise. It never approves on one person's say-so.
+     */
     @PostMapping("/{id}/approve")
     public ResponseEntity<ApiResponse<Map<String, Object>>> approve(@PathVariable Long id, HttpServletRequest req) {
         try {
+            Map<String, Object> kyb = platform.kybCase(id);
+            if (!"AWAITING_DECISION".equals(kyb.get("status")) || !"APPROVE".equals(kyb.get("recommendation"))) {
+                return ResponseEntity.status(409).body(ApiResponse.error("KYB_RECOMMENDATION_REQUIRED",
+                        "A KYB approval recommendation by another staff member is required first (POST /api/v1/admin/platform/kyb/" + id + "/recommend)",
+                        requestId(req)));
+            }
             Long staffUserId = currentStaffUserId();
-            MerchantService.ApprovalResult result = merchantService.approve(id, staffUserId);
+            String staff = "staff:" + SecurityContextHolder.getContext().getAuthentication().getName();
+            MerchantService.ApprovalResult result = platform.decide(id, true, "Approved via merchant review", staff, staffUserId).approval();
 
             Map<String, Object> body = toMap(result.merchant());
-            // The generated TEST secret key is surfaced here, and only here --
-            // see the comment on MerchantService.approve() for why.
             Map<String, Object> keyInfo = new LinkedHashMap<>();
             keyInfo.put("publicKey", result.testKeyPair().publicKey());
             keyInfo.put("secretKey", result.testKeyPair().secretKey());
             keyInfo.put("warning", "This secret key is shown once. Copy it now — it cannot be retrieved again, only rotated.");
             body.put("testApiKey", keyInfo);
 
-            log.info("[ADMIN_MERCHANT] Merchant {} approved by staff user {}", id, staffUserId);
+            log.info("[ADMIN_MERCHANT] Merchant {} approved by staff user {} (KYB four-eyes)", id, staffUserId);
             return ResponseEntity.ok(ApiResponse.success(body, requestId(req)));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(ApiResponse.error("APPROVE_FAILED", e.getMessage(), requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("APPROVE_FAILED", e.getMessage(), requestId(req)));
         }

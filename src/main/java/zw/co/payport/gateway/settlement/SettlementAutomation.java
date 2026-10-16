@@ -110,6 +110,10 @@ public class SettlementAutomation {
         Integer noDestination = jdbc.queryForObject("SELECT COUNT(*) FROM stl_items WHERE batch_id = ? AND (destination IS NULL "
                 + "OR TRIM(REPLACE(destination, ':', '')) = '' OR net_minor <= 0)", Integer.class, b.id());
         if (noDestination != null && noDestination > 0) return "an item has no payout destination or no amount";
+        Integer unverified = jdbc.queryForObject("SELECT COUNT(*) FROM stl_items i WHERE i.batch_id = ? AND NOT EXISTS (SELECT 1 FROM "
+                + "merchant_settlement_destinations d WHERE d.merchant_id = i.merchant_id AND d.currency = i.currency AND d.status = 'VERIFIED')",
+                Integer.class, b.id());
+        if (unverified != null && unverified > 0) return "a merchant has no verified settlement destination";
         Integer openExceptions = jdbc.queryForObject("SELECT COUNT(*) FROM stl_items i JOIN stl_item_sessions s ON s.item_id = i.id "
                 + "JOIN checkout_sessions cs ON cs.id = s.session_id JOIN recon_exceptions e ON e.transaction_reference = cs.transaction_reference "
                 + "WHERE i.batch_id = ? AND e.status = 'OPEN'", Integer.class, b.id());

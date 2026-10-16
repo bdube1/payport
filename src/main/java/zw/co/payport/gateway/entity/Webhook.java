@@ -25,8 +25,16 @@ public class Webhook {
     private String url;
 
     /** Raw, not hashed -- the merchant needs the actual value to verify signatures on their own server. */
-    @Column(nullable = false)
+    /** Signing secret, encrypted at rest ("enc:v1:...", see SecretBox); legacy rows hold plaintext. */
+    @Column(nullable = false, length = 500)
     private String secret;
+
+    /** v1 = X-Payport-Signature only; v2 adds PayPort-Signature (timestamped) and PayPort-Event-Id. */
+    @Column(nullable = false)
+    @Builder.Default
+    private String apiVersion = "v1";
+
+    private String disabledReason;
 
     /** ACTIVE | DISABLED */
     @Column(nullable = false)

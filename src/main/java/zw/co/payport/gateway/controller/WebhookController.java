@@ -70,9 +70,11 @@ public class WebhookController {
         List<Map<String, Object>> body = deliveries.stream().map(d -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", d.getId());
+            m.put("eventId", d.getEventId());
             m.put("eventType", d.getEventType());
             m.put("status", d.getStatus());
             m.put("attemptCount", d.getAttemptCount());
+            m.put("replayOf", d.getReplayOf());
             m.put("responseStatus", d.getResponseStatus());
             m.put("lastAttemptAt", d.getLastAttemptAt());
             m.put("deliveredAt", d.getDeliveredAt());
@@ -80,6 +82,49 @@ public class WebhookController {
             return m;
         }).toList();
         return ResponseEntity.ok(ApiResponse.success(body, requestId(req)));
+    }
+
+    /** Webhooks v2 console: rotate the signing secret (shown once). */
+    @PostMapping("/{id}/rotate-secret")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> rotate(@PathVariable Long id, HttpServletRequest req) {
+        WebhookService.RegisteredWebhook r = webhookService.rotateSecret(currentMerchant().getId(), id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", r.webhook().getId());
+        m.put("secret", r.secret());
+        m.put("warning", "This secret is shown once. The previous secret stopped working.");
+        return ResponseEntity.ok(ApiResponse.success(m, requestId(req)));
+    }
+
+    @PostMapping("/{id}/disable")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> disable(@PathVariable Long id, HttpServletRequest req) {
+        Webhook w = webhookService.disable(currentMerchant().getId(), id);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("id", w.getId(), "status", w.getStatus()), requestId(req)));
+    }
+
+    /** Sends a signed "ping" event to check the endpoint and signature verification. */
+    @PostMapping("/{id}/test")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> test(@PathVariable Long id, HttpServletRequest req) {
+        WebhookDelivery d = webhookService.sendTestEvent(currentMerchant().getId(), id);
+        return ResponseEntity.ok(ApiResponse.success(deliveryMap(d), requestId(req)));
+    }
+
+    /** Replay console: re-send a past delivery (same event id, so receivers can de-duplicate). */
+    @PostMapping("/deliveries/{deliveryId}/replay")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> replay(@PathVariable Long deliveryId, HttpServletRequest req) {
+        WebhookDelivery d = webhookService.replay(currentMerchant().getId(), deliveryId);
+        return ResponseEntity.ok(ApiResponse.success(deliveryMap(d), requestId(req)));
+    }
+
+    private static Map<String, Object> deliveryMap(WebhookDelivery d) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", d.getId());
+        m.put("eventId", d.getEventId());
+        m.put("eventType", d.getEventType());
+        m.put("status", d.getStatus());
+        m.put("attemptCount", d.getAttemptCount());
+        m.put("responseStatus", d.getResponseStatus());
+        m.put("replayOf", d.getReplayOf());
+        return m;
     }
 
     private Merchant currentMerchant() {

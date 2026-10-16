@@ -47,6 +47,7 @@ public class CheckoutSessionService {
     private final CommissionService commissionService;
     private final RefundService refundService;
     private final ApiKeyRepository apiKeyRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public record CreateSessionRequest(
@@ -70,6 +71,14 @@ public class CheckoutSessionService {
         }
 
         boolean livemode = resolveLivemode(merchant, apiKeyId);
+        if (livemode && apiKeyId != null) {
+            // Phase 4 market enablement: a live key takes payments only in currencies PayPort enabled for the merchant.
+            Integer enabled = jdbc.queryForObject("SELECT COUNT(*) FROM merchant_enablements WHERE merchant_id = ? AND currency = ? AND status = 'ENABLED'",
+                    Integer.class, merchant.getId(), currency);
+            if (enabled == null || enabled == 0) {
+                throw new RuntimeException("Live payments in " + currency + " are not enabled for this account");
+            }
+        }
 
         CheckoutSession session = CheckoutSession.builder()
                 .merchantId(merchant.getId())
@@ -309,7 +318,8 @@ public class CheckoutSessionService {
             // Structural, not conventional: a test-mode session never reaches
             // the real submitPayment() call below at all.
             log.info("[CHECKOUT] Test-mode session -- simulating payment instead of calling a real provider for session {}", sessionId);
-            result = orchestrator.simulateTestPayment(txReference, true);
+            zw.co.payport.gateway.merchant.SandboxScenarios.Outcome sandbox = zw.co.payport.gateway.merchant.SandboxScenarios.forPhone(customerPhone);
+            result = orchestrator.simulateTestPayment(txReference, sandbox.success(), sandbox.providerMessage());
         } else {
             PayTransactionRequest payReq = new PayTransactionRequest();
             payReq.setReference(txReference);
