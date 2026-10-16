@@ -1,32 +1,43 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-16 (Phase 4 merchant platform, with the owner's Phase 3 review changes). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (Phase 5 provider integrations and the Phase 4 follow-ups). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
-**Phase 4 (merchant and developer platform), plus the owner's review of Phases 2 and 3**, on `phase2-payment-lifecycle`. See `docs/phase4/PHASE4_REPORT.md` and `docs/api/MERCHANT_API.md`.
+**Phase 5 (provider and biller integrations), plus the Phase 4 follow-ups**, on `phase2-payment-lifecycle`. See:
+- `docs/phase5/PHASE5_REPORT.md`
+- `docs/phase4/PHASE4_REPORT.md`
+- `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`
+- `docs/api/MERCHANT_API.md`
 
-CI run 38875403779 (2026-10-16), all jobs green:
-- `build-and-test`: **142 passed, 0 failed**. Guarded suites: ApplicationSmokeTest, LivemodeMigrationTest, PaymentLifecycleScenarioTest, FulfilmentJobScenarioTest, ReconSettlementScenarioTest, MerchantPlatformAcceptanceTest, MerchantPlatformUnitTest, StatementParsersTest and PaymentWindowsTest.
+CI run 38885749278 (2026-10-16), all jobs green:
+- `build-and-test`: **165 passed, 0 failed**. Guarded suites:
+  - ApplicationSmokeTest, LivemodeMigrationTest
+  - PaymentLifecycleScenarioTest, FulfilmentJobScenarioTest
+  - ReconSettlementScenarioTest
+  - MerchantPlatformAcceptanceTest, MerchantPlatformUnitTest
+  - StatementParsersTest, PaymentWindowsTest
+  - ProviderIntegrationScenarioTest, EsolutionsContractTest, EcoCashContractTest, CircuitBreakerTest
 - `ledger-db`: **106 / 106**.
-- `migrations-production-like` (through V42): pass.
+- `migrations-production-like` (through V43): pass.
 
 | Item | Status |
 |---|---|
-| Late success after the customer was told TIMED_OUT | **Refund only.** No approve or honour path exists. PAYMENT_TIMEOUT can only move to PAYMENT_FAILED, and the recon exception accepts only refund resolutions. |
-| Payment windows | **Unchanged.** Configurable per provider and channel (USSD included), pinned by `PaymentWindowsTest`. Changing them needs owner approval. |
-| USSD wait expiry | Returns TIMED_OUT or NO_RESPONSE. The payment is closed as PAYMENT_TIMEOUT, **never** PAYMENT_FAILED. |
-| Settlement | Still in PARALLEL (draft, approve, compare) mode. Automation is built and switched off (`SETTLEMENT_AUTOMATION_ENABLED`). It auto-approves only up to a configured limit and only to staff-verified destinations. |
-| Sample reports | Parsers for EcoCash, InnBucks, NetOne, OneMoney, Telecel, ZimSwitch and O'mari, checked against the supplied files. Tests use synthetic fixtures; the real files are not committed because they contain customer data. |
-| Phase 4 acceptance (new merchant onboards → keys → docs → sandbox payments → balances and settlement → webhooks, no DB access) | **Met** (`MerchantPlatformAcceptanceTest`, over HTTP on MySQL 8) |
+| Merchant currency enablement on every live path: API keys, payment links (creation and each visit), dashboard sessions, hosted pay step | **Done.** Withdrawing a currency also stops open links and sessions. The sandbox is unaffected. |
+| `PAYPORT_DATA_KEY` required in production | **Done.** `PAYPORT_ENV` defaults to production. The app refuses to start without an explicit 32-byte key (no derived, zero or short keys) and refuses the webhook test switches. |
+| Phase 4 acceptance (merchant onboards → keys → sandbox → balances and settlement → webhooks, no DB access) | **Met** (`MerchantPlatformAcceptanceTest`) |
+| Phase 5 build: register, kill switch, circuit breakers, biller framework, contract tests | **Done**, tested on spec fixtures and MySQL |
+| Phase 5 acceptance (one provider and one biller against real test environments) | **Not met.** There is no sandbox access; the register records SPEC_ONLY and has the evidence workflow ready. |
+| Frontend review | Done. The plan is in `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`. The backend is fixed first (error messages); wiring the frontends comes next. |
 
-Found by the Phase 4 acceptance test and fixed: sandbox checkout payments failed when called through the new simulator overload, because it ran without a transaction.
+Money defect found and fixed in Phase 5: **R57**. An eSolutions delivery with an unknown outcome was looked up by the wrong reference, so an issued ZESA token could be recorded as not delivered.
 
-Still waiting on the owner:
-- provider sandboxes and the ZimSwitch webhook secret;
-- the sponsor bank's payout file format;
-- sign-off to retire the legacy settlement;
-- the frontend repos (dashboard and admin screens for the Phase 4 APIs);
-- `PAYPORT_DATA_KEY` to be set in production.
+Owner inputs still needed:
+- Provider sandboxes, the ZimSwitch webhook secret and the sponsor bank's payout format. All three are confirmed unavailable for now.
+- Sign-off to retire the legacy settlement.
+- Push notifications: yes or no (mobile calls an endpoint that does not exist).
+- Where merchant signup lives.
+- Whether public bill lookups need a login or captcha.
+- `PAYPORT_DATA_KEY` in production.
 
 ### Phase 3 and the Phase 2 review
 **Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**:
