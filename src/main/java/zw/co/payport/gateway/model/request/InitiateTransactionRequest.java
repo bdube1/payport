@@ -14,7 +14,7 @@ public class InitiateTransactionRequest {
 
     // PP-{CHANNEL}-{YYYYMMDD}-{SEQ6} e.g. PP-WEB-20260315-000042
     @NotBlank(message = "Reference is required")
-    @Pattern(regexp = "^PP-(WEB|MOB|USD|API)-\\d{8}-\\d{6}$",
+    @Pattern(regexp = "^PP-[A-Z]{2,10}-\\d{8}-\\d{6}$",
             message = "Invalid reference format. Expected: PP-{CHANNEL}-{YYYYMMDD}-{SEQ6}")
     private String reference;
 
@@ -32,7 +32,7 @@ public class InitiateTransactionRequest {
     @Size(max = 3)
     private String currency = "USD";
 
-    @Pattern(regexp = "^\\+263\\d{9}$", message = "Customer phone must be in E.164 format e.g. +263771234567")
+    @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "Customer phone must be in international (E.164) format, e.g. +263771234567")
     private String customerPhone;  // optional - for SMS receipt
 
     @Email(message = "Enter a valid email")

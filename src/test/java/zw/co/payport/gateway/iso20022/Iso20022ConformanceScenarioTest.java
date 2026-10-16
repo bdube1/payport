@@ -154,7 +154,7 @@ class Iso20022ConformanceScenarioTest {
                 sts.replace(batch.batchRef(), "STL-UNKNOWN").getBytes(StandardCharsets.UTF_8), "fin.ops"));
 
         // 3. Ledger of the market's entity: the paid payout leaves MERCHANT_PAYABLE and the bank account.
-        assertEquals("POSTED", jdbc.queryForObject("SELECT status FROM stl_item_ledger s JOIN stl_items i ON i.id = s.stl_item_id WHERE i.instruction_ref = ?",
+        assertEquals("POSTED", jdbc.queryForObject("SELECT s.status FROM stl_item_ledger s JOIN stl_items i ON i.id = s.stl_item_id WHERE i.instruction_ref = ?",
                 String.class, refs.get(alpha)));
         assertEquals(0, balance(LedgerCategory.MERCHANT_PAYABLE, alpha));
         assertEquals(19_400, balance(LedgerCategory.MERCHANT_PAYABLE, beta), "the rejected payout is still owed");

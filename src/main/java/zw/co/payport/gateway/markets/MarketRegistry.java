@@ -278,6 +278,20 @@ public class MarketRegistry {
         return m.nationalPattern().matcher(national).matches() ? Optional.of(m.phoneCountryCode() + national) : Optional.empty();
     }
 
+    /**
+     * True when the E.164 number is a valid mobile number in a market that is not suspended. Used for
+     * customer phone numbers, so a market switched on from the portal accepts its own customers.
+     */
+    public boolean validMobileInAnyMarket(String e164) {
+        if (e164 == null) return false;
+        String digits = e164.replaceAll("[^0-9]", "");
+        for (Market m : snapshot().markets().values()) {
+            if ("SUSPENDED".equals(m.status()) || !digits.startsWith(m.phoneCountryCode())) continue;
+            if (m.nationalPattern().matcher(digits.substring(m.phoneCountryCode().length())).matches()) return true;
+        }
+        return false;
+    }
+
     public List<Map<String, Object>> summary() {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Market m : snapshot().markets().values()) {

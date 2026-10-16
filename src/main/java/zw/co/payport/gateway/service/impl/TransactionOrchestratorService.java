@@ -83,6 +83,12 @@ public class TransactionOrchestratorService {
 
         product.validateAmount(dto.getAmountCents());
 
+        // Numbering plans come from the market settings: a market switched on in the portal accepts its customers.
+        if (marketRegistry != null && dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()
+                && !marketRegistry.validMobileInAnyMarket(dto.getCustomerPhone())) {
+            throw new IllegalArgumentException("Customer phone is not a mobile number in a country PayPort serves");
+        }
+
         // Currency switches from the portal: the platform must accept the currency (and, outside merchant
         // checkout, take live money in it), and the product must have it switched on.
         String payCcy = dto.getCurrency() == null ? "USD" : dto.getCurrency().toUpperCase(java.util.Locale.ROOT);

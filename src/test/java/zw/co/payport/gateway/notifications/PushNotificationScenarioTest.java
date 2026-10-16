@@ -190,11 +190,11 @@ class PushNotificationScenarioTest {
 
     @Test
     void guests_getNoPush_deadTokensAreRetired_andOutagesAreRetried() throws Exception {
-        String guest = String.format("+26374%07d", SEQ.incrementAndGet());
+        String guest = String.format("+26378%07d", SEQ.incrementAndGet());
         String g = failedPayment(guest, "Declined");
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM push_outbox WHERE transaction_reference = ?", Integer.class, g), "no account, nothing queued");
 
-        String phone = String.format("+26375%07d", SEQ.incrementAndGet());
+        String phone = String.format("+26373%07d", SEQ.incrementAndGet());
         String token = customer(phone);
         String good = "ExpoPushToken[good" + SEQ.get() + "abcdefghij]", dead = "ExpoPushToken[dead" + SEQ.get() + "abcdefghij]";
         post("POST", "/api/v1/profile/push-token", token, "{\"token\":\"" + good + "\"}");

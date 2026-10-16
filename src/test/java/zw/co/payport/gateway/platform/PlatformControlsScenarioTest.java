@@ -125,7 +125,7 @@ class PlatformControlsScenarioTest {
     }
 
     Res initiate(String channel, String product, String currency, long cents) throws Exception {
-        String ref = String.format("PP-CTL-%s-%06d", channel, SEQ.incrementAndGet() % 1_000_000);
+        String ref = String.format("PP-%s-20261016-%06d", channel.length() >= 2 ? channel : "XX", SEQ.incrementAndGet() % 1_000_000);
         return call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", ref, "productTypeCode", product, "recipientIdentifier", "0771234567",
                 "amountCents", cents, "currency", currency, "customerPhone", "+263771234567", "channel", channel));
     }
@@ -174,6 +174,8 @@ class PlatformControlsScenarioTest {
 
         markets.reload();
         assertTrue(markets.liveCurrency("ZMW"), "Zambia takes live money now: no code change, no deployment");
+        assertTrue(markets.validMobileInAnyMarket("+260961234567"), "Zambian customers' numbers are accepted from the market settings");
+        assertFalse(markets.validMobileInAnyMarket("+260111234567"), "but only real mobile ranges");
         assertTrue(jdbc.queryForObject("SELECT enabled FROM ref_countries WHERE code = 'ZM'", Boolean.class));
         assertTrue(jdbc.queryForObject("SELECT enabled FROM ref_currencies WHERE code = 'ZMW'", Boolean.class), "the ledger accepts ZMW");
         assertEquals("PayPort Zambia Limited", jdbc.queryForObject("SELECT legal_name FROM ref_legal_entities WHERE code = 'PAYPORT_ZM_SANDBOX'", String.class));
