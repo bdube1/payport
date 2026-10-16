@@ -1,6 +1,5 @@
 package zw.co.payport.gateway.risk;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,6 +28,7 @@ public class ComplianceController {
     private final ScreeningService screening;
     private final RiskEngine engine;
     private final JdbcTemplate jdbc;
+    private static final com.fasterxml.jackson.databind.ObjectMapper PARAMS = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public ComplianceController(ComplianceService compliance, ScreeningService screening, RiskEngine engine, JdbcTemplate jdbc) {
         this.compliance = compliance;
@@ -44,11 +44,11 @@ public class ComplianceController {
         return ok(jdbc.queryForList("SELECT * FROM risk_rules ORDER BY code"), req);
     }
 
-    public record RuleChangeBody(String mode, String action, JsonNode params, String reason) {}
+    public record RuleChangeBody(String mode, String action, Map<String, Object> params, String reason) {}
 
     @PostMapping("/rules/{code}/change-requests")
     public ResponseEntity<ApiResponse<Map<String, Object>>> requestChange(@PathVariable String code, @RequestBody RuleChangeBody b, HttpServletRequest req) {
-        return run(() -> compliance.requestRuleChange(code, b.mode(), b.action(), b.params(), b.reason(), officer()), req);
+        return run(() -> compliance.requestRuleChange(code, b.mode(), b.action(), b.params() == null ? null : PARAMS.valueToTree(b.params()), b.reason(), officer()), req);
     }
 
     public record DecisionBody(boolean approve, String note) {}

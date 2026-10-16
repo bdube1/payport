@@ -83,6 +83,19 @@ public class GlobalExceptionHandler {
      * RuntimeExceptions with a clear message -- they still fall through
      * to the generic handler below untouched.
      */
+    /**
+     * @PreAuthorize denials. Without this the RuntimeException handler below turned every
+     * "you may not do this" into a 400, across the whole API.
+     */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<?>> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex, HttpServletRequest req) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean anonymous = auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal());
+        return ResponseEntity.status(anonymous ? HttpStatus.UNAUTHORIZED : HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(anonymous ? "UNAUTHORIZED" : "FORBIDDEN",
+                        anonymous ? "Please log in" : "You do not have permission to do this", requestId(req)));
+    }
+
     /** Refused by an enforced risk rule. Neutral wording (no tipping off); 403. */
     @ExceptionHandler(zw.co.payport.gateway.risk.RiskDeclinedException.class)
     public ResponseEntity<ApiResponse<?>> handleRiskDeclined(zw.co.payport.gateway.risk.RiskDeclinedException ex, HttpServletRequest req) {
