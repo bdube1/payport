@@ -34,7 +34,7 @@ import java.util.Set;
  * formats: the existing provider parsers, or the generic CSV format (GenericCsvStatementParser).
  */
 @Slf4j
-@Service
+@Service("statementReconciliationEngineService")
 public class ReconciliationService {
 
     /** Statuses in which PayPort holds that the provider collected the money. */
