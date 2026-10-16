@@ -163,6 +163,7 @@ jobs:
           cat osv-report.txt
           n=$(grep -cE '^\| https://osv.dev' osv-report.txt || true)
           echo "::notice title=dependency-scan::osv-scanner exit $code, $n advisories listed (report artifact osv-report)"
+          grep -E '^\| https://osv.dev' osv-report.txt | tr -s ' ' | head -40 | sed 's/^/::warning title=osv::/' || true
       - name: Upload OSV report
         if: always()
         uses: actions/upload-artifact@v4

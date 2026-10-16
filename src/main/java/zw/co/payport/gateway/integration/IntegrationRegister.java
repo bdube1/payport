@@ -63,7 +63,7 @@ public class IntegrationRegister {
         return m;
     }
 
-    static Map<String, Provider> load() {
+    public static Map<String, Provider> load() {
         try (InputStream in = new ClassPathResource("integrations/register.json").getInputStream()) {
             JsonNode root = new ObjectMapper().readTree(in);
             Map<String, Provider> m = new LinkedHashMap<>();
