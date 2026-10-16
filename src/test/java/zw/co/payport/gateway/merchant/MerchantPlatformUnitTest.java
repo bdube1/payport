@@ -115,4 +115,14 @@ class MerchantPlatformUnitTest {
         assertThrows(IllegalStateException.class, () -> new WebhookTargetGuard(false, true, null));
         assertDoesNotThrow(() -> new WebhookTargetGuard(false, false, "production"));
     }
+
+    @Test
+    void errorResponses_carryTheMessageWhereTheFrontendsReadIt() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        var err = mapper.readTree(mapper.writeValueAsString(zw.co.payport.gateway.model.response.ApiResponse.error("PAYMENT_FAILED", "Insufficient funds", "r1")));
+        assertEquals("Insufficient funds", err.path("message").asText(), "response.data.message (frontends)");
+        assertEquals("Insufficient funds", err.path("error").path("message").asText(), "error.message (API reference)");
+        var ok = mapper.readTree(mapper.writeValueAsString(zw.co.payport.gateway.model.response.ApiResponse.success(java.util.Map.of("a", 1), "r2")));
+        assertFalse(ok.has("message"), "success bodies unchanged");
+    }
 }

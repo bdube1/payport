@@ -53,8 +53,10 @@ public class GlobalExceptionHandler {
             String field = ((FieldError) error).getField();
             errors.put(field, error.getDefaultMessage());
         });
+        String first = errors.values().stream().filter(java.util.Objects::nonNull).findFirst().orElse("Request validation failed");
         ApiResponse<?> response = ApiResponse.builder()
                 .success(false)
+                .message(first)
                 .error(ApiResponse.ErrorDetail.builder()
                         .code("VALIDATION_ERROR")
                         .message("Request validation failed")

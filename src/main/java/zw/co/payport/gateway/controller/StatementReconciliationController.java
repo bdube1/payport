@@ -137,6 +137,7 @@ public class StatementReconciliationController {
     private ApiResponse<Map<String, Object>> errorResponse(String code, String message) {
         return ApiResponse.<Map<String, Object>>builder()
                 .success(false)
+                .message(message)
                 .error(ApiResponse.ErrorDetail.builder().code(code).message(message).build())
                 .build();
     }

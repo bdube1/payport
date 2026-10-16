@@ -42,12 +42,20 @@ public final class VendorReferences {
         }
     }
 
-    /** Unique reference for a lookup, resend or customer-information request. */
+    /** Per-instance counter with a random starting point: unique within an instance, unlikely to meet another instance's. */
+    private static final java.util.concurrent.atomic.AtomicLong COUNTER = new java.util.concurrent.atomic.AtomicLong(RANDOM.nextInt(1_000_000));
+
+    /**
+     * Unique reference for a lookup, resend or customer-information request: prefix (max 4) +
+     * yyMMddHHmmss + as many counter digits as fit in 20 characters (at least 4), so up to 10,000+
+     * lookups per second per instance never repeat.
+     */
     public static String lookup(String prefix) {
         String p = prefix == null ? "" : prefix.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
         if (p.length() > 4) p = p.substring(0, 4);
-        String digits = String.format("%04d", RANDOM.nextInt(10_000));
-        String ref = p + LocalDateTime.now().format(TS) + digits;
-        return ref.length() <= MAX ? ref : ref.substring(ref.length() - MAX);
+        int width = MAX - p.length() - 12;
+        long mod = (long) Math.pow(10, width);
+        String digits = String.format("%0" + width + "d", Math.floorMod(COUNTER.getAndIncrement(), mod));
+        return p + LocalDateTime.now().format(TS) + digits;
     }
 }

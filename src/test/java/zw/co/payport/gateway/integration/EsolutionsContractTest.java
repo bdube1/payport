@@ -148,11 +148,11 @@ class EsolutionsContractTest {
     void references_areUniqueAndWithinTheSpecLimit() {
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < 2000; i++) {
-            String r = VendorReferences.lookup("RS");
+            String r = VendorReferences.lookup(i % 2 == 0 ? "RS" : "ZCI1");
             assertTrue(r.length() <= 20 && r.matches("[A-Z0-9]+"), r);
             seen.add(r);
         }
-        assertTrue(seen.size() > 1990, "lookup references no longer collide within a second");
+        assertEquals(2000, seen.size(), "lookup references no longer collide within a second");
         assertTrue(VendorReferences.forDelivery("some-unusually-long-reference-from-a-partner-system-123456", 3).length() <= 20);
         assertNotEquals(VendorReferences.forDelivery("PP-WEB-20261016-000042", 1), VendorReferences.forDelivery("PP-API-20261016-000042", 1),
                 "channel is part of the reference");
