@@ -225,7 +225,15 @@ class MerchantPlatformAcceptanceTest {
                 Map.of("environment", "TEST", "label", "server", "scopes", List.of("checkout:read", "checkout:write", "balances:read")));
         assertEquals(201, key.status(), key.body().toString());
         String sk = key.data().path("secretKey").asText();
-        long keyId = call("GET", "/api/v1/merchant/api-keys", dashboard, null).data().get(0).path("id").asLong();
+        String pk = key.data().path("publicKey").asText();
+        long keyId = -1;
+        for (JsonNode k : call("GET", "/api/v1/merchant/api-keys", dashboard, null).data()) {
+            if (pk.equals(k.path("publicKey").asText())) {
+                keyId = k.path("id").asLong();
+                assertEquals("checkout:read,checkout:write,balances:read", k.path("scopes").asText());
+            }
+        }
+        assertTrue(keyId > 0, "the new key is listed");
 
         Res liveTooSoon = call("POST", "/api/v1/merchant/api-keys", dashboard, Map.of("environment", "LIVE"));
         assertEquals(409, liveTooSoon.status(), "no live keys before live readiness");
