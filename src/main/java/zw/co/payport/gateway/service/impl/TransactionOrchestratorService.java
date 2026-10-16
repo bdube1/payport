@@ -127,6 +127,7 @@ public class TransactionOrchestratorService {
     }
 
     /** Test mode only: a simulated provider answer (failureMessage = the simulated provider's words on a decline). */
+    @Transactional
     public TransactionResponse simulateTestPayment(String reference, boolean simulateSuccess, String failureMessage) {
         log.info("[ORCHESTRATOR] TEST MODE: simulating {} payment for: {}", simulateSuccess ? "successful" : "failed", reference);
 
