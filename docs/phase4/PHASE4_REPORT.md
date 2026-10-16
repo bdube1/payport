@@ -4,7 +4,7 @@ _Branch `phase2-payment-lifecycle`, 2026-10-16. The scope comes from roadmap doc
 
 **Acceptance criterion:** "A new test merchant onboards, receives keys, integrates via the docs, takes simulator payments, sees balances and settlement, and receives webhooks, all without staff database access."
 
-**Evidence:** `MerchantPlatformAcceptanceTest`. It boots the whole application on MySQL 8 and runs the journey over HTTP only, with a real local webhook receiver. Staff act only through the admin API.
+**Evidence:** CI run 38875403779, all jobs green (build-and-test: 142 passed, 0 failed; ledger-db: 106/106; migrations through V42 pass). The acceptance test is `MerchantPlatformAcceptanceTest`. It boots the whole application on MySQL 8 and runs the journey over HTTP only, with a real local webhook receiver. Staff act only through the admin API.
 
 ## What was built
 

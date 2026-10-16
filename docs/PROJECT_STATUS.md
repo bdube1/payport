@@ -1,9 +1,35 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-16 (Phase 2 payment lifecycle). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (Phase 4 merchant platform, with the owner's Phase 3 review changes). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
-**Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**, on `phase2-payment-lifecycle`:
+**Phase 4 (merchant and developer platform), plus the owner's review of Phases 2 and 3**, on `phase2-payment-lifecycle`. See `docs/phase4/PHASE4_REPORT.md` and `docs/api/MERCHANT_API.md`.
+
+CI run 38875403779 (2026-10-16), all jobs green:
+- `build-and-test`: **142 passed, 0 failed**. Guarded suites: ApplicationSmokeTest, LivemodeMigrationTest, PaymentLifecycleScenarioTest, FulfilmentJobScenarioTest, ReconSettlementScenarioTest, MerchantPlatformAcceptanceTest, MerchantPlatformUnitTest, StatementParsersTest and PaymentWindowsTest.
+- `ledger-db`: **106 / 106**.
+- `migrations-production-like` (through V42): pass.
+
+| Item | Status |
+|---|---|
+| Late success after the customer was told TIMED_OUT | **Refund only.** No approve or honour path exists. PAYMENT_TIMEOUT can only move to PAYMENT_FAILED, and the recon exception accepts only refund resolutions. |
+| Payment windows | **Unchanged.** Configurable per provider and channel (USSD included), pinned by `PaymentWindowsTest`. Changing them needs owner approval. |
+| USSD wait expiry | Returns TIMED_OUT or NO_RESPONSE. The payment is closed as PAYMENT_TIMEOUT, **never** PAYMENT_FAILED. |
+| Settlement | Still in PARALLEL (draft, approve, compare) mode. Automation is built and switched off (`SETTLEMENT_AUTOMATION_ENABLED`). It auto-approves only up to a configured limit and only to staff-verified destinations. |
+| Sample reports | Parsers for EcoCash, InnBucks, NetOne, OneMoney, Telecel, ZimSwitch and O'mari, checked against the supplied files. Tests use synthetic fixtures; the real files are not committed because they contain customer data. |
+| Phase 4 acceptance (new merchant onboards → keys → docs → sandbox payments → balances and settlement → webhooks, no DB access) | **Met** (`MerchantPlatformAcceptanceTest`, over HTTP on MySQL 8) |
+
+Found by the Phase 4 acceptance test and fixed: sandbox checkout payments failed when called through the new simulator overload, because it ran without a transaction.
+
+Still waiting on the owner:
+- provider sandboxes and the ZimSwitch webhook secret;
+- the sponsor bank's payout file format;
+- sign-off to retire the legacy settlement;
+- the frontend repos (dashboard and admin screens for the Phase 4 APIs);
+- `PAYPORT_DATA_KEY` to be set in production.
+
+### Phase 3 and the Phase 2 review
+**Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**:
 - Stripe-style payment intents and attempts, with per-provider payment windows instead of 72 h of "pending".
 - On-the-spot outcomes for USSD: SUCCEEDED, FAILED, TIMED_OUT or NO_RESPONSE.
 - Idempotency keys.
