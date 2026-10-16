@@ -28,10 +28,10 @@ import java.util.TreeSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Writes the backend's API contract (every route: method, path, roles) to target/api-contract.json.
- * CI publishes it; the frontend repositories check every call they make against it
- * (scripts/check-api-contract.mjs in each frontend), so a frontend calling a route that does not
- * exist fails its build.
+ * The backend's API contract: every route (method, path) of the running application must equal
+ * docs/api/api-contract.json, which the frontend repositories copy and check every call against
+ * (scripts/check-api-contract.mjs, run by their CI). A route added, removed or renamed without
+ * updating the contract fails here; the full export (with access rules) goes to target/api-contract.json.
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest
@@ -81,5 +81,16 @@ class ApiContractExportTest {
         Files.createDirectories(Path.of("target"));
         new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT).writeValue(Path.of("target/api-contract.json").toFile(),
                 Map.of("generatedBy", "ApiContractExportTest", "routes", routes));
+
+        TreeSet<String> live = new TreeSet<>();
+        for (Map<String, Object> r : routes) live.add(r.get("method") + " " + r.get("path"));
+        TreeSet<String> committed = new TreeSet<>();
+        for (var r : new ObjectMapper().readTree(Path.of("docs/api/api-contract.json").toFile()).path("routes")) {
+            committed.add(r.path("method").asText() + " " + r.path("path").asText());
+        }
+        TreeSet<String> missing = new TreeSet<>(live), extra = new TreeSet<>(committed);
+        missing.removeAll(committed);
+        extra.removeAll(live);
+        assertTrue(missing.isEmpty() && extra.isEmpty(), "docs/api/api-contract.json is out of date. Add: " + missing + " Remove: " + extra);
     }
 }

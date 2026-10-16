@@ -104,7 +104,10 @@
 | R68 | The ops console and consumer web app logged the user out on any 403, so a customer refused with PAYMENT_NOT_ALLOWED (or staff denied one action) lost their session | G | [Observed] | **Fixed in frontend PRs** (ops #1, consumer #1): only 401 logs out |
 | R69 | Currencies hard-coded ("USD or ZWG") in checkout, links and enablements; no country or entity model, so a second market meant code changes | G | [Observed] | **Fixed (Phase 7)**: market configuration with startup invariants; a sandbox market can never take live money |
 | R70 | Mobile app treated a non-existent status 'TIMEOUT' as final (timed-out payments spun forever); its bill lookup sent the wrong field names; the push token was never registered | G | [Observed] | **Fixed in mobile PR #1** (outcome-driven screen, biller lookup, token register/revoke) |
-| R71 | Official ISO 20022 schemas could not be downloaded by CI (iso20022.org refused the request), so the ISO 20022 conformance tests cannot pass yet | G | [Observed] | **Open**: install the three XSDs (Phase 7 report section 5); the code fails closed without them |
+| R71 | Official ISO 20022 schemas could not be downloaded by CI (iso20022.org refuses CI runners) | G | [Observed] | **Resolved**: base schemas kept in the repository with provenance and SHA-256 pins (cross-checked copies); the owner's HVPS+ camt.053 usage guideline added as an optional market setting (licensed: internal use only) |
+| R72 | Customer phone validation hard-coded to Zimbabwe (+263) in the payment and sign-up APIs, so a second market switched on could not serve its own customers | G | [Observed] | **Fixed**: E.164 at the API, then the numbering plan of any non-suspended market from the market settings |
+| R73 | Markets, currencies and channels could only be changed in code or configuration files | G | [Observed] | **Fixed**: operated from the ops console with immediate switch-off and two-person (compliance) switch-on, audited |
+| R74 | KYB checklist let a person tick "sanctions screened" | G | [Observed] | **Fixed**: the item is the server's CLEAR screening result (with its run id); approval is refused otherwise |
 
 **Phase 2 status of earlier risks:**
 - **R4 / R6:** closed by design on the Phase 2 branch. The callback inbox and query-confirmed callbacks cover R4; the durable resolver, with no time-based failure, covers R6.

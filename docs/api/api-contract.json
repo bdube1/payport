@@ -1,0 +1,1261 @@
+{
+ "generatedBy": "ApiContractExportTest (verified in CI against the running application)",
+ "routes": [
+  {
+   "method": "POST",
+   "path": "/api/v1/account/change-password"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/account/change-pin"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/channels"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/channels/{code}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance-authorities"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance-authorities/requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance-authorities/revoke"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/alerts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/audit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/audit/verify"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/authorities"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/authority-requests/{approvalId}/decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/cases"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/cases/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/assign"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/notes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/propose"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/parameter-changes/{approvalId}/decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/parameters"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/parameters/{key}/change-requests"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/report-templates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/report-templates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/report-templates/{id}/activate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/reports"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/ctr"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/reports/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/{id}/approve"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/admin/compliance/reports/{id}/fields"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/{id}/submitted"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/rule-changes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rule-changes/{approvalId}/decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/rules"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rules"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rules/{code}/change-requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/check"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/lists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists/UN-CONSOLIDATED/refresh"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists/{code}/load"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/runs"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/payment-methods"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/payment-methods/{id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/prefixes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/config/prefixes"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/config/prefixes/{id}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/prefixes/{id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/products"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/config/products"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/config/products/{id}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/products/{id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/products/{id}/currencies"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/products/{id}/currencies/{currency}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/consumers/dashboard"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/customer-statement"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dashboard/attention-queue"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dashboard/kpis"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dispute-timelines"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dispute-timelines/settings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/dispute-timelines/{id}/acknowledge"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/dispute-timelines/{id}/updates"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/disputes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/disputes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/disputes/{id}/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/iso20022/camt053"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/iso20022/pain002"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/schemas"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/statements"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/statements/{id}/entries"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/recon/exceptions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/exceptions/{id}/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/statements"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/statements/{id}/run"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/approve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/cancel"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/instruct"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/settlement/eligible"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/payout-results"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/float-thresholds"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/float-thresholds"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/fx/rates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/fx/rates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/fx/rates/{id}/decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/health-status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/health-status/{providerCode}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/integrations"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/integrations/{code}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/resume"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/suspend"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/verifications"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/integrity"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/integrity/run"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/backfill"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/shadow/comparison"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/shadow/failures"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/failures/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/run"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/tax-rates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates/{id}/approve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates/{id}/reject"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/logs/audit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/logs/notifications"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/currencies/{currency}/disable"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/currencies/{currency}/live-off"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets/requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/requests/{id}/decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets/settings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/{country}/change-requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/{country}/suspend"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchant-transactions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/commission/default"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/commission/default"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/dashboard"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/approve"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/{id}/commission"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/reactivate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/reject"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/request-info"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}/review-notes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/review-notes/{noteId}/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/start-review"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/suspend"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{merchantId}/documents"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{merchantId}/documents/{documentId}/download"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/data-bundles"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/end-user-balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/pin-stock"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/query-transaction"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/wallet-balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/wallet-balance-usd"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/assign"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/recommend"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/merchants/{merchantId}/enablements"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/merchants/{merchantId}/readiness"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/settlement-destinations"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/settlement-destinations/{id}/verify"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/work-queues"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-health"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/ecocash"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/omari"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/onemoney"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/zimswitch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/by-reference/{referenceNumber}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/attachments"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/attachments"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/attachments/{attachmentId}/download"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/respond"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queriesmultipart/form-data"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/run"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/statements/runs"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/statements/runs/{id}/matches"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reconciliation/statements/upload"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reports/commission"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reports/consolidated"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/service-lines"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/service-lines/licence-requests/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/service-lines/{code}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/service-lines/{code}/licence-requests"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/settlements"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/run"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/{id}/paid"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/{id}/processing"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/transactions-export/csv"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/transactions-search"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/complete-refund"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/refund"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/retry-fulfilment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/upload-logo"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/user-history"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/users"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/users/{id}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/users/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/activate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/reset-pin"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/unlock"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallet-balances"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallet-balances/{providerCode}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/assistant/chat"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/forgot-password"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/reset-password"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/register"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beneficiaries"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/beneficiaries"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/beneficiaries/{id}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/beneficiaries/{id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/billers"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/billers/{code}/lookup"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bills/customer-info"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/upload"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/{provider}/bulk-status"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/bundles/admin/{provider}/code/{bundleCode}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/bundles/admin/{provider}/code/{bundleCode}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/{provider}/create"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}/categories"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}/code/{bundleCode}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/ecocash"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/onemoney"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/telecash"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/zimswitch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/callbacks/zimswitch/result"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/checkout/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/checkout/{id}/pay"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/checkout/{id}/qr"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/transaction-status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/validate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/fx/quote"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/signup"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant-portal/track/{reference}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/track/{reference}/documents"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/track/{reference}/review-notes/{noteId}/resolve"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/api-keys"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys/{id}/revoke"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys/{id}/rotate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/application"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/application-status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/application-status/review-notes/{id}/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/application/review-notes/{id}/resolve"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/balances"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/by-reference/{reference}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions/{id}/cancel"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/disputes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/refunds"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/refunds"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/collections-by-method"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/documents"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/documents"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payment-links"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/payment-links"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/payment-links/{id}/disable"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/by-reference/{referenceNumber}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/by-session/{sessionId}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/attachments"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/attachments"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/attachments/{attachmentId}/download"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/reopen"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queriesmultipart/form-data"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/readiness"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/reports/trends"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/settlement-destinations"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/settlement-destinations"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/settlements"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/statement"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/team"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/change-password"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/deactivate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/reactivate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/reset-password"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/webhooks"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/deliveries/{deliveryId}/replay"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/webhooks/{id}/deliveries"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/disable"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/rotate-secret"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/test"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/auth"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/payment"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/omari/admin/query/{reference}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/test-flow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/test-payment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/void"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pay/{slug}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pay/{slug}/start"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/data-bundles"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/detect-network/{phone}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/payment-methods"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/{code}/currencies"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/profile/push-token"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/profile/push-token"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/qr/resolve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/initiate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/my-history"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/pay"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/{reference}/confirm-omari-otp"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}/outcome"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}/timeline"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ussd"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/vendors/balance"
+  }
+ ]
+}
