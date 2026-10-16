@@ -1,39 +1,31 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-16 (compliance controls, Phase 7, frontends). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (platform controls, Phase 8). Living document._
 
 ## Current phase
-**Compliance controls (owner items 1–5), Phase 7 (markets and ISO 20022) and the frontends (items 6–7)**, on `phase2-payment-lifecycle`. See:
-- `docs/compliance/COMPLIANCE_CONTROLS.md`: limits, UN screening, FIU reports, dispute deadlines, controls, regulatory sources;
-- `docs/phase7/PHASE7_REPORT.md`;
-- `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`: status table and pull requests;
-- earlier: Phase 6, 5 and 4 reports.
+**Portal-operated platform (markets, currencies, channels, products), Phase 8 (licence-gated product lines) and the frontends**, on `phase2-payment-lifecycle`. See:
+- `docs/platform/PLATFORM_CONTROLS.md`: switching Zambia (or any market), currencies, channels and products on and off without code;
+- `docs/phase8/PHASE8_REPORT.md`;
+- `docs/compliance/COMPLIANCE_CONTROLS.md`, `docs/phase7/PHASE7_REPORT.md`;
+- `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`; API contract: `docs/api/api-contract.json`.
 
-**Combined CI run (commit 5210e5f):**
-- `build-and-test`: **183 passed, 7 failed**. All 7 are the ISO 20022 tests, which need the official schemas. iso20022.org refuses GitHub's runners ("403 SWIFT site off-line").
-- `ledger-db`: **106 / 106**.
-- `migrations-production-like` (through V49): pass.
+**Combined test run:** see the table below (filled from the final CI run).
 
 | Item | Status |
 |---|---|
-| 1. Configurable limits, thresholds, velocity, reporting parameters; new rules observe-only | **Done**. Every value is sourced or marked PROVISIONAL. The database refuses enforcement without approval. |
-| 2. UN Security Council Consolidated List | **Done**: verified hourly updates, quarantine, auditable runs. Never CLEAR when the list is unavailable or out of date. |
-| 3. FIU report templates | **Done**: goAML-structured, versioned templates. Reports stay drafts until a REPORT_APPROVER (not the preparer) approves. |
-| 4. Dispute deadlines | **Done**: RBZ CPF 2017 defaults, working-day calendar. Provisional settings are flagged wherever shown. |
-| 5. Controls | **Done**: COMPLIANCE-only access, hash-chained audit, two-person approval for rules, parameters, cases, templates and authorities. |
-| 6. Mobile push | **Done in mobile PR #1**: register and revoke. Delivery and duplicate prevention are tested on the backend; device test pending (needs the EAS project ID). SMS stays success-only. |
-| 7. Frontends | **PRs open**: consumer #1, mobile #1, ops #1 (approvals, work queues, finance, compliance console), merchant #2 (on #1). |
-| Phase 7 acceptance 2 (a sandbox country by configuration and adapters only) | **Met** (ZM sandbox; `MarketRegistryTest`) |
-| Phase 7 acceptance 1 (ISO 20022 flow validated, processed, traced through the ledger) | **Built and tested end to end; blocked on the official schemas** (R71). Fixtures pass a structural check against schema-derived bindings. |
+| Zambia live without code | **Done**: Markets & Currencies → request LIVE → compliance approves. Readiness checked at request and approval. Proven end to end (`PlatformControlsScenarioTest`). Zambian providers are adapters still to add. |
+| Channels and products on/off from the portal | **Done**: channels (web, mobile, USSD, API, links, hosted checkout, QR, WhatsApp, POS), Phase 8 lines, products, payment methods, providers. Off is immediate, on is controlled; audited. |
+| Currencies on/off from the portal | **Done**: disable / stop live money immediately; re-enable through a compliance approval. Switched-off currencies disappear from the app catalogues. |
+| Incomplete screening never clear | **Done**: misconfigured or missing required lists are INCOMPLETE; ad-hoc checks return the outcome; KYB sanctions item is the server's CLEAR run. |
+| Compliance configuration | Thresholds, deadlines and reporting settings stay parameters with source, status and audit (unchanged; see the compliance controls doc). |
+| ISO 20022 schemas | **Installed** with provenance and pins; HVPS+ camt.053 guideline (owner's file, licensed) available per market. Phase 7 acceptance 1 now runs against the schemas. |
+| Frontends | Consumer #1, mobile #1, ops #1, merchant #1 and #2: build, typecheck (mobile) and **API contract check** green in their CI against the backend's route list. |
+| Phase 8 | Licence gate built; QR, FX quotes and USSD built and tested; wallets, agents, WhatsApp and POS parked until their licence answers. |
 
 **Owner and compliance inputs needed**
-- **Download the three XSDs** (camt.053.001.08, pain.001.001.09, pain.002.001.10) from iso20022.org on a normal machine and send them to me.
-- **Confirm the CTR threshold and aggregation period** with the FIU, register on goAML, and set the entity ID.
-- **Confirm the chargeback deadline.**
-- **Appoint two or more COMPLIANCE users** and a REPORT_APPROVER.
-- **Sponsor bank:** its payout and statement formats.
-- **Set `PAYPORT_DATA_KEY`** in production.
-- **Run `eas init`** for push notifications.
+- Licensing answers for each Phase 8 line (Phase 8 report, section 1).
+- Zambia: registered entity name, sponsor bank and ZMW account, Zambian provider contracts (adapters), FIU (FIC) reporting format.
+- Earlier items still open: CTR threshold with the FIU, goAML registration, chargeback deadline, compliance users and report approver, sponsor bank formats, `PAYPORT_DATA_KEY`, `eas init`.
 
 ### Phase 3 and the Phase 2 review
 **Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**:

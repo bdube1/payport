@@ -2,6 +2,10 @@
  "generatedBy": "ApiContractExportTest (verified in CI against the running application)",
  "routes": [
   {
+   "method": "GET",
+   "path": "/"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/account/change-password"
   },
@@ -662,10 +666,6 @@
    "path": "/api/v1/admin/queries/{id}/status"
   },
   {
-   "method": "POST",
-   "path": "/api/v1/admin/queriesmultipart/form-data"
-  },
-  {
    "method": "GET",
    "path": "/api/v1/admin/reconciliation/run"
   },
@@ -1078,10 +1078,6 @@
    "path": "/api/v1/merchant/queries/{id}/reopen"
   },
   {
-   "method": "POST",
-   "path": "/api/v1/merchant/queriesmultipart/form-data"
-  },
-  {
    "method": "GET",
    "path": "/api/v1/merchant/readiness"
   },
@@ -1256,6 +1252,10 @@
   {
    "method": "GET",
    "path": "/api/v1/vendors/balance"
+  },
+  {
+   "method": "ANY",
+   "path": "/error"
   }
  ]
 }
