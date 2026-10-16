@@ -14,6 +14,7 @@ import java.util.UUID;
 
 @Slf4j
 @RestController
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE','COMPLIANCE')")
 @RequestMapping("/api/v1/admin/health-status")
 @RequiredArgsConstructor
 public class ProviderHealthController {

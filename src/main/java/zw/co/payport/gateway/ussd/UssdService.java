@@ -69,7 +69,26 @@ public class UssdService {
     }
 
     public String handle(String sessionId, String phoneNumber, String text) {
-        if (!channels.enabled("USSD")) return "END PayPort USSD is not available at the moment. Please try again later.";
+        return handle("USSD", sessionId, phoneNumber, text);
+    }
+
+    /**
+     * The same menus for every conversational channel (USSD, WHATSAPP): the channel decides which
+     * switch applies, the channel recorded on the payment and the reference prefix.
+     */
+    public String handle(String channel, String sessionId, String phoneNumber, String text) {
+        CHANNEL.set(channel);
+        try {
+            return menu(channel, sessionId, phoneNumber, text);
+        } finally {
+            CHANNEL.remove();
+        }
+    }
+
+    private static final ThreadLocal<String> CHANNEL = new ThreadLocal<>();
+
+    private String menu(String channel, String sessionId, String phoneNumber, String text) {
+        if (!channels.enabled(channel)) return "END PayPort " + ("USSD".equals(channel) ? "USSD" : "on " + capital(channel)) + " is not available at the moment. Please try again later.";
         Optional<MarketRegistry.Market> market = markets.forMsisdn(phoneNumber);
         if (market.isEmpty()) return "END This number is not supported.";
         String msisdn = phoneNumber.replaceAll("[^0-9]", "");
@@ -173,7 +192,8 @@ public class UssdService {
     // ─── payment ─────────────────────────────────────────────────────────────
 
     private String pay(String session, String msisdn, String product, String recipient, long amount, String ccy, String method, String what) {
-        String ref = reference(session);
+        String channel = CHANNEL.get() == null ? "USSD" : CHANNEL.get();
+        String ref = reference(channel, session);
         List<Map<String, Object>> done = jdbc.queryForList("SELECT reference, outcome FROM ussd_sessions WHERE session_id = ?", session);
         if (!done.isEmpty() && done.get(0).get("outcome") != null) return (String) done.get(0).get("outcome");   // gateway retry: same answer, no second payment
         LocalDateTime now = LocalDateTime.now();
@@ -188,7 +208,7 @@ public class UssdService {
             init.setAmountCents(amount);
             init.setCurrency(ccy);
             init.setCustomerPhone("+" + msisdn);
-            init.setChannel("USSD");
+            init.setChannel(channel);
             orchestrator.initiateTransaction(init, "ussd");
             PayTransactionRequest pay = new PayTransactionRequest();
             pay.setReference(ref);
@@ -204,11 +224,21 @@ public class UssdService {
         return reply;
     }
 
+    private static String capital(String c) {
+        return c.isEmpty() ? c : c.charAt(0) + c.substring(1).toLowerCase(Locale.ROOT);
+    }
+
     public static String reference(String session) {
+        return reference("USSD", session);
+    }
+
+    public static String reference(String channel, String session) {
         try {
-            byte[] h = MessageDigest.getInstance("SHA-256").digest(session.getBytes(StandardCharsets.UTF_8));
+            byte[] h = MessageDigest.getInstance("SHA-256").digest((channel + "|" + session).getBytes(StandardCharsets.UTF_8));
             String d = LocalDate.now().toString().replace("-", "");
-            return "PP-USSD-" + d + "-" + HexFormat.of().formatHex(h).substring(0, 10).toUpperCase(Locale.ROOT);
+            String prefix = "USSD".equals(channel) ? "USSD" : "WHATSAPP".equals(channel) ? "WA" : channel;
+            if ("USSD".equals(channel)) h = MessageDigest.getInstance("SHA-256").digest(session.getBytes(StandardCharsets.UTF_8));
+            return "PP-" + prefix + "-" + d + "-" + HexFormat.of().formatHex(h).substring(0, 10).toUpperCase(Locale.ROOT);
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

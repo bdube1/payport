@@ -16,8 +16,9 @@ import java.util.Map;
 
 /**
  * Phase 8 FX (harvested design from psp-foundation's FxRateService): reference rates with
- * maker-checker (database CHECK), and customer quotes. Executing conversions is parked until the
- * FX licence question is answered; quotes are refused unless the FX_CONVERSION line is switched on.
+ * maker-checker (database CHECK), and customer quotes. Conversions are executed between a customer's
+ * own wallets (WalletService.convert, one balanced journal through FX_CLEARING); quotes and
+ * conversions are refused unless the FX_CONVERSION line is switched on.
  *
  * Quote: amount × rate, less the spread, rounded DOWN to the target currency's minor unit (the
  * customer never gets more than the rate allows). Quotes are valid for 60 seconds.
@@ -107,7 +108,7 @@ public class FxService {
         q.put("spreadBps", spread);
         q.put("rateId", rateId);
         q.put("validUntil", LocalDateTime.now().plusSeconds(60).toString());
-        q.put("note", "Indicative quote. Conversions are not executed by PayPort until the FX licence question is answered.");
+        q.put("note", "Indicative quote. Wallet holders can lock and execute a quote between their own wallets (POST /api/v1/wallet/fx/quotes).");
         return q;
     }
 

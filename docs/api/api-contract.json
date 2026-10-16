@@ -15,6 +15,30 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/agents"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/agents/float-deposits"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/float-deposits"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/float-deposits/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/status"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/channels"
   },
   {
@@ -387,7 +411,15 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/ledger/accounts"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/ledger/balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/categories"
   },
   {
    "method": "GET",
@@ -432,6 +464,10 @@
   {
    "method": "POST",
    "path": "/api/v1/admin/ledger/tax-rates/{id}/reject"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/trial-balance"
   },
   {
    "method": "GET",
@@ -611,6 +647,14 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/pos/terminals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/pos/terminals/{terminalId}/status"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/provider-health"
   },
   {
@@ -628,6 +672,22 @@
   {
    "method": "GET",
    "path": "/api/v1/admin/provider-query/zimswitch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-settlement-rules"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules/{id}/retire"
   },
   {
    "method": "GET",
@@ -786,6 +846,34 @@
    "path": "/api/v1/admin/wallet-balances/{providerCode}"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/refunds/{reference}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/totals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/{ref}/statement"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/{ref}/status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/{ref}/tier"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/whatsapp"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/assistant/chat"
   },
@@ -871,7 +959,19 @@
   },
   {
    "method": "POST",
+   "path": "/api/v1/callbacks/airtel-money"
+  },
+  {
+   "method": "POST",
    "path": "/api/v1/callbacks/ecocash"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/mtn-momo"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/callbacks/mtn-momo"
   },
   {
    "method": "POST",
@@ -936,6 +1036,38 @@
   {
    "method": "POST",
    "path": "/api/v1/merchant-portal/track/{reference}/review-notes/{noteId}/resolve"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/agent"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/agent/apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/agent/cash-in"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/agent/cash-out"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/agent/commissions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/agent/float-deposits"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/agent/float-deposits"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/agent/transactions"
   },
   {
    "method": "GET",
@@ -1036,6 +1168,22 @@
   {
    "method": "GET",
    "path": "/api/v1/merchant/payouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/pos/sales"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/pos/terminals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/pos/terminals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/pos/terminals/{terminalId}/status"
   },
   {
    "method": "GET",
@@ -1186,6 +1334,18 @@
    "path": "/api/v1/pay/{slug}/start"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/pos/sales"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pos/sales/{saleRef}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pos/sales/{saleRef}/card"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/products"
   },
@@ -1252,6 +1412,54 @@
   {
    "method": "GET",
    "path": "/api/v1/vendors/balance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/cash-out-codes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cash-out-codes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/fx/conversions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/fx/quotes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/open"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay-checkout"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/transfers"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/{ref}/statement"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/whatsapp/webhook"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/whatsapp/webhook"
   },
   {
    "method": "ANY",

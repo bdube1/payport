@@ -72,6 +72,18 @@ public class CallbackController {
         return handleCallback("TELECASH", rawBody, request);
     }
 
+    /** MTN MoMo (RequestToPay callback; MTN may use PUT). Trigger only: confirmed by status query. */
+    @RequestMapping(value = "/mtn-momo", method = {org.springframework.web.bind.annotation.RequestMethod.POST, org.springframework.web.bind.annotation.RequestMethod.PUT})
+    public ResponseEntity<String> mtnMomoCallback(@RequestBody String rawBody, HttpServletRequest request) {
+        return handleCallback("MTN_MOMO", rawBody, request);
+    }
+
+    /** Airtel Money collection callback. Trigger only: confirmed by status query. */
+    @PostMapping("/airtel-money")
+    public ResponseEntity<String> airtelMoneyCallback(@RequestBody String rawBody, HttpServletRequest request) {
+        return handleCallback("AIRTEL_MONEY", rawBody, request);
+    }
+
     // ─── Core callback handler ────────────────────────────────────────────────
 
     /**

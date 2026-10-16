@@ -21,5 +21,9 @@ public enum LedgerCategory {
     FX_GAIN_LOSS,
     PROVIDER_FEE_EXPENSE,
     LOSS_EXPENSE,
-    OPENING_BALANCE_EQUITY
+    OPENING_BALANCE_EQUITY,
+    // V52 (Phase 8 wallets and agents)
+    CUSTOMER_WALLET,
+    AGENT_FLOAT,
+    AGENT_COMMISSION_EXPENSE
 }

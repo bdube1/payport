@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE','COMPLIANCE')")
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
 public class OpsController {
@@ -205,23 +206,25 @@ public class OpsController {
 
     // ─── MANUAL ACTIONS ───────────────────────────────────────────────────────
 
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")
     @PostMapping("/transactions/{ref}/retry-fulfilment")
     public ResponseEntity<ApiResponse<TransactionResponse>> retryFulfilment(
             @PathVariable String ref,
             @RequestBody(required = false) Map<String, String> body,
             HttpServletRequest req) {
-        String operator = body != null ? body.getOrDefault("operator", "OPS") : "OPS";
+        String operator = zw.co.payport.gateway.platform.Web.staff();   // Phase 9: from the login, never from the request body
         TransactionResponse tx = orchestratorService.manualRetryFulfilment(ref, operator);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
 
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")
     @PostMapping("/transactions/{ref}/refund")
     public ResponseEntity<ApiResponse<TransactionResponse>> refund(
             @PathVariable String ref,
             @RequestBody Map<String, String> body,
             HttpServletRequest req) {
         String reason = body.getOrDefault("reason", "Ops-initiated refund");
-        String operator = body.getOrDefault("operator", "OPS");
+        String operator = zw.co.payport.gateway.platform.Web.staff();   // Phase 9: from the login, never from the request body
         TransactionResponse tx = orchestratorService.initiateRefund(ref, operator, reason);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
@@ -234,6 +237,7 @@ public class OpsController {
      * it). Ops supplies proof of the manual payout they already made
      * outside the system.
      */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")
     @PostMapping("/transactions/{ref}/complete-refund")
     public ResponseEntity<ApiResponse<TransactionResponse>> completeRefund(
             @PathVariable String ref,
@@ -242,7 +246,7 @@ public class OpsController {
         String refundReference = body.get("refundReference");
         String refundMethod = body.get("refundMethod");
         String reason = body.get("reason");
-        String operator = body.getOrDefault("operator", "OPS");
+        String operator = zw.co.payport.gateway.platform.Web.staff();   // Phase 9: from the login, never from the request body
         TransactionResponse tx = orchestratorService.completeManualRefund(ref, operator, refundReference, refundMethod, reason);
         return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
     }
@@ -362,6 +366,7 @@ public class OpsController {
         return ResponseEntity.ok(ApiResponse.success(new LinkedHashMap<>(FLOAT_THRESHOLDS), requestId(req)));
     }
 
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")
     @PutMapping("/float-thresholds")
     public ResponseEntity<ApiResponse<Map<String, Double>>> updateFloatThresholds(
             @RequestBody Map<String, Double> thresholds, HttpServletRequest req) {

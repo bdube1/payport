@@ -1,8 +1,8 @@
 package zw.co.payport.gateway.enums;
 
 public enum TransactionChannel {
-    /** WEB, MOBile app, USD = USSD, merchant API. */
-    WEB, MOB, USD, API;
+    /** WEB, MOBile app, USD = USSD, merchant API; Phase 8: WhatsApp, point of sale, agent. */
+    WEB, MOB, USD, API, WHATSAPP, POS, AGENT;
 
     public static TransactionChannel fromString(String value) {
         if (value == null) return WEB;

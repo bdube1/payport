@@ -47,6 +47,9 @@ public class BankMessageService {
     private final PayoutLedger payoutLedger;
     private final ReconExceptionStore exceptions;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProviderSettlementService providerSettlements;
+
     public BankMessageService(JdbcTemplate jdbc, Iso20022Schemas schemas, MarketRegistry markets, SettlementBatchService settlement,
                               PayoutLedger payoutLedger, ReconExceptionStore exceptions) {
         this.jdbc = jdbc;
@@ -139,7 +142,7 @@ public class BankMessageService {
         Map<String, Integer> counts = new LinkedHashMap<>();
         String provider = "BANK_" + market.country() + "_" + s.currency();
         for (Camt053Parser.Entry e : s.entries()) {
-            Trace t = trace(e, s.currency(), provider);
+            Trace t = trace(e, s, provider, by);
             counts.merge(t.status(), 1, Integer::sum);
             jdbc.update("INSERT INTO bank_statement_entries (statement_id, entry_no, direction, amount_minor, currency, status, booking_date, value_date, "
                             + "bank_reference, end_to_end_id, counterparty, remittance, trace_status, stl_item_id, ledger_entry_ref, detail) "
@@ -162,10 +165,23 @@ public class BankMessageService {
 
     record Trace(String status, Long itemId, String ledgerRef, String detail) {}
 
-    private Trace trace(Camt053Parser.Entry e, String currency, String provider) {
+    private Trace trace(Camt053Parser.Entry e, Camt053Parser.Statement st, String provider, String by) {
+        String currency = st.currency();
         if (!"BOOK".equals(e.status())) return new Trace("NOT_BOOKED", null, null, "entry status " + e.status());
         List<Map<String, Object>> items = e.endToEndId() == null ? List.of()
                 : jdbc.queryForList("SELECT id, status, net_minor, currency FROM stl_items WHERE instruction_ref = ?", e.endToEndId());
+        if (items.isEmpty() && "CRDT".equals(e.direction()) && providerSettlements != null) {
+            var rule = providerSettlements.match(currency, e.counterparty(), e.remittance());
+            if (rule.isPresent()) {
+                String key = st.accountId() + ":" + st.statementId() + ":" + e.no();
+                try {
+                    String ref = providerSettlements.book(rule.get(), key, e.amountMinor(), currency, e.bookingDate(), by);
+                    return new Trace("PROVIDER_SETTLEMENT", null, ref, rule.get().get("provider_code") + " settlement (rule " + rule.get().get("id") + ")");
+                } catch (RuntimeException ex) {
+                    return new Trace("LEDGER_PENDING", null, null, rule.get().get("provider_code") + " settlement not booked: " + ex.getMessage());
+                }
+            }
+        }
         if (items.isEmpty()) {
             exceptions.raise("MISSING_IN_PAYPORT", provider, null, e.bankReference(), null, e.amountMinor(), currency,
                     e.direction() + " " + e.amountMinor() + " " + currency + " not traceable to a PayPort payout (" + nz(e.remittance()) + ")", "STATEMENT");

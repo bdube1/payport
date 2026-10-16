@@ -48,7 +48,7 @@ jobs:
 
       - name: Publish test totals
         if: always()
-        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest|RiskComplianceScenarioTest|NameMatcherTest|PushNotificationScenarioTest|UnSanctionsListParseTest|Iso20022ConformanceScenarioTest|Iso20022MappingTest|MarketRegistryTest|PlatformControlsScenarioTest|EmvQrTest|ApiContractExportTest'
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest|RiskComplianceScenarioTest|NameMatcherTest|PushNotificationScenarioTest|UnSanctionsListParseTest|Iso20022ConformanceScenarioTest|Iso20022MappingTest|MarketRegistryTest|PlatformControlsScenarioTest|EmvQrTest|ApiContractExportTest|Phase8UnitTest|Phase8CompletionScenarioTest|SecurityResilienceScenarioTest'
 
       - name: Upload API contract
         if: always()
@@ -129,3 +129,44 @@ jobs:
       - name: Publish test totals
         if: always()
         run: scripts/ci/test-summary.sh ledger-db
+      # Phase 9: back up the database the ledger tests just wrote (routines and triggers included),
+      # restore it into an empty database and prove the copy is whole (rows, procedures, balances,
+      # ledger integrity). The restore time is the RTO evidence.
+      - name: Disaster-recovery drill (backup, restore, verify)
+        run: |
+          scripts/phase9/dr-drill.sh 127.0.0.1 3306 root root payport payport_dr_copy dr-report.txt
+          echo "::notice title=dr-drill::$(grep -E 'restore \(RTO\)|backup:' dr-report.txt | tr -s ' ' | paste -sd ';' -) $(grep RESULT dr-report.txt)"
+      - name: Upload DR report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-drill-report
+          path: dr-report.txt
+          if-no-files-found: warn
+
+  dependency-scan:
+    # Phase 9: known-vulnerability report for the Maven dependencies (OSV database). Report only:
+    # findings are triaged in docs/phase9/PHASE9_REPORT.md, they do not block a build by themselves.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: OSV scan of pom.xml
+        run: |
+          curl -sSfL -o osv-scanner https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64
+          chmod +x osv-scanner
+          set +e
+          ./osv-scanner --lockfile=pom.xml --format=table > osv-report.txt 2>&1
+          code=$?
+          set -e
+          cat osv-report.txt
+          n=$(grep -cE '^\| https://osv.dev' osv-report.txt || true)
+          echo "::notice title=dependency-scan::osv-scanner exit $code, $n advisories listed (report artifact osv-report)"
+      - name: Upload OSV report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-report
+          path: osv-report.txt
+          if-no-files-found: warn

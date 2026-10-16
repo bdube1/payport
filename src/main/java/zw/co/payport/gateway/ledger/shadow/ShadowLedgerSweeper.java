@@ -157,7 +157,7 @@ public class ShadowLedgerSweeper {
             + "COALESCE(t.fulfilment_provider_code, pt.provider_code) AS vendor, t.status, t.payment_confirmed_at, t.completed_at, "
             + "t.refunded_at, t.updated_at AS changed_at "
             + "FROM transactions t JOIN product_types pt ON pt.id = t.product_type_id "
-            + "WHERE pt.category <> 'MERCHANT' AND t.payment_confirmed_at IS NOT NULL "
+            + "WHERE pt.category NOT IN ('MERCHANT', 'WALLET') AND t.payment_confirmed_at IS NOT NULL "
             + "AND (t.provider_reference IS NULL OR t.provider_reference NOT LIKE 'TEST\\_SIM\\_%')";
 
     private Item collectionItem(ResultSet rs) throws SQLException {

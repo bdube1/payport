@@ -121,6 +121,12 @@ public class TransactionOrchestratorService {
             });
         }
 
+        // Phase 8 wallet top-up: the wallet must exist, be usable and have room BEFORE the customer pays.
+        if ("WALLET".equalsIgnoreCase(product.getCategory())) {
+            if (walletService == null) throw new IllegalArgumentException("Wallet top-ups are not available");
+            walletService.validateTopUp(dto.getRecipientIdentifier(), payCcy, dto.getAmountCents() == null ? 0 : dto.getAmountCents());
+        }
+
         Transaction tx = Transaction.builder()
                 .reference(dto.getReference())
                 .status(TransactionStatus.INITIATED)
@@ -284,6 +290,9 @@ public class TransactionOrchestratorService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.integration.IntegrationRegister integrationRegister;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.wallets.WalletService walletService;
 
     private org.springframework.transaction.support.TransactionTemplate requiresNew() {
         org.springframework.transaction.support.TransactionTemplate t =

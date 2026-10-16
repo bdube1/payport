@@ -43,7 +43,24 @@ public class IntegrationRegister {
     public IntegrationRegister(Environment env, JdbcTemplate jdbc) {
         this.env = env;
         this.jdbc = jdbc;
-        this.providers = load();
+        this.providers = withCurrencyOverrides(load(), env);
+    }
+
+    /**
+     * A provider's currencies can be widened or narrowed per deployment (a new market switched on from
+     * the portal, e.g. MTN MoMo in another country) with payport.integrations.CODE.currencies=ZMW,UGX.
+     */
+    static Map<String, Provider> withCurrencyOverrides(Map<String, Provider> loaded, Environment env) {
+        if (env == null) return loaded;
+        Map<String, Provider> m = new LinkedHashMap<>();
+        for (Provider p : loaded.values()) {
+            String o = env.getProperty("payport.integrations." + p.code() + ".currencies", "");
+            if (o.isBlank()) { m.put(p.code(), p); continue; }
+            List<String> ccy = java.util.Arrays.stream(o.split(",")).map(String::trim).filter(c -> !c.isEmpty()).map(c -> c.toUpperCase(Locale.ROOT)).toList();
+            m.put(p.code(), new Provider(p.code(), p.name(), p.kind(), ccy, p.operations(), p.callbackAuth(), p.endpointProperty(), p.verification(),
+                    p.notes() + " [currencies overridden by configuration]"));
+        }
+        return m;
     }
 
     static Map<String, Provider> load() {

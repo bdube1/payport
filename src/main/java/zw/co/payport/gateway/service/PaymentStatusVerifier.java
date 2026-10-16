@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *
  * Two uses:
  *  - Callback trust (R4): for providers whose callbacks carry nothing we can verify
- *    (payport.payments.query-providers, default ECOCASH,ONEMONEY,ZIMSWITCH), a callback is only a
+ *    (payport.payments.query-providers, default ECOCASH,ONEMONEY,ZIMSWITCH,MTN_MOMO,AIRTEL_MONEY), a callback is only a
  *    hint; the status and amount we act on come from our own authenticated status query.
  *  - Uncertain outcomes: the resolver uses verify() for every provider. EcoCash and
  *    OneMoney have dedicated query calls; any other provider is asked through its
@@ -48,7 +48,7 @@ public class PaymentStatusVerifier {
      * webhook handler only checked the body's structure (no signature), so a forged webhook
      * could mark a card payment paid (R45).
      */
-    public static final String DEFAULT_QUERY_PROVIDERS = "ECOCASH,ONEMONEY,ZIMSWITCH";
+    public static final String DEFAULT_QUERY_PROVIDERS = "ECOCASH,ONEMONEY,ZIMSWITCH,MTN_MOMO,AIRTEL_MONEY";
 
     private final EcoCashAdaptor ecoCashAdaptor;
     private final OneMoneyAdaptor oneMoneyAdaptor;

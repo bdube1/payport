@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @RestController
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE','COMPLIANCE')")
 @RequestMapping("/api/v1/admin/wallet-balances")
 @RequiredArgsConstructor
 public class WalletBalanceController {
