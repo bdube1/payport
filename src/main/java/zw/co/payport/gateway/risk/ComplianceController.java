@@ -122,8 +122,11 @@ public class ComplianceController {
 
     @GetMapping("/rule-changes")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> pendingChanges(HttpServletRequest req) {
-        return ok(jdbc.queryForList("SELECT id, approval_ref, subject_ref, payload, reason, status, requested_by, requested_at, decided_by, expires_at "
-                + "FROM platform_approvals WHERE action_type = 'RISK_RULE_CHANGE' ORDER BY id DESC LIMIT 100"), req);
+        // Every compliance change that needs a second officer: rule changes and creations,
+        // parameter changes and authority grants (each is decided on its own endpoint).
+        return ok(jdbc.queryForList("SELECT id, action_type, approval_ref, subject_ref, payload, reason, status, requested_by, requested_at, decided_by, expires_at "
+                + "FROM platform_approvals WHERE action_type IN ('RISK_RULE_CHANGE','RISK_RULE_CREATE','COMPLIANCE_PARAMETER_CHANGE','COMPLIANCE_AUTHORITY_GRANT') "
+                + "ORDER BY id DESC LIMIT 100"), req);
     }
 
     // ─── screening lists ──────────────────────────────────────────────────────

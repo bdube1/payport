@@ -27,7 +27,15 @@ while read -r msg id; do
     echo "present: $msg"
   else
     d="$WORK/$msg"; mkdir -p "$d"
-    curl -fsSL --retry 3 --max-time 120 -A "PayPort-CI/1.0 (schema fetch)" -o "$d/download" "https://www.iso20022.org/message/$id/download"
+    url="https://www.iso20022.org/message/$id/download"
+    code="$(curl -sSL --retry 3 --max-time 120 -o "$d/download" -w '%{http_code}' \
+      -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" \
+      -H "Accept: application/xml,application/zip,application/octet-stream,*/*" \
+      -H "Referer: https://www.iso20022.org/catalogue-messages/iso-20022-messages-archive" "$url" || echo "000")"
+    if [ "$code" != "200" ]; then
+      echo "::error title=iso20022::$msg: $url answered HTTP $code ($(head -c 200 "$d/download" 2>/dev/null | tr -d '\n\r' | tr -c '[:print:]' ' '))"
+      status=1; continue
+    fi
     if unzip -tq "$d/download" >/dev/null 2>&1; then
       unzip -q -o "$d/download" -d "$d/x"
       found="$(grep -rl --include='*.xsd' "targetNamespace=\"urn:iso:std:iso:20022:tech:xsd:$msg\"" "$d/x" | head -1 || true)"
