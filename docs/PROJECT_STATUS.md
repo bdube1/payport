@@ -12,7 +12,14 @@ _Last updated: 2026-10-16 (Phase 2 payment lifecycle). Living document; updated 
 - Retry rules from the provider specs.
 - Staff skip-payment endpoints removed.
 
-See `docs/adr/0011-payment-intents-and-outcomes.md`, `docs/phase2/PROVIDER_ERROR_CODES.md` and `docs/phase3/PHASE3_REPORT.md`. CI evidence: see the latest run on the branch.
+See `docs/adr/0011-payment-intents-and-outcomes.md`, `docs/phase2/PROVIDER_ERROR_CODES.md` and `docs/phase3/PHASE3_REPORT.md`.
+
+CI run 38861848965 (2026-10-16), all jobs green:
+- `build-and-test`: **124 passed, 0 failed**. Guarded required suites: ApplicationSmokeTest, LivemodeMigrationTest, PaymentLifecycleScenarioTest, FulfilmentJobScenarioTest and ReconSettlementScenarioTest.
+- `ledger-db`: **106 / 106**.
+- `migrations-production-like` (V37–V40): pass.
+
+Not verified: provider sandboxes, real statement samples, and the sponsor bank's payout format.
 
 ### Phase 2
 **Phase 2: payment lifecycle. Code complete and CI-verified on `phase2-payment-lifecycle`** (see `docs/phase2/PHASE2_REPORT.md`, ADR-0010, `docs/runbooks/PAYMENT_OPERATIONS.md`).
