@@ -19,6 +19,9 @@ public class DisputeService {
 
     private final DisputeRepository disputeRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.DisputeSlaService slaService;
+
     public record OpenDisputeRequest(Long checkoutSessionId, Long amountCents, String reason) {}
 
     public Dispute open(OpenDisputeRequest req) {
@@ -29,6 +32,7 @@ public class DisputeService {
                 .status("OPEN")
                 .build();
         disputeRepository.save(dispute);
+        if (slaService != null) slaService.setDeadlines(dispute.getId());   // Phase 6 timelines
         log.info("[DISPUTE] Opened against session {}: {} cents, reason: {}", req.checkoutSessionId(), req.amountCents(), req.reason());
         return dispute;
     }

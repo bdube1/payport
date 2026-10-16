@@ -78,6 +78,13 @@ public class TransactionOrchestratorService {
 
         product.validateAmount(dto.getAmountCents());
 
+        // Phase 6: transaction monitoring (OBSERVE = alert only; ENFORCE + BLOCK refuses here, before payment).
+        if (riskEngine != null) {
+            riskEngine.evaluate(new zw.co.payport.gateway.risk.RiskEngine.Payment(dto.getReference(), dto.getCustomerPhone(), null,
+                    dto.getAmountCents() == null ? 0 : dto.getAmountCents(), dto.getCurrency() != null ? dto.getCurrency() : "USD",
+                    product.getCode(), dto.getRecipientIdentifier()));
+        }
+
         // Phase 5 biller framework: a bill account must be well-formed, and the biller must accept the
         // currency and amount, BEFORE the customer is asked to pay (not discovered at delivery).
         if (billerRegistry != null) {
@@ -240,6 +247,9 @@ public class TransactionOrchestratorService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.billers.BillerRegistry billerRegistry;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.RiskEngine riskEngine;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.integration.IntegrationRegister integrationRegister;

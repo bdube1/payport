@@ -71,6 +71,14 @@ public class MerchantPlatformService {
         if (!d.equals("APPROVE") && !d.equals("REJECT")) throw new IllegalArgumentException("recommendation must be APPROVE or REJECT");
         Map<String, Object> c = kybCase(merchantId);
         if ("APPROVE".equals(d)) {
+            // Phase 6: a screening hit holds approval until compliance closes its case (no detail given here).
+            Integer openCase = jdbc.queryForObject("SELECT COUNT(*) FROM risk_cases WHERE subject_type = 'MERCHANT' AND subject_key = ? "
+                    + "AND status NOT LIKE 'CLOSED%'", Integer.class, "MERCHANT:" + merchantId);
+            Integer confirmed = jdbc.queryForObject("SELECT COUNT(*) FROM risk_cases WHERE subject_type = 'MERCHANT' AND subject_key = ? "
+                    + "AND status = 'CLOSED_CONFIRMED'", Integer.class, "MERCHANT:" + merchantId);
+            if ((openCase != null && openCase > 0) || (confirmed != null && confirmed > 0)) {
+                throw new IllegalStateException("Compliance review pending for this merchant: approval is on hold");
+            }
             for (String item : KYB_CHECKLIST) {
                 if (checklist == null || !Boolean.TRUE.equals(checklist.get(item))) {
                     throw new IllegalArgumentException("checklist item not confirmed: " + item);

@@ -83,6 +83,13 @@ public class GlobalExceptionHandler {
      * RuntimeExceptions with a clear message -- they still fall through
      * to the generic handler below untouched.
      */
+    /** Refused by an enforced risk rule. Neutral wording (no tipping off); 403. */
+    @ExceptionHandler(zw.co.payport.gateway.risk.RiskDeclinedException.class)
+    public ResponseEntity<ApiResponse<?>> handleRiskDeclined(zw.co.payport.gateway.risk.RiskDeclinedException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] Risk-declined on {} {}", req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error("PAYMENT_NOT_ALLOWED", ex.getMessage(), requestId(req)));
+    }
+
     /** A provider is suspended or not responding: nothing was sent. 503 with a code channels can act on (offer another method). */
     @ExceptionHandler(zw.co.payport.gateway.integration.ProviderUnavailableException.class)
     public ResponseEntity<ApiResponse<?>> handleProviderUnavailable(zw.co.payport.gateway.integration.ProviderUnavailableException ex, HttpServletRequest req) {
