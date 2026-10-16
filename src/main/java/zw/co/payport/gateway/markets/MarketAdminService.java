@@ -147,7 +147,10 @@ public class MarketAdminService {
         Proposed p = propose(current, curRows, ch, cur);
         List<String> problems = MarketRegistry.validate(p.market());
         if (!problems.isEmpty()) throw new IllegalArgumentException("The change would leave " + cc + " invalid: " + problems);
-        if ("LIVE".equals(p.market().status())) {
+        // Readiness blocks the move to LIVE. A market that is already live is not frozen by its own
+        // provisional settings (e.g. a sponsor-bank account still to be confirmed): those become
+        // warnings for the approver, so switching a currency back on after an incident is never blocked.
+        if ("LIVE".equals(p.market().status()) && !"LIVE".equals(current.get("status"))) {
             @SuppressWarnings("unchecked") List<String> blockers = (List<String>) readiness(p.row(), p.currencyRows()).get("blockers");
             if (!blockers.isEmpty()) throw new IllegalArgumentException(cc + " cannot go live yet: " + blockers);
         }
@@ -168,7 +171,10 @@ public class MarketAdminService {
         out.put("approvalRef", a.ref());
         out.put("requiredRole", role);
         out.put("enablesMoney", enablesMoney);
-        out.put("warnings", readiness(p.row(), p.currencyRows()).get("warnings"));
+        Map<String, Object> r = readiness(p.row(), p.currencyRows());
+        List<Object> warnings = new ArrayList<>((List<?>) r.get("warnings"));
+        if ("LIVE".equals(current.get("status"))) warnings.addAll((List<?>) r.get("blockers"));
+        out.put("warnings", warnings);
         return out;
     }
 
@@ -220,7 +226,17 @@ public class MarketAdminService {
             cc = p.path("country").asText();
             if (approve) {
                 if (ACTION_CREATE.equals(action)) applyCreate(p, a.requestedBy() + " / " + by);
-                else applyChange(p, a.requestedBy() + " / " + by);
+                else {
+                    String before = jdbc.queryForObject("SELECT status FROM markets WHERE country = ?", String.class, cc);
+                    applyChange(p, a.requestedBy() + " / " + by);
+                    // Readiness again at the moment of approval (a screening list may have lapsed since the request).
+                    Map<String, Object> row = jdbc.queryForMap("SELECT * FROM markets WHERE country = ?", cc);
+                    if ("LIVE".equals(row.get("status")) && !"LIVE".equals(before)) {
+                        @SuppressWarnings("unchecked") List<String> blockers = (List<String>) readiness(row,
+                                jdbc.queryForList("SELECT * FROM market_currencies WHERE country = ?", cc)).get("blockers");
+                        if (!blockers.isEmpty()) throw new IllegalStateException(cc + " cannot go live: " + blockers);
+                    }
+                }
                 List<String> problems = registry.loadProblems(cc);
                 if (!problems.isEmpty()) throw new IllegalStateException("The change would withdraw " + cc + ": " + problems);
                 reloadAfterCommit();
