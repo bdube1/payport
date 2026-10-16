@@ -1,4 +1,22 @@
-# Frontend integration plan (Phases 2–5)
+# Frontend integration plan (Phases 2–7)
+
+## Status (2026-10-16)
+
+Done in the user's order. Each item is a pull request; every app now has a build or typecheck workflow.
+
+| Order | App | Pull request | Covers |
+|---|---|---|---|
+| 1 | consumer | `payport-consumer` #1 | Section 1 items 1, 3, 4, 5; biller catalogue and lookup; PAYMENT_NOT_ALLOWED; no logout on 403 |
+| 1 | mobile | `payport-mobile` #1 | Section 1 items 2–5; **push token register and revoke**; biller lookup |
+| 2 | ops | `payport-ops` #1 | Work queues; KYB four-eyes; destinations; enablements; settlement batches; recon exceptions; bank ISO 20022 messages; integrations; markets |
+| 3 | merchant | `payport-merchant` #2 (on top of #1, signup) | API keys; go-live; destinations; balances and statement; payouts; webhooks console |
+| 4 | ops | `payport-ops` #1 | Compliance console (COMPLIANCE only); compliance authorities (ADMIN); dispute deadlines; COMPLIANCE users |
+
+**Still to do**
+- End-to-end checks against a staging backend.
+- Push delivery on a real device. This needs `expo.extra.eas.projectId` from `eas init`.
+- The ledger screens (section 2, ops) remain on the API only.
+
 
 _Reviewed 2026-10-16 against `payport-ops` (48cb36a), `payport-merchant` (1df842d), `payport-consumer` (4257a6b) and `payport-mobile` (main). The backend is on `phase2-payment-lifecycle`._
 

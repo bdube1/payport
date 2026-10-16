@@ -1,35 +1,39 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-16 (Phase 6 risk and compliance). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (compliance controls, Phase 7, frontends). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
-**Phase 6 (risk and compliance), plus the owner's decisions on push, merchant signup and bill lookups**, on `phase2-payment-lifecycle`. See:
-- `docs/phase6/PHASE6_REPORT.md`
-- `docs/phase5/PHASE5_REPORT.md`
-- `docs/phase4/PHASE4_REPORT.md`
-- `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`
+**Compliance controls (owner items 1–5), Phase 7 (markets and ISO 20022) and the frontends (items 6–7)**, on `phase2-payment-lifecycle`. See:
+- `docs/compliance/COMPLIANCE_CONTROLS.md`: limits, UN screening, FIU reports, dispute deadlines, controls, regulatory sources;
+- `docs/phase7/PHASE7_REPORT.md`;
+- `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`: status table and pull requests;
+- earlier: Phase 6, 5 and 4 reports.
 
-CI run 38895163667 (2026-10-16), all jobs green:
-- `build-and-test`: **173 passed, 0 failed**.
+**Combined CI run (commit 5210e5f):**
+- `build-and-test`: **183 passed, 7 failed**. All 7 are the ISO 20022 tests, which need the official schemas. iso20022.org refuses GitHub's runners ("403 SWIFT site off-line").
 - `ledger-db`: **106 / 106**.
-- `migrations-production-like` (through V45): pass.
+- `migrations-production-like` (through V49): pass.
 
 | Item | Status |
 |---|---|
-| Push notifications (owner: yes) | **Backend done** (`PushNotificationScenarioTest`). The mobile app must register its token (frontend plan). |
-| Merchant signup in the merchant portal | **Done**: `payport-merchant` PR #1 (`/signup`). Builds and renders. |
-| Public bill lookups (owner: public, no login, no captcha) | Kept public, rate-limited per IP. |
-| Phase 6 acceptance (scenario library + access controls) | **Met** (`RiskComplianceScenarioTest`) |
-| Phase 5 acceptance (real test environments) | Not met: no sandbox access (owner confirmed). |
+| 1. Configurable limits, thresholds, velocity, reporting parameters; new rules observe-only | **Done**. Every value is sourced or marked PROVISIONAL. The database refuses enforcement without approval. |
+| 2. UN Security Council Consolidated List | **Done**: verified hourly updates, quarantine, auditable runs. Never CLEAR when the list is unavailable or out of date. |
+| 3. FIU report templates | **Done**: goAML-structured, versioned templates. Reports stay drafts until a REPORT_APPROVER (not the preparer) approves. |
+| 4. Dispute deadlines | **Done**: RBZ CPF 2017 defaults, working-day calendar. Provisional settings are flagged wherever shown. |
+| 5. Controls | **Done**: COMPLIANCE-only access, hash-chained audit, two-person approval for rules, parameters, cases, templates and authorities. |
+| 6. Mobile push | **Done in mobile PR #1**: register and revoke. Delivery and duplicate prevention are tested on the backend; device test pending (needs the EAS project ID). SMS stays success-only. |
+| 7. Frontends | **PRs open**: consumer #1, mobile #1, ops #1 (approvals, work queues, finance, compliance console), merchant #2 (on #1). |
+| Phase 7 acceptance 2 (a sandbox country by configuration and adapters only) | **Met** (ZM sandbox; `MarketRegistryTest`) |
+| Phase 7 acceptance 1 (ISO 20022 flow validated, processed, traced through the ledger) | **Built and tested end to end; blocked on the official schemas** (R71). Fixtures pass a structural check against schema-derived bindings. |
 
-Defect found in Phase 6 and fixed: **R64**. Every authorization denial in the API returned 400 instead of 403.
-
-Owner and compliance inputs needed:
-- Confirm the PROVISIONAL compliance values (thresholds, FIU format, RBZ dispute deadlines, case SLA).
-- Source the screening lists.
-- Appoint at least two COMPLIANCE users.
-- Set `PAYPORT_DATA_KEY` in production.
-- Sign off retiring the legacy settlement.
+**Owner and compliance inputs needed**
+- **Download the three XSDs** (camt.053.001.08, pain.001.001.09, pain.002.001.10) from iso20022.org on a normal machine and send them to me.
+- **Confirm the CTR threshold and aggregation period** with the FIU, register on goAML, and set the entity ID.
+- **Confirm the chargeback deadline.**
+- **Appoint two or more COMPLIANCE users** and a REPORT_APPROVER.
+- **Sponsor bank:** its payout and statement formats.
+- **Set `PAYPORT_DATA_KEY`** in production.
+- **Run `eas init`** for push notifications.
 
 ### Phase 3 and the Phase 2 review
 **Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**:
