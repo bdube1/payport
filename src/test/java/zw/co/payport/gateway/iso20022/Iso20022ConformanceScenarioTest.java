@@ -112,7 +112,7 @@ class Iso20022ConformanceScenarioTest {
     void payoutFlow_pain001_pain002_camt053_tracedThroughTheLedger() throws Exception {
         assertEquals(Map.of(Iso20022Schemas.CAMT_053, true, Iso20022Schemas.PAIN_001, true, Iso20022Schemas.PAIN_002, true,
                 "guideline:" + BankMessageService.HVPS_PLUS, true), bank.schemaStatus(), "schemas must be installed and pinned (scripts/iso20022)");
-        assertEquals(List.of(), markets.referenceDataProblems());
+        assertEquals(Map.of(), markets.problems(), "markets agree with the reference data");
 
         long alpha = merchant("Alpha Store", "BANK", "1234567890", "Test Bank Harare", "Samora Machel Ave");
         long beta = merchant("Beta Kiosk", "MOBILE_WALLET", "263771234567", "Wallet Operator", null);

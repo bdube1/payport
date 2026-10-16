@@ -204,7 +204,7 @@ public class UssdService {
         return reply;
     }
 
-    static String reference(String session) {
+    public static String reference(String session) {
         try {
             byte[] h = MessageDigest.getInstance("SHA-256").digest(session.getBytes(StandardCharsets.UTF_8));
             String d = LocalDate.now().toString().replace("-", "");
