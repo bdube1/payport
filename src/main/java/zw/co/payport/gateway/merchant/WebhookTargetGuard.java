@@ -48,7 +48,6 @@ public class WebhookTargetGuard {
         if (port != -1 && port != 443 && port != 8443 && port < 1024 && !(allowHttp && port == 80)) {
             throw new IllegalArgumentException("port " + port + " is not allowed");
         }
-        if (allowPrivate) return u;
         InetAddress[] addresses;
         try {
             addresses = InetAddress.getAllByName(u.getHost());
@@ -56,7 +55,11 @@ public class WebhookTargetGuard {
             throw new IllegalArgumentException("the host does not resolve");
         }
         for (InetAddress a : addresses) {
-            if (!isPublic(a)) throw new IllegalArgumentException("the host resolves to a non-public address");
+            // Link-local (169.254.x.x, fe80::, cloud metadata services) is refused even in local-testing mode.
+            if (a.isLinkLocalAddress() || a.isAnyLocalAddress() || a.isMulticastAddress()) {
+                throw new IllegalArgumentException("the host resolves to a non-public address");
+            }
+            if (!allowPrivate && !isPublic(a)) throw new IllegalArgumentException("the host resolves to a non-public address");
         }
         return u;
     }
