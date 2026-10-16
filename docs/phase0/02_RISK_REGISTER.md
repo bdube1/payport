@@ -58,7 +58,7 @@
 |---|---|---|---|
 | R3 (extended) | The public transaction response included `fulfilmentData`, which for ZESA purchases **is the electricity token**. Anyone enumerating references could take other customers' tokens. | G | Fixed on `phase0.5-containment` |
 | R35 | `/api/v1/transactions/my-history` logged every request header (cookies, API keys) at INFO | G | Fixed on `phase0.5-containment` |
-| R36 | CORS allows `http://localhost:3000-3002/4321` with credentials in the production configuration | G | Open: Phase 1 (environment-specific origins) |
+| R36 | CORS allows `http://localhost:3000-3002/4321` with credentials in the production configuration | G | **Fixed (Phase 9)**: localhost origins only outside production (`PAYPORT_ENV`); extra https origins by configuration; unit-tested |
 | R37 | EcoCash adaptor `queryStatus()` always returns UNKNOWN; only `queryTransaction()` works | G | Worked around by `PaymentStatusVerifier`; fix the adaptor contract in Phase 5 |
 
 ## Added during Phase 1
@@ -108,6 +108,10 @@
 | R72 | Customer phone validation hard-coded to Zimbabwe (+263) in the payment and sign-up APIs, so a second market switched on could not serve its own customers | G | [Observed] | **Fixed**: E.164 at the API, then the numbering plan of any non-suspended market from the market settings |
 | R73 | Markets, currencies and channels could only be changed in code or configuration files | G | [Observed] | **Fixed**: operated from the ops console with immediate switch-off and two-person (compliance) switch-on, audited |
 | R74 | KYB checklist let a person tick "sanctions screened" | G | [Observed] | **Fixed**: the item is the server's CLEAR screening result (with its run id); approval is refused otherwise |
+| R75 | Three admin controllers (ops dashboard, transaction search and export, customer statements, refunds, fulfilment retry, float thresholds, provider health and float balances) had no role guard: any signed-in customer could call them; refund and retry took the operator name from the request body | P | [Tested] | **Fixed (Phase 9)**: role guards, admin and merchant prefixes also closed by URL, operator from the login; the authorization matrix test covers every admin and merchant route on each build |
+| R76 | `org.apache.xmlrpc` 3.1.3 (Econet airtime adapter) has an unfixed deserialisation advisory (GHSA-r2pg-w96p-pcpj); the project is end-of-life | G | [Observed] | **Accepted with mitigation**: only Econet's own endpoint over the private link; replace with a minimal XML-RPC client |
+| R77 | Known advisories in dependencies (POI, commons-compress, Jackson 2 and 3, Tomcat, Bouncy Castle) | G | [Tested] | **Fixed (Phase 9)** by version overrides; `dependency-scan` CI job reports new advisories on every build |
+| R78 | Phase 8 lines (wallets, agents, POS, WhatsApp, new-market rails) carry customer money once switched on | G | [Tested] | Built off by default behind licence answers, ledger no-negative rules, PIN confirmation, four-eyes float and rules; switch-on runbook `docs/runbooks/SWITCH_ON.md` |
 
 **Phase 2 status of earlier risks:**
 - **R4 / R6:** closed by design on the Phase 2 branch. The callback inbox and query-confirmed callbacks cover R4; the durable resolver, with no time-based failure, covers R6.

@@ -25,6 +25,10 @@
         <jjwt.version>0.11.5</jjwt.version>
         <poi.version>5.4.1</poi.version>
         <pdfbox.version>2.0.31</pdfbox.version>
+        <!-- Phase 9 dependency scan (docs/phase9/PHASE9_REPORT.md): versions above Spring Boot's defaults that
+             fix published advisories. Remove an override once Spring Boot manages that version or newer. -->
+        <tomcat.version>11.0.26</tomcat.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
     </properties>
 
     <!-- Phase 9 dependency scan: Jackson 2 (used alongside Spring's Jackson 3) on the line that fixes
@@ -165,7 +169,7 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.78</version>
+            <version>1.86</version>
         </dependency>
 
         <!-- Flyway for database migrations -->
