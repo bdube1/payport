@@ -16,4 +16,9 @@ public interface PayoutFileAdapter {
     String extension();
 
     String render(String batchRef, String currency, List<Map<String, Object>> items);
+
+    /** With the whole batch row (stl_batches) for formats that need more than the reference. */
+    default String render(Map<String, Object> batch, List<Map<String, Object>> items) {
+        return render((String) batch.get("batch_ref"), (String) batch.get("currency"), items);
+    }
 }

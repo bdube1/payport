@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictitious payment status report for tests. -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.002.001.10">
+  <CstmrPmtStsRpt>
+    <GrpHdr><MsgId>BNK-STS-0001</MsgId><CreDtTm>2026-10-16T12:00:00</CreDtTm></GrpHdr>
+    <OrgnlGrpInfAndSts><OrgnlMsgId>{{BATCH}}</OrgnlMsgId><OrgnlMsgNmId>pain.001.001.09</OrgnlMsgNmId></OrgnlGrpInfAndSts>
+    <OrgnlPmtInfAndSts>
+      <OrgnlPmtInfId>{{BATCH}}</OrgnlPmtInfId>
+      <TxInfAndSts><OrgnlInstrId>{{REF1}}</OrgnlInstrId><OrgnlEndToEndId>{{REF1}}</OrgnlEndToEndId><TxSts>ACSC</TxSts><AcctSvcrRef>BNK-REF-0001</AcctSvcrRef></TxInfAndSts>
+      <TxInfAndSts><OrgnlInstrId>{{REF2}}</OrgnlInstrId><OrgnlEndToEndId>{{REF2}}</OrgnlEndToEndId><TxSts>RJCT</TxSts>
+        <StsRsnInf><Rsn><Cd>AC04</Cd></Rsn><AddtlInf>Closed account number</AddtlInf></StsRsnInf></TxInfAndSts>
+      <TxInfAndSts><OrgnlInstrId>{{REF3}}</OrgnlInstrId><OrgnlEndToEndId>{{REF3}}</OrgnlEndToEndId><TxSts>ACSP</TxSts></TxInfAndSts>
+    </OrgnlPmtInfAndSts>
+  </CstmrPmtStsRpt>
+</Document>

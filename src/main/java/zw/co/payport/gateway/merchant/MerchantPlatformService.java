@@ -35,6 +35,9 @@ public class MerchantPlatformService {
     private final MerchantService merchants;
     private final ObjectMapper json;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private zw.co.payport.gateway.markets.MarketRegistry marketRegistry;
+
     public MerchantPlatformService(JdbcTemplate jdbc, MerchantService merchants, ObjectMapper json) {
         this.jdbc = jdbc;
         this.merchants = merchants;
@@ -208,12 +211,21 @@ public class MerchantPlatformService {
 
     @Transactional
     public Map<String, Object> enable(long merchantId, String country, String currency, boolean enabled, String staff) {
+        if (currency == null || currency.isBlank()) throw new IllegalArgumentException("currency is required");
+        zw.co.payport.gateway.markets.MarketRegistry.Market market = country == null || country.isBlank() ? marketRegistry.requireForCurrency(currency) : marketRegistry.require(country);
+        if (market.currency(currency).isEmpty()) {
+            throw new IllegalArgumentException(currency.toUpperCase() + " is not a currency of market " + market.country() + " ("
+                    + market.currencies().stream().map(zw.co.payport.gateway.markets.MarketRegistry.Currency::code).toList() + ")");
+        }
+        if (enabled && !marketRegistry.liveCurrency(currency)) {
+            throw new IllegalArgumentException(market.country() + " is a " + market.status() + " market: live payments in " + currency.toUpperCase() + " cannot be enabled");
+        }
         String status = (String) jdbc.queryForObject("SELECT status FROM merchants WHERE id = ?", String.class, merchantId);
         if (enabled && !"ACTIVE".equals(status)) throw new IllegalStateException("Only an ACTIVE merchant can be enabled for live payments");
         jdbc.update("INSERT INTO merchant_enablements (merchant_id, country, currency, status, enabled_by, enabled_at) VALUES (?, ?, ?, ?, ?, ?) "
                         + "ON DUPLICATE KEY UPDATE status = VALUES(status), enabled_by = VALUES(enabled_by), enabled_at = VALUES(enabled_at)",
-                merchantId, country.toUpperCase(), currency.toUpperCase(), enabled ? "ENABLED" : "DISABLED", staff, Timestamp.valueOf(LocalDateTime.now()));
-        return Map.of("merchantId", merchantId, "country", country.toUpperCase(), "currency", currency.toUpperCase(), "status", enabled ? "ENABLED" : "DISABLED");
+                merchantId, market.country(), currency.toUpperCase(), enabled ? "ENABLED" : "DISABLED", staff, Timestamp.valueOf(LocalDateTime.now()));
+        return Map.of("merchantId", merchantId, "country", market.country(), "currency", currency.toUpperCase(), "status", enabled ? "ENABLED" : "DISABLED");
     }
 
     public List<Map<String, Object>> enablements(long merchantId) {

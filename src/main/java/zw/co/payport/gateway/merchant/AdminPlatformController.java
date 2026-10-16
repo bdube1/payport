@@ -111,8 +111,7 @@ public class AdminPlatformController {
     @PreAuthorize("hasAnyRole('OPS','ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> enable(@PathVariable long merchantId, @RequestBody EnablementBody b, HttpServletRequest req) {
         try {
-            if (b.currency() == null || !List.of("USD", "ZWG").contains(b.currency().toUpperCase())) throw new IllegalArgumentException("currency must be USD or ZWG");
-            return ok(platform.enable(merchantId, b.country() == null ? "ZW" : b.country(), b.currency(), b.enabled(), staff()), req);
+            return ok(platform.enable(merchantId, b.country(), b.currency(), b.enabled(), staff()), req);
         } catch (RuntimeException e) {
             return bad("ENABLEMENT_FAILED", e, req);
         }

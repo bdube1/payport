@@ -50,21 +50,28 @@ public class SettlementBatchService {
     private final Mode mode;
     private final long holdHours;
     private final boolean requireReconciled;
-    private final PayoutFileAdapter payoutAdapter;
+    private final PayoutFormats payoutFormats;
     private org.springframework.beans.factory.ObjectProvider<zw.co.payport.gateway.service.WebhookService> webhooks;
+
+    private PayoutLedger payoutLedger;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setPayoutLedger(PayoutLedger payoutLedger) {
+        this.payoutLedger = payoutLedger;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     void setWebhooks(org.springframework.beans.factory.ObjectProvider<zw.co.payport.gateway.service.WebhookService> webhooks) {
         this.webhooks = webhooks;
     }
 
-    public SettlementBatchService(JdbcTemplate jdbc, Environment env, PayoutFileAdapter payoutAdapter,
+    public SettlementBatchService(JdbcTemplate jdbc, Environment env, PayoutFormats payoutFormats,
                                   @Value("${payport.settlement.mode:PARALLEL}") Mode mode,
                                   @Value("${payport.settlement.hold-hours:24}") long holdHours,
                                   @Value("${payport.settlement.require-reconciled:true}") boolean requireReconciled) {
         this.jdbc = jdbc;
         this.env = env;
-        this.payoutAdapter = payoutAdapter;
+        this.payoutFormats = payoutFormats;
         this.mode = mode;
         this.holdHours = holdHours;
         this.requireReconciled = requireReconciled;
@@ -145,10 +152,11 @@ public class SettlementBatchService {
             long refunds = list.stream().mapToLong(EligibleSession::refunded).sum();
             long net = list.stream().mapToLong(EligibleSession::net).sum();
             String destination = destinationFor(e.getKey(), ccy);
+            Long destinationId = verifiedDestinationId(e.getKey(), ccy);
             String instructionRef = "PO-" + batchRef.substring(4) + "-" + n;
             long itemId = insert("INSERT INTO stl_items (batch_id, merchant_id, currency, session_count, gross_minor, fee_minor, refund_minor, "
-                            + "net_minor, destination, instruction_ref, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)",
-                    batchId, e.getKey(), ccy, list.size(), gross, fee, refunds, net, destination, instructionRef, Timestamp.valueOf(now));
+                            + "net_minor, destination, destination_id, instruction_ref, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)",
+                    batchId, e.getKey(), ccy, list.size(), gross, fee, refunds, net, destination, destinationId, instructionRef, Timestamp.valueOf(now));
             for (EligibleSession s : list) {
                 // The primary key on stl_session_claims makes a concurrent second draft fail instead of paying a session twice.
                 jdbc.update("INSERT INTO stl_session_claims (session_id, item_id) VALUES (?, ?)", s.sessionId(), itemId);
@@ -171,6 +179,12 @@ public class SettlementBatchService {
         if (!verified.isEmpty()) return verified.get(0);
         return jdbc.queryForObject("SELECT CONCAT(COALESCE(payout_account_type,''), ': ', COALESCE(payout_account_details,'')) "
                 + "FROM merchants WHERE id = ?", String.class, merchantId);
+    }
+
+    Long verifiedDestinationId(long merchantId, String currency) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM merchant_settlement_destinations WHERE merchant_id = ? AND currency = ? AND status = 'VERIFIED' "
+                + "ORDER BY id DESC LIMIT 1", Long.class, merchantId, currency);
+        return ids.isEmpty() ? null : ids.get(0);
     }
 
     /** Records an approval. The creator cannot approve; nobody approves twice. Moves to APPROVED when enough. */
@@ -224,7 +238,8 @@ public class SettlementBatchService {
         }
         if (!"APPROVED".equals(status)) throw new IllegalStateException("Only an APPROVED batch can be instructed (status " + status + ")");
         List<Map<String, Object>> items = jdbc.queryForList("SELECT * FROM stl_items WHERE batch_id = ? AND status = 'PENDING' ORDER BY id", batchId);
-        String content = payoutAdapter.render((String) b.get("batch_ref"), (String) b.get("currency"), items);
+        PayoutFileAdapter payoutAdapter = payoutFormats.forCurrency((String) b.get("currency"));
+        String content = payoutAdapter.render(b, items);
         String sha = sha256(content);
         String fileName = b.get("batch_ref") + "." + payoutAdapter.extension();
         LocalDateTime now = LocalDateTime.now();
@@ -270,6 +285,10 @@ public class SettlementBatchService {
             }
             counts.merge(target, 1, Integer::sum);
             notifyPayout(rows.get(0), r, target, now);
+            if (payoutLedger != null) {
+                if ("PAID".equals(target)) payoutLedger.afterCommit(itemId, "PAID");
+                else if ("PAID".equals(current)) payoutLedger.afterCommit(itemId, "RETURNED");
+            }
             completeIfDone(((Number) rows.get(0).get("batch_id")).longValue());
         }
         log.info("[SETTLEMENT] Payout results applied by {} from {}: {}", by, proofRef, counts);

@@ -1,0 +1,29 @@
+{
+  "country": "ZW",
+  "name": "Zimbabwe",
+  "status": "LIVE",
+  "legalEntity": "PAYPORT_ZW",
+  "timezone": "Africa/Harare",
+  "regulators": {
+    "payments": "Reserve Bank of Zimbabwe (National Payment Systems Act [Chapter 24:23])",
+    "fiu": "Financial Intelligence Unit, Zimbabwe (goAML)"
+  },
+  "phone": { "countryCode": "263", "nationalPattern": "^7[1378][0-9]{7}$" },
+  "currencies": [
+    { "code": "USD", "live": true, "symbol": "$", "checkoutProductType": "MERCHANT_CHECKOUT" },
+    { "code": "ZWG", "live": true, "symbol": "ZWG ", "checkoutProductType": "MERCHANT_CHECKOUT_ZWG" }
+  ],
+  "holidaysParameter": "CALENDAR.ZW.HOLIDAYS",
+  "compliance": { "fiuReportFormat": "GOAML_XML", "requiredScreeningLists": ["UN-CONSOLIDATED"] },
+  "bank": {
+    "name": "Sponsor bank (to be confirmed)",
+    "bic": "",
+    "payoutFormat": "PAYPORT_CSV_V1",
+    "statementFormat": "ISO20022_CAMT_053_001_08",
+    "formatStatus": "PROVISIONAL: the sponsor bank has not yet confirmed its payout and statement formats",
+    "accounts": {
+      "USD": { "number": "TO-BE-CONFIRMED-USD", "name": "PayPort Zimbabwe settlement account USD", "ledgerOwner": "SETTLEMENT_USD" },
+      "ZWG": { "number": "TO-BE-CONFIRMED-ZWG", "name": "PayPort Zimbabwe settlement account ZWG", "ledgerOwner": "SETTLEMENT_ZWG" }
+    }
+  }
+}

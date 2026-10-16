@@ -1,0 +1,28 @@
+{
+  "country": "ZM",
+  "name": "Zambia",
+  "status": "SANDBOX",
+  "statusNote": "Representative second market for testing the multi-country model. No licence, no launch, no live money.",
+  "legalEntity": "PAYPORT_ZM_SANDBOX",
+  "timezone": "Africa/Lusaka",
+  "regulators": {
+    "payments": "Bank of Zambia (National Payment Systems Act, 2007) - not engaged",
+    "fiu": "Financial Intelligence Centre, Zambia - not engaged"
+  },
+  "phone": { "countryCode": "260", "nationalPattern": "^(9[5-7]|7[5-7])[0-9]{7}$" },
+  "currencies": [
+    { "code": "ZMW", "live": false, "symbol": "K", "checkoutProductType": "MERCHANT_CHECKOUT" }
+  ],
+  "holidaysParameter": "CALENDAR.ZM.HOLIDAYS",
+  "compliance": { "fiuReportFormat": "NOT_CONFIGURED", "requiredScreeningLists": ["UN-CONSOLIDATED"] },
+  "bank": {
+    "name": "Sandbox bank (fictitious)",
+    "bic": "",
+    "payoutFormat": "ISO20022_PAIN_001_001_09",
+    "statementFormat": "ISO20022_CAMT_053_001_08",
+    "formatStatus": "SANDBOX",
+    "accounts": {
+      "ZMW": { "number": "ZM-SANDBOX-0001", "name": "PayPort Zambia sandbox account ZMW", "ledgerOwner": "SANDBOX_ZMW" }
+    }
+  }
+}

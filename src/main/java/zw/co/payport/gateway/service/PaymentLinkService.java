@@ -36,8 +36,9 @@ public class PaymentLinkService {
 
     public PaymentLink create(Merchant merchant, CreateLinkRequest req) {
         String currency = (req.currency() == null || req.currency().isBlank()) ? merchant.getDefaultCurrency() : req.currency().toUpperCase();
-        if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
-            throw new RuntimeException("currency must be USD or ZWG");
+        // Links always take live money: unknown currencies and sandbox-market currencies are refused here.
+        if (!checkoutSessionService.isSupportedCurrency(currency)) {
+            throw new RuntimeException("Unsupported currency " + currency);
         }
         // Links always take live money, so the currency must be enabled for the merchant.
         checkoutSessionService.requireLiveCurrency(merchant.getId(), currency);

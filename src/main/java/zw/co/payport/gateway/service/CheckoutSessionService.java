@@ -48,6 +48,7 @@ public class CheckoutSessionService {
     private final RefundService refundService;
     private final ApiKeyRepository apiKeyRepository;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final zw.co.payport.gateway.markets.MarketRegistry markets;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public record CreateSessionRequest(
@@ -66,8 +67,10 @@ public class CheckoutSessionService {
             throw new RuntimeException("amountCents must be a positive integer");
         }
         String currency = (req.currency() == null || req.currency().isBlank()) ? merchant.getDefaultCurrency() : req.currency().toUpperCase();
-        if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
-            throw new RuntimeException("currency must be USD or ZWG");
+        try {
+            currency = markets.requireSupportedCurrency(currency);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException(e.getMessage());
         }
 
         boolean livemode = resolveLivemode(merchant, apiKeyId);
@@ -107,7 +110,13 @@ public class CheckoutSessionService {
      * sessions, payment links (creation and every visit), dashboard checkouts and the hosted
      * page's pay step (an enablement can be withdrawn after a session was created).
      */
+    public boolean isSupportedCurrency(String currency) {
+        return markets.forCurrency(currency).isPresent();
+    }
+
     public void requireLiveCurrency(Long merchantId, String currency) {
+        // A sandbox market's currency can never take live money, whatever the enablements say.
+        if (currency == null || !markets.liveCurrency(currency)) throw new CurrencyNotEnabledException(currency);
         Integer enabled = jdbc.queryForObject("SELECT COUNT(*) FROM merchant_enablements WHERE merchant_id = ? AND currency = ? AND status = 'ENABLED'",
                 Integer.class, merchantId, currency == null ? "" : currency.toUpperCase());
         if (enabled == null || enabled == 0) throw new CurrencyNotEnabledException(currency);
@@ -302,7 +311,7 @@ public class CheckoutSessionService {
         }
         if (!isTestMode) requireLiveCurrency(merchant.getId(), session.getCurrency());
 
-        String productTypeCode = "ZWG".equals(session.getCurrency()) ? "MERCHANT_CHECKOUT_ZWG" : "MERCHANT_CHECKOUT";
+        String productTypeCode = markets.checkoutProductType(session.getCurrency());
         String txReference = generateTransactionReference();
 
         InitiateTransactionRequest initiateReq = new InitiateTransactionRequest();
@@ -453,7 +462,7 @@ public class CheckoutSessionService {
 
     private String formatAmount(Long amountCents, String currency) {
         double value = amountCents / 100.0;
-        String symbol = "ZWG".equals(currency) ? "ZWG " : "$";
+        String symbol = markets.symbol(currency);
         return symbol + String.format("%.2f", value);
     }
 

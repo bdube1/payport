@@ -370,7 +370,7 @@ class RiskComplianceScenarioTest {
         java.sql.Timestamp created = jdbc.queryForObject("SELECT created_at FROM disputes WHERE id = ?", java.sql.Timestamp.class, id);
         assertEquals(48, java.time.Duration.between(created.toLocalDateTime(), ack.toLocalDateTime()).toHours(), "RBZ CPF s6.1.8(a): 48 hours");
 
-        // 10 working days: Monday 2026-12-21 -> skips weekends and the 22, 25, 26 December holidays.
+        // 10 working days: Monday 2026-12-21 -> skips weekends and the 22 and 25 December and 1 January holidays.
         jdbc.update("UPDATE disputes SET created_at = '2026-12-21 09:00:00', ack_due_at = NULL, resolve_due_at = NULL WHERE id = ?", id);
         String olivia = staff("Olivia Three", "OPS");
         JsonNode row = null;
@@ -379,7 +379,7 @@ class RiskComplianceScenarioTest {
         assertEquals("COMPLAINT", row.path("type").asText());
         JsonNode resolve = null;
         for (JsonNode d : row.path("deadlines")) if ("RESOLVE".equals(d.path("kind").asText())) resolve = d;
-        assertTrue(resolve.path("dueAt").asText().startsWith("2027-01-05") || resolve.path("dueAt").toString().contains("2027-01-05"), resolve.toString());
+        assertTrue(resolve.path("dueAt").asText().startsWith("2027-01-07"), resolve.toString());
         assertEquals("SOURCED", resolve.path("ruleStatus").asText());
         assertTrue(resolve.path("ruleSource").asText().contains("6.1.8(c)"));
 
@@ -504,8 +504,8 @@ class RiskComplianceScenarioTest {
 
         // The database itself refuses ENFORCE for a rule nobody approved.
         jdbc.update("UPDATE risk_rules SET approved_by = NULL WHERE code = 'TX_LIMIT_ZWG_TEST'");
-        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
-                () -> jdbc.update("UPDATE risk_rules SET mode = 'ENFORCE' WHERE code = 'TX_LIMIT_ZWG_TEST'"));
+        assertThrows(org.springframework.dao.DataAccessException.class,
+                () -> jdbc.update("UPDATE risk_rules SET mode = 'ENFORCE' WHERE code = 'TX_LIMIT_ZWG_TEST'"), "CHECK chk_rr_enforce_approved");
         jdbc.update("UPDATE risk_rules SET mode = 'OFF' WHERE code = 'TX_LIMIT_ZWG_TEST'");
 
         // Parameters show their source and status; confirming needs two officers.

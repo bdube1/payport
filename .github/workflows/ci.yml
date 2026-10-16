@@ -30,6 +30,18 @@ jobs:
           echo "api.version=$(docker version --format '{{.Server.APIVersion}}')" > ~/.docker-java.properties
           echo "DOCKER_API_VERSION=$(docker version --format '{{.Server.APIVersion}}')" >> "$GITHUB_ENV"
 
+      # Official ISO 20022 schemas (Phase 7), verified against scripts/iso20022/schemas.sha256.
+      - name: Fetch ISO 20022 schemas
+        continue-on-error: true   # the conformance tests then fail with "schema not installed"
+        run: scripts/iso20022/fetch-schemas.sh src/main/resources/iso20022/xsd
+
+      - name: Upload ISO 20022 schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: iso20022-xsd
+          path: src/main/resources/iso20022/xsd/
+          if-no-files-found: warn
+
       # Compiles everything, runs unit tests and the Testcontainers MySQL tests
       # (Docker is available on GitHub-hosted runners).
       - name: mvn verify
@@ -44,7 +56,7 @@ jobs:
 
       - name: Publish test totals
         if: always()
-        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest|RiskComplianceScenarioTest|NameMatcherTest|PushNotificationScenarioTest|UnSanctionsListParseTest'
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest|RiskComplianceScenarioTest|NameMatcherTest|PushNotificationScenarioTest|UnSanctionsListParseTest|Iso20022ConformanceScenarioTest|Iso20022MappingTest|MarketRegistryTest'
 
       - name: Upload test reports
         if: always()
