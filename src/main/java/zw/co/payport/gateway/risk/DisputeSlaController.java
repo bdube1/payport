@@ -37,6 +37,25 @@ public class DisputeSlaController {
         }
     }
 
+    @GetMapping("/settings")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> settings(HttpServletRequest req) {
+        return ResponseEntity.ok(ApiResponse.success(sla.settings(), rid(req)));
+    }
+
+    public record UpdateBody(String kind, String note) {}
+
+    /** Progress update to the complainant, outcome notice, or notice to the RBZ (what was communicated is recorded). */
+    @PostMapping("/{id}/updates")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> update(@PathVariable long id, @RequestBody UpdateBody b, HttpServletRequest req) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(sla.recordUpdate(id, b.kind(), b.note(), ComplianceController.officer()), rid(req)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("UPDATE_INVALID", e.getMessage(), rid(req)));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(ApiResponse.error("UPDATE_FAILED", e.getMessage(), rid(req)));
+        }
+    }
+
     private static String rid(HttpServletRequest req) {
         String id = req.getHeader("X-Request-ID");
         return id != null ? id : UUID.randomUUID().toString();

@@ -23,13 +23,13 @@ public class DisputeAdminController {
 
     private final DisputeService disputeService;
 
-    public record OpenBody(Long checkoutSessionId, Long amountCents, String reason) {}
+    public record OpenBody(Long checkoutSessionId, Long amountCents, String reason, String type) {}
     public record ResolveBody(String status, String evidenceNotes) {}
 
     @PostMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> open(@RequestBody OpenBody body, HttpServletRequest req) {
         try {
-            Dispute dispute = disputeService.open(new DisputeService.OpenDisputeRequest(body.checkoutSessionId(), body.amountCents(), body.reason()));
+            Dispute dispute = disputeService.open(new DisputeService.OpenDisputeRequest(body.checkoutSessionId(), body.amountCents(), body.reason(), body.type()));
             return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(toMap(dispute), requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("DISPUTE_OPEN_FAILED", e.getMessage(), requestId(req)));

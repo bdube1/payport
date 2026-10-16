@@ -22,9 +22,19 @@ public class DisputeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.risk.DisputeSlaService slaService;
 
-    public record OpenDisputeRequest(Long checkoutSessionId, Long amountCents, String reason) {}
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    public record OpenDisputeRequest(Long checkoutSessionId, Long amountCents, String reason, String type) {
+        public OpenDisputeRequest(Long checkoutSessionId, Long amountCents, String reason) {
+            this(checkoutSessionId, amountCents, reason, null);
+        }
+    }
 
     public Dispute open(OpenDisputeRequest req) {
+        if (req.type() != null && !zw.co.payport.gateway.risk.DisputeSlaService.TYPES.contains(req.type().trim().toUpperCase())) {
+            throw new RuntimeException("type must be COMPLAINT, ERROR or CHARGEBACK");
+        }
         Dispute dispute = Dispute.builder()
                 .checkoutSessionId(req.checkoutSessionId())
                 .amountCents(req.amountCents())
@@ -32,7 +42,12 @@ public class DisputeService {
                 .status("OPEN")
                 .build();
         disputeRepository.save(dispute);
-        if (slaService != null) slaService.setDeadlines(dispute.getId());   // Phase 6 timelines
+        if (req.type() != null) {
+            String t = req.type().trim().toUpperCase();
+            if (!zw.co.payport.gateway.risk.DisputeSlaService.TYPES.contains(t)) throw new RuntimeException("type must be COMPLAINT, ERROR or CHARGEBACK");
+            if (jdbc != null) jdbc.update("UPDATE disputes SET dispute_type = ? WHERE id = ?", t, dispute.getId());
+        }
+        if (slaService != null) slaService.setDeadlines(dispute.getId());   // timelines from compliance parameters
         log.info("[DISPUTE] Opened against session {}: {} cents, reason: {}", req.checkoutSessionId(), req.amountCents(), req.reason());
         return dispute;
     }

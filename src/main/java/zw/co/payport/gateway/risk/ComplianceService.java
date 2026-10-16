@@ -31,12 +31,13 @@ public class ComplianceService {
 
     public static final String ROLE = "COMPLIANCE";
     public static final Set<String> OUTCOMES = Set.of("FALSE_POSITIVE", "NO_ACTION", "CONFIRMED_SUSPICIOUS");
-    /** Provisional report structure until the FIU confirms its submission format. */
-    public static final String FIU_FORMAT = "PAYPORT-FIU-PROVISIONAL-v0";
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcTemplate jdbc;
     private final ScreeningService screening;
+    private final ComplianceAudit audit;
+    private final ComplianceParameters parameters;
+    private final FiuReportService reports;
     /** Report payloads hold database rows: dates are written as ISO text (no JSR-310 module on this classpath). */
     private final ObjectMapper json = new ObjectMapper().registerModule(new com.fasterxml.jackson.databind.module.SimpleModule()
             .addSerializer(LocalDateTime.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance)
@@ -45,10 +46,13 @@ public class ComplianceService {
             .addSerializer(java.time.OffsetDateTime.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance));
     private final String reportingEntity;
 
-    public ComplianceService(JdbcTemplate jdbc, ScreeningService screening,
+    public ComplianceService(JdbcTemplate jdbc, ScreeningService screening, ComplianceAudit audit, ComplianceParameters parameters, FiuReportService reports,
                              @Value("${payport.compliance.reporting-entity:PayPort (Private) Limited}") String reportingEntity) {
         this.jdbc = jdbc;
         this.screening = screening;
+        this.audit = audit;
+        this.parameters = parameters;
+        this.reports = reports;
         this.reportingEntity = reportingEntity;
     }
 
@@ -70,6 +74,7 @@ public class ComplianceService {
             String payload = json.writeValueAsString(change);
             ApprovalStore.Approval a = jdbc.execute((ConnectionCallback<ApprovalStore.Approval>) c ->
                     ApprovalStore.request(c, "RISK_RULE_CHANGE", "risk_rule:" + code, payload, reason, ROLE, by, 72));
+            audit.record(by, "RULE_CHANGE_REQUESTED", "risk_rule:" + code, payload);
             return Map.of("approvalId", a.id(), "approvalRef", a.ref(), "status", a.status(), "change", change);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalArgumentException("params must be JSON");
@@ -81,12 +86,15 @@ public class ComplianceService {
     public Map<String, Object> decideRuleChange(long approvalId, boolean approve, String note, String by) {
         ApprovalStore.Approval a = jdbc.execute((ConnectionCallback<ApprovalStore.Approval>) c ->
                 ApprovalStore.decide(c, approvalId, approve, by, Set.of(ROLE), note));
+        if ("RISK_RULE_CREATE".equals(a.actionType())) return applyRuleCreate(a, approve, by);
         if (!"RISK_RULE_CHANGE".equals(a.actionType())) throw new IllegalStateException("not a rule change");
         if (approve) {
             try {
                 JsonNode ch = json.readTree(a.payload());
-                int n = jdbc.update("UPDATE risk_rules SET mode = ?, action = ?, params = ?, version = version + 1, updated_by = ?, updated_at = ? "
-                                + "WHERE code = ? AND version = ?", ch.path("mode").asText(), ch.path("action").asText(), ch.path("params").asText(),
+                // The approved definition is recorded: only an approved rule can ever block (DB CHECK as well).
+                int n = jdbc.update("UPDATE risk_rules SET mode = ?, action = ?, params = ?, version = version + 1, updated_by = ?, updated_at = ?, "
+                                + "approved_by = ?, approved_at = ? WHERE code = ? AND version = ?", ch.path("mode").asText(), ch.path("action").asText(),
+                        ch.path("params").asText(), a.requestedBy() + " / " + by, Timestamp.valueOf(LocalDateTime.now()),
                         a.requestedBy() + " / " + by, Timestamp.valueOf(LocalDateTime.now()), ch.path("code").asText(), ch.path("fromVersion").asInt());
                 if (n == 0) throw new IllegalStateException("The rule changed since this request was made; request again");
                 log.warn("[COMPLIANCE] Rule {} changed to {} / {} (requested {}, approved {})", ch.path("code").asText(), ch.path("mode").asText(),
@@ -95,6 +103,54 @@ public class ComplianceService {
                 throw new IllegalStateException(e);
             }
         }
+        audit.record(by, approve ? "RULE_CHANGE_APPROVED" : "RULE_CHANGE_REJECTED", a.subjectRef(), a.payload());
+        return Map.of("approvalId", a.id(), "status", a.status());
+    }
+
+    public static final Set<String> RULE_TYPES = Set.of("VELOCITY_COUNT", "VELOCITY_AMOUNT", "STRUCTURING", "LARGE_TRANSACTION", "SANCTIONS",
+            "TX_LIMIT", "PERIOD_LIMIT", "CDD_THRESHOLD");
+
+    /**
+     * A new rule, proposed by one officer. On approval it is created in OBSERVE whatever was asked:
+     * enforcing it is a separate, separately approved change.
+     */
+    @Transactional
+    public Map<String, Object> requestRuleCreate(String code, String name, String type, JsonNode params, String action, String severity,
+                                                 String source, String reason, String by) {
+        if (code == null || !code.matches("[A-Z0-9_]{3,40}")) throw new IllegalArgumentException("code: 3-40 of A-Z 0-9 _");
+        if (!RULE_TYPES.contains(type)) throw new IllegalArgumentException("type must be one of " + RULE_TYPES);
+        if (!Set.of("ALERT", "BLOCK").contains(action)) throw new IllegalArgumentException("action must be ALERT or BLOCK");
+        if (!Set.of("LOW", "MEDIUM", "HIGH").contains(severity)) throw new IllegalArgumentException("severity must be LOW, MEDIUM or HIGH");
+        if (name == null || name.isBlank() || params == null) throw new IllegalArgumentException("name and params are required");
+        Integer exists = jdbc.queryForObject("SELECT COUNT(*) FROM risk_rules WHERE code = ?", Integer.class, code);
+        if (exists != null && exists > 0) throw new IllegalArgumentException("rule " + code + " exists");
+        Map<String, Object> def = new LinkedHashMap<>();
+        def.put("code", code); def.put("name", name); def.put("type", type); def.put("params", params.toString());
+        def.put("action", action); def.put("severity", severity); def.put("source", source == null ? "" : source);
+        try {
+            String payload = json.writeValueAsString(def);
+            ApprovalStore.Approval a = jdbc.execute((ConnectionCallback<ApprovalStore.Approval>) c ->
+                    ApprovalStore.request(c, "RISK_RULE_CREATE", "risk_rule:" + code, payload, reason, ROLE, by, 72));
+            audit.record(by, "RULE_CREATE_REQUESTED", "risk_rule:" + code, payload);
+            return Map.of("approvalId", a.id(), "approvalRef", a.ref(), "status", a.status(), "rule", def);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private Map<String, Object> applyRuleCreate(ApprovalStore.Approval a, boolean approve, String by) {
+        if (approve) {
+            try {
+                JsonNode d = json.readTree(a.payload());
+                jdbc.update("INSERT INTO risk_rules (code, name, rule_type, params, mode, action, severity, updated_by, updated_at, source, param_status) "
+                                + "VALUES (?, ?, ?, ?, 'OBSERVE', ?, ?, ?, ?, ?, 'PROVISIONAL')", d.path("code").asText(), d.path("name").asText(),
+                        d.path("type").asText(), d.path("params").asText(), d.path("action").asText(), d.path("severity").asText(),
+                        a.requestedBy() + " / " + by, Timestamp.valueOf(LocalDateTime.now()), d.path("source").asText());
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        audit.record(by, approve ? "RULE_CREATE_APPROVED" : "RULE_CREATE_REJECTED", a.subjectRef(), a.payload());
         return Map.of("approvalId", a.id(), "status", a.status());
     }
 
@@ -147,6 +203,7 @@ public class ComplianceService {
         requireOpen(c);
         jdbc.update("UPDATE risk_cases SET assignee = ?, status = IF(status = 'OPEN', 'INVESTIGATING', status) WHERE id = ?", assignee, caseId);
         note(caseId, "Assigned to " + assignee, by);
+        audit.record(by, "CASE_ASSIGNED", "risk_case:" + caseId, assignee);
         return caseDetail(caseId);
     }
 
@@ -155,6 +212,7 @@ public class ComplianceService {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("note is empty");
         jdbc.update("INSERT INTO risk_case_notes (case_id, author, note, created_at) VALUES (?, ?, ?, ?)",
                 caseId, by, text.length() > 4000 ? text.substring(0, 4000) : text, Timestamp.valueOf(LocalDateTime.now()));
+        audit.record(by, "CASE_NOTE", "risk_case:" + caseId, text);
     }
 
     /** Step 1: the investigating officer proposes how to close the case, with reasons. */
@@ -168,6 +226,7 @@ public class ComplianceService {
         jdbc.update("UPDATE risk_cases SET status = 'PENDING_DECISION', proposed_outcome = ?, proposed_by = ?, proposed_at = ?, proposal_note = ? WHERE id = ?",
                 o, by, Timestamp.valueOf(LocalDateTime.now()), rationale, caseId);
         note(caseId, "Proposed " + o + ": " + rationale, by);
+        audit.record(by, "CASE_OUTCOME_PROPOSED", "risk_case:" + caseId, o);
         return caseDetail(caseId);
     }
 
@@ -185,6 +244,7 @@ public class ComplianceService {
         if (!accept) {
             jdbc.update("UPDATE risk_cases SET status = 'INVESTIGATING', proposed_outcome = NULL, proposed_by = NULL, proposed_at = NULL WHERE id = ?", caseId);
             note(caseId, "Proposal sent back: " + (note == null ? "" : note), by);
+            audit.record(by, "CASE_PROPOSAL_RETURNED", "risk_case:" + caseId, note);
             return caseDetail(caseId);
         }
         String outcome = (String) c.get("proposed_outcome");
@@ -196,6 +256,7 @@ public class ComplianceService {
         jdbc.update("UPDATE risk_cases SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?", status, by, Timestamp.valueOf(LocalDateTime.now()), caseId);
         jdbc.update("UPDATE risk_alerts SET status = 'CLOSED' WHERE case_id = ?", caseId);
         note(caseId, "Decision: " + status + (note == null ? "" : " (" + note + ")"), by);
+        audit.record(by, "CASE_CLOSED", "risk_case:" + caseId, status + " proposed by " + c.get("proposed_by"));
         if ("FALSE_POSITIVE".equals(outcome)) {
             List<String[]> entries = new ArrayList<>();
             for (Map<String, Object> a : jdbc.queryForList("SELECT details FROM risk_alerts WHERE case_id = ?", caseId)) {
@@ -207,7 +268,7 @@ public class ComplianceService {
             }
             screening.suppress((String) c.get("subject_key"), entries, caseId, by);
         }
-        if ("CONFIRMED_SUSPICIOUS".equals(outcome)) prepareStr(caseId, (String) c.get("proposed_by"));
+        if ("CONFIRMED_SUSPICIOUS".equals(outcome)) reports.draftStr(caseId, (String) c.get("proposed_by"));
         log.info("[COMPLIANCE] Case {} {} (proposed {}, decided {})", c.get("case_ref"), status, c.get("proposed_by"), by);
         return caseDetail(caseId);
     }
@@ -224,91 +285,45 @@ public class ComplianceService {
 
     // ─── FIU reports ──────────────────────────────────────────────────────────
 
-    private long prepareStr(long caseId, String preparedBy) {
-        Map<String, Object> c = jdbc.queryForMap("SELECT * FROM risk_cases WHERE id = ?", caseId);
-        List<Map<String, Object>> alerts = jdbc.queryForList("SELECT rule_code, severity, transaction_reference, details, created_at FROM risk_alerts WHERE case_id = ?", caseId);
-        List<Map<String, Object>> txs = new ArrayList<>();
-        String phone = String.valueOf(c.get("subject_key")).startsWith("PHONE:TEL:") ? String.valueOf(c.get("subject_key")).substring(10) : null;
-        if (phone != null) {
-            txs = jdbc.queryForList("SELECT reference, created_at, amount_cents, currency, status, customer_phone, recipient_identifier, payment_provider_code "
-                    + "FROM transactions WHERE RIGHT(REPLACE(customer_phone, '+', ''), 9) = ? ORDER BY created_at DESC LIMIT 200", phone);
-        }
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("format", FIU_FORMAT);
-        payload.put("formatStatus", "PROVISIONAL: the FIU submission format is not yet confirmed; transcribe into the FIU's format when filing");
-        payload.put("reportType", "STR");
-        payload.put("reportingEntity", reportingEntity);
-        payload.put("caseRef", c.get("case_ref"));
-        payload.put("subject", Map.of("type", c.get("subject_type"), "key", c.get("subject_key"), "name", String.valueOf(c.get("subject_name"))));
-        payload.put("grounds", c.get("proposal_note"));
-        payload.put("alerts", alerts);
-        payload.put("transactions", txs);
-        return insertReport("STR", caseId, null, null, payload, preparedBy);
-    }
-
-    /** CTR: every completed payment at or above the LARGE_TRANSACTION threshold in the period. */
+    /**
+     * CTR: for each customer and calendar day in the period, completed payments whose aggregate
+     * reaches the threshold (CTR.THRESHOLD_MINOR, aggregated per CTR.AGGREGATION_HOURS = 24).
+     */
     @Transactional
     public Map<String, Object> prepareCtr(LocalDateTime from, LocalDateTime to, String by) {
-        JsonNode params;
-        try {
-            params = json.readTree(jdbc.queryForObject("SELECT params FROM risk_rules WHERE code = 'LARGE_TRANSACTION'", String.class)).path("thresholdMinor");
-        } catch (Exception e) {
-            throw new IllegalStateException("LARGE_TRANSACTION rule missing");
-        }
+        JsonNode thresholds = parameters.get("CTR.THRESHOLD_MINOR");
         List<Map<String, Object>> lines = new ArrayList<>();
-        for (var it = params.fields(); it.hasNext(); ) {
+        for (var it = thresholds.fields(); it.hasNext(); ) {
             var f = it.next();
-            lines.addAll(jdbc.queryForList("SELECT reference, completed_at, amount_cents, currency, customer_phone, recipient_identifier, payment_provider_code "
-                    + "FROM transactions WHERE status = 'COMPLETED' AND currency = ? AND amount_cents >= ? AND completed_at >= ? AND completed_at < ? ORDER BY completed_at",
-                    f.getKey(), f.getValue().asLong(), Timestamp.valueOf(from), Timestamp.valueOf(to)));
+            List<Map<String, Object>> groups = jdbc.queryForList("SELECT customer_phone, DATE(completed_at) AS day, SUM(amount_cents) AS total FROM transactions "
+                    + "WHERE status = 'COMPLETED' AND currency = ? AND completed_at >= ? AND completed_at < ? AND customer_phone IS NOT NULL "
+                    + "GROUP BY customer_phone, DATE(completed_at) HAVING SUM(amount_cents) >= ?", f.getKey(), Timestamp.valueOf(from), Timestamp.valueOf(to), f.getValue().asLong());
+            for (Map<String, Object> g : groups) {
+                List<Map<String, Object>> txs = jdbc.queryForList("SELECT reference, completed_at, amount_cents, currency, customer_phone, recipient_identifier, "
+                        + "payment_provider_code FROM transactions WHERE status = 'COMPLETED' AND currency = ? AND customer_phone = ? AND DATE(completed_at) = ? ORDER BY completed_at",
+                        f.getKey(), g.get("customer_phone"), g.get("day"));
+                Map<String, Object> line = new LinkedHashMap<>();
+                line.put("customerPhone", g.get("customer_phone"));
+                line.put("day", String.valueOf(g.get("day")));
+                line.put("currency", f.getKey());
+                line.put("aggregateMinor", ((Number) g.get("total")).longValue());
+                line.put("transactions", txs);
+                lines.add(line);
+            }
         }
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("format", FIU_FORMAT);
-        payload.put("formatStatus", "PROVISIONAL: thresholds and format to be confirmed against the FIU's requirements");
-        payload.put("reportType", "CTR");
-        payload.put("reportingEntity", reportingEntity);
-        payload.put("period", Map.of("from", from.toString(), "to", to.toString()));
-        payload.put("thresholdsMinor", params);
-        payload.put("transactions", lines);
-        long id = insertReport("CTR", null, from, to, payload, by);
-        return report(id);
-    }
-
-    private long insertReport(String type, Long caseId, LocalDateTime from, LocalDateTime to, Map<String, Object> payload, String by) {
-        byte[] b = new byte[4];
-        RANDOM.nextBytes(b);
-        String ref = type + "-" + LocalDate.now().toString().replace("-", "") + "-" + HexFormat.of().formatHex(b).toUpperCase();
-        try {
-            jdbc.update("INSERT INTO fiu_reports (report_ref, report_type, status, case_id, period_from, period_to, format_version, payload, prepared_by, prepared_at) "
-                            + "VALUES (?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)", ref, type, caseId, from == null ? null : Timestamp.valueOf(from),
-                    to == null ? null : Timestamp.valueOf(to), FIU_FORMAT, json.writeValueAsString(payload), by, Timestamp.valueOf(LocalDateTime.now()));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException(e);
-        }
-        return jdbc.queryForObject("SELECT id FROM fiu_reports WHERE report_ref = ?", Long.class, ref);
+        long id = reports.draftCtr(from, to, lines, by);
+        return reports.view(id);
     }
 
     public Map<String, Object> report(long id) {
-        return jdbc.queryForMap("SELECT * FROM fiu_reports WHERE id = ?", id);
+        return reports.view(id);
     }
 
-    @Transactional
     public Map<String, Object> approveReport(long id, String by) {
-        Map<String, Object> r = jdbc.queryForMap("SELECT * FROM fiu_reports WHERE id = ? FOR UPDATE", id);
-        if (!"DRAFT".equals(r.get("status"))) throw new IllegalStateException("Report is " + r.get("status"));
-        if (by.equals(r.get("prepared_by"))) throw new IllegalStateException("The preparer cannot approve the report");
-        jdbc.update("UPDATE fiu_reports SET status = 'APPROVED', approved_by = ?, approved_at = ? WHERE id = ?", by, Timestamp.valueOf(LocalDateTime.now()), id);
-        return report(id);
+        return reports.approve(id, by);
     }
 
-    /** The MLRO filed it with the FIU (outside PayPort until the format and channel are confirmed). */
-    @Transactional
     public Map<String, Object> markSubmitted(long id, String fiuReference, String by) {
-        Map<String, Object> r = jdbc.queryForMap("SELECT * FROM fiu_reports WHERE id = ? FOR UPDATE", id);
-        if (!"APPROVED".equals(r.get("status"))) throw new IllegalStateException("Only an APPROVED report can be marked submitted");
-        if (fiuReference == null || fiuReference.isBlank()) throw new IllegalArgumentException("The FIU's acknowledgement reference is required");
-        jdbc.update("UPDATE fiu_reports SET status = 'SUBMITTED', submitted_by = ?, submitted_at = ?, fiu_reference = ? WHERE id = ?",
-                by, Timestamp.valueOf(LocalDateTime.now()), fiuReference.trim(), id);
-        return report(id);
+        return reports.markSubmitted(id, fiuReference, by);
     }
 }

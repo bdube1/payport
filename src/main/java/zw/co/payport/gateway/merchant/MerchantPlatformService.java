@@ -79,6 +79,7 @@ public class MerchantPlatformService {
             if ((openCase != null && openCase > 0) || (confirmed != null && confirmed > 0)) {
                 throw new IllegalStateException("Compliance review pending for this merchant: approval is on hold");
             }
+            requireClearScreening(merchantId);
             for (String item : KYB_CHECKLIST) {
                 if (checklist == null || !Boolean.TRUE.equals(checklist.get(item))) {
                     throw new IllegalArgumentException("checklist item not confirmed: " + item);
@@ -113,6 +114,7 @@ public class MerchantPlatformService {
         if (staff.equals(c.get("recommended_by"))) throw new IllegalStateException("A second person must decide: you made the recommendation");
         String recommended = (String) c.get("recommendation");
         String outcome = accept ? ("APPROVE".equals(recommended) ? "APPROVED" : "REJECTED") : "OPEN";
+        if ("APPROVED".equals(outcome)) requireClearScreening(merchantId);   // screened again at the moment of approval
         LocalDateTime now = LocalDateTime.now();
         if (!accept) {
             jdbc.update("UPDATE kyb_cases SET status = 'OPEN', recommendation = NULL, recommended_by = NULL, recommended_at = NULL, "
@@ -129,6 +131,24 @@ public class MerchantPlatformService {
         }
         log.info("[KYB] Merchant {} {} (recommended by {}, decided by {})", merchantId, outcome, c.get("recommended_by"), staff);
         return new Decision(get(((Number) c.get("id")).longValue()), approval);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.RiskEngine riskEngine;
+
+    /**
+     * KYB approval needs a CLEAR screening now: a match opens a compliance case (approval on hold);
+     * INCOMPLETE (sanctions list unavailable or outdated) is never treated as cleared.
+     */
+    void requireClearScreening(long merchantId) {
+        if (riskEngine == null) return;
+        Map<String, Object> m = jdbc.queryForMap("SELECT business_name, registration_number, "
+                + "(SELECT u.full_name FROM merchant_users u WHERE u.merchant_id = merchants.id AND u.role = 'OWNER' LIMIT 1) AS owner FROM merchants WHERE id = ?", merchantId);
+        var res = riskEngine.screenMerchant(merchantId, (String) m.get("business_name"), (String) m.get("owner"), (String) m.get("registration_number"), "KYB");
+        if ("INCOMPLETE".equals(res.outcome())) {
+            throw new IllegalStateException("Sanctions screening could not be completed (screening list unavailable or outdated). Approval is not possible until screening is current.");
+        }
+        if (!res.clear()) throw new IllegalStateException("Compliance review pending for this merchant: approval is on hold");
     }
 
     public Map<String, Object> get(long caseId) {

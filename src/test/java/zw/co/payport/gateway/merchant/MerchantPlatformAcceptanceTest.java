@@ -62,6 +62,14 @@ class MerchantPlatformAcceptanceTest {
         r.add("JWT_SECRET", () -> "merchant-platform-test-secret-0123456789-merchant-platform-test");
         r.add("payport.webhooks.allow-private-targets", () -> "true");
         r.add("payport.webhooks.allow-http", () -> "true");
+        zw.co.payport.gateway.support.UnListStub.register(r);   // KYB approval needs a current sanctions list
+    }
+
+    @Autowired zw.co.payport.gateway.risk.UnSanctionsList unList;
+
+    @org.junit.jupiter.api.BeforeEach
+    void currentSanctionsList() {
+        assertTrue(java.util.Set.of("NEW_VERSION", "UNCHANGED").contains(unList.refresh("test").outcome()));
     }
 
     @MockitoBean SmsNotificationService sms;

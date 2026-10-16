@@ -28,13 +28,75 @@ public class ComplianceController {
     private final ScreeningService screening;
     private final RiskEngine engine;
     private final JdbcTemplate jdbc;
+    private final ComplianceParameters parameters;
+    private final ComplianceAudit audit;
+    private final ComplianceAuthorities authorities;
+    @org.springframework.beans.factory.annotation.Autowired
+    private UnSanctionsList unList;
+    @org.springframework.beans.factory.annotation.Autowired
+    private FiuReportService reportService;
     private static final com.fasterxml.jackson.databind.ObjectMapper PARAMS = new com.fasterxml.jackson.databind.ObjectMapper();
 
-    public ComplianceController(ComplianceService compliance, ScreeningService screening, RiskEngine engine, JdbcTemplate jdbc) {
+    public ComplianceController(ComplianceService compliance, ScreeningService screening, RiskEngine engine, JdbcTemplate jdbc,
+                                ComplianceParameters parameters, ComplianceAudit audit, ComplianceAuthorities authorities) {
         this.compliance = compliance;
         this.screening = screening;
         this.engine = engine;
         this.jdbc = jdbc;
+        this.parameters = parameters;
+        this.audit = audit;
+        this.authorities = authorities;
+    }
+
+    // ─── parameters (thresholds, deadlines, screening, calendars) ─────────────
+
+    @GetMapping("/parameters")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> parameters(HttpServletRequest req) {
+        return ok(parameters.all(), req);
+    }
+
+    public record ParameterChangeBody(Object value, boolean confirm, String source, String reason) {}
+
+    /** Change a value and/or confirm it (CONFIRMED needs this two-person flow). */
+    @PostMapping("/parameters/{key}/change-requests")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> requestParameterChange(@PathVariable String key, @RequestBody ParameterChangeBody b, HttpServletRequest req) {
+        return run(() -> parameters.requestChange(key, b.value() == null ? null : PARAMS.valueToTree(b.value()), b.confirm(), b.source(), b.reason(), officer()), req);
+    }
+
+    @PostMapping("/parameter-changes/{approvalId}/decide")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> decideParameterChange(@PathVariable long approvalId, @RequestBody DecisionBody b, HttpServletRequest req) {
+        return run(() -> parameters.decide(approvalId, b.approve(), b.note(), officer()), req);
+    }
+
+    public record RuleCreateBody(String code, String name, String type, Map<String, Object> params, String action, String severity, String source, String reason) {}
+
+    /** Propose a new rule. Approved rules start in OBSERVE; enforcing is a separate approved change. */
+    @PostMapping("/rules")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> createRule(@RequestBody RuleCreateBody b, HttpServletRequest req) {
+        return run(() -> compliance.requestRuleCreate(b.code(), b.name(), b.type(), b.params() == null ? null : PARAMS.valueToTree(b.params()),
+                b.action(), b.severity(), b.source(), b.reason(), officer()), req);
+    }
+
+    // ─── audit and authorities ────────────────────────────────────────────────
+
+    @GetMapping("/audit/verify")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyAudit(HttpServletRequest req) {
+        return ok(audit.verify(), req);
+    }
+
+    @GetMapping("/audit")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> auditTrail(@RequestParam String subject, HttpServletRequest req) {
+        return ok(audit.trail(subject), req);
+    }
+
+    @PostMapping("/authority-requests/{approvalId}/decide")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> decideAuthority(@PathVariable long approvalId, @RequestBody DecisionBody b, HttpServletRequest req) {
+        return run(() -> authorities.decide(approvalId, b.approve(), b.note(), officer()), req);
+    }
+
+    @GetMapping("/authorities")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> authorityList(HttpServletRequest req) {
+        return ok(authorities.list(), req);
     }
 
     // ─── rules ────────────────────────────────────────────────────────────────
@@ -85,14 +147,10 @@ public class ComplianceController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> load(@PathVariable String code, @RequestBody LoadBody b, HttpServletRequest req) {
         return run(() -> {
             int version = screening.load(code, b.entries(), officer());
-            int screened = 0;
-            for (Map<String, Object> m : jdbc.queryForList("SELECT m.id, m.business_name, m.registration_number, "
-                    + "(SELECT u.full_name FROM merchant_users u WHERE u.merchant_id = m.id AND u.role = 'OWNER' LIMIT 1) AS owner "
-                    + "FROM merchants m WHERE m.status IN ('PENDING','UNDER_REVIEW','UPDATE_REQUIRED','ACTIVE')")) {
-                engine.screenMerchant(((Number) m.get("id")).longValue(), (String) m.get("business_name"), (String) m.get("owner"), (String) m.get("registration_number"));
-                screened++;
-            }
-            return Map.of("code", code, "version", version, "merchantsRescreened", screened);
+            audit.record(officer(), "SCREENING_LIST_LOADED", "screening_list:" + code, "version " + version + ", " + b.entries().size() + " entries");
+            Map<String, Integer> r = engine.rescreenAll("RESCREEN_" + code + "_V" + version);
+            return Map.of("code", code, "version", version, "merchantsRescreened", r.get("merchants"), "customersRescreened", r.get("customers"),
+                    "potentialMatches", r.get("potentialMatches"));
         }, req);
     }
 
@@ -101,7 +159,24 @@ public class ComplianceController {
     /** Ad-hoc check (no alert): who on the lists matches these names/identifiers. */
     @PostMapping("/screening/check")
     public ResponseEntity<ApiResponse<List<ScreeningService.Match>>> check(@RequestBody ScreenBody b, HttpServletRequest req) {
-        return ok(screening.screen("ADHOC:" + UUID.randomUUID(), b.names(), b.identifiers(), 0.8), req);
+        return ok(screening.screen("ADHOC:" + officer(), "ADHOC", b.names(), b.identifiers(), parameters.number("SCREENING.MIN_SCORE")).matches(), req);
+    }
+
+    @GetMapping("/screening/status")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> screeningStatus(HttpServletRequest req) {
+        String reason = screening.incompleteReason();
+        return ok(Map.of("complete", reason == null, "reason", reason == null ? "" : reason, "lists", screening.lists(), "unFetches", unList.fetches()), req);
+    }
+
+    /** Fetch the UN list now (normally hourly). */
+    @PostMapping("/screening/lists/UN-CONSOLIDATED/refresh")
+    public ResponseEntity<ApiResponse<UnSanctionsList.Fetched>> refreshUn(HttpServletRequest req) {
+        return ok(unList.refresh(officer()), req);
+    }
+
+    @GetMapping("/screening/runs")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> runs(@RequestParam String subjectKey, HttpServletRequest req) {
+        return ok(screening.runs(subjectKey), req);
     }
 
     // ─── alerts and cases ─────────────────────────────────────────────────────
@@ -164,7 +239,36 @@ public class ComplianceController {
     @GetMapping("/reports")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> reports(HttpServletRequest req) {
         return ok(jdbc.queryForList("SELECT id, report_ref, report_type, status, case_id, period_from, period_to, format_version, prepared_by, "
-                + "approved_by, submitted_at, fiu_reference FROM fiu_reports ORDER BY id DESC LIMIT 200"), req);
+                + "approved_by, submitted_at, fiu_reference, missing_fields, due_at FROM fiu_reports ORDER BY id DESC LIMIT 200"), req);
+    }
+
+    /** The officer completes the manual fields of a DRAFT. */
+    @PatchMapping("/reports/{id}/fields")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> reportFields(@PathVariable long id, @RequestBody Map<String, Object> values, HttpServletRequest req) {
+        return run(() -> reportService.updateFields(id, values, officer()), req);
+    }
+
+    @GetMapping("/report-templates")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> templates(HttpServletRequest req) {
+        return ok(reportService.templates(), req);
+    }
+
+    public record TemplateBody(String code, Map<String, Object> definition, String source) {}
+
+    @PostMapping("/report-templates")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> newTemplate(@RequestBody TemplateBody b, HttpServletRequest req) {
+        return run(() -> {
+            try {
+                return reportService.createTemplateVersion(b.code(), PARAMS.writeValueAsString(b.definition()), b.source(), officer());
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalArgumentException("definition must be JSON");
+            }
+        }, req);
+    }
+
+    @PostMapping("/report-templates/{id}/activate")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> activateTemplate(@PathVariable long id, HttpServletRequest req) {
+        return run(() -> reportService.activateTemplate(id, officer()), req);
     }
 
     @GetMapping("/reports/{id}")
