@@ -9,7 +9,10 @@ _Last updated: 2026-10-16 (platform controls, Phase 8). Living document._
 - `docs/compliance/COMPLIANCE_CONTROLS.md`, `docs/phase7/PHASE7_REPORT.md`;
 - `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`; API contract: `docs/api/api-contract.json`.
 
-**Combined test run:** see the table below (filled from the final CI run).
+**Combined test run (backend run 38939979867, all jobs green):**
+- `build-and-test`: **199 passed, 0 failed**, including `PlatformControlsScenarioTest`, `Iso20022ConformanceScenarioTest` (against the installed schemas), `ApiContractExportTest` (committed contract = running application) and every earlier suite.
+- `ledger-db`: **106 / 106**. `migrations-production-like` (V1–V51, binlog, non-SUPER user): pass.
+- Frontends (latest commits): consumer, ops, merchant `build` and mobile `typecheck` green, each including the API contract check.
 
 | Item | Status |
 |---|---|
