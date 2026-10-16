@@ -200,7 +200,7 @@ class Phase8CompletionScenarioTest {
         String r = ref("WEB");
         Res init = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", r, "productTypeCode", "WALLET_TOPUP", "recipientIdentifier", walletRef,
                 "amountCents", cents, "currency", "USD", "customerPhone", "+263771234567", "channel", "WEB"));
-        assertEquals(200, init.status(), init.body().toString());
+        assertEquals(201, init.status(), init.body().toString());
         orchestrator.simulateTestPayment(r, true);
         assertEquals(TransactionOrchestratorService.FulfilmentOutcome.Kind.DELIVERED, orchestrator.executeFulfilment(r).kind());
     }
@@ -242,7 +242,7 @@ class Phase8CompletionScenarioTest {
         jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
         Res noWallet = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", ref("WEB"), "productTypeCode", "WALLET_TOPUP",
                 "recipientIdentifier", "W00000000000", "amountCents", 1000, "currency", "USD", "channel", "WEB"));
-        assertEquals(400, noWallet.status(), "a top-up to a wallet that does not exist is refused before anyone pays");
+        assertEquals(422, noWallet.status(), "a top-up to a wallet that does not exist is refused before anyone pays");
         topUp(annRef, 5_000);
         assertEquals(5_000, balance(ann, "USD"));
 
@@ -265,7 +265,7 @@ class Phase8CompletionScenarioTest {
         // Pay an airtime payment from the wallet (method off by default; guests cannot use it).
         jdbc.update("UPDATE payment_methods SET is_active = TRUE WHERE code = 'WALLET'");
         String airtime = ref("WEB");
-        assertEquals(200, call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", airtime, "productTypeCode", "AIRTIME_ECONET",
+        assertEquals(201, call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", airtime, "productTypeCode", "AIRTIME_ECONET",
                 "recipientIdentifier", "0771234567", "amountCents", 500, "currency", "USD", "customerPhone", ann.phone(), "channel", "WEB")).status());
         String guest = ref("WEB");
         String guestToken = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", guest, "productTypeCode", "AIRTIME_ECONET",

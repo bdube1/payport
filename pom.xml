@@ -23,9 +23,23 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <jjwt.version>0.11.5</jjwt.version>
-        <poi.version>5.2.5</poi.version>
+        <poi.version>5.4.1</poi.version>
         <pdfbox.version>2.0.31</pdfbox.version>
     </properties>
+
+    <!-- Phase 9 dependency scan: Jackson 2 (used alongside Spring's Jackson 3) on the line that fixes
+         GHSA-p6pp-m3f8-5c89 and GHSA-7hhh-6rmp-j9qf (jackson-core). See docs/phase9/PHASE9_REPORT.md. -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.22.3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
 

@@ -290,7 +290,7 @@ class SecurityResilienceScenarioTest {
         String ref = String.format("PP-WEB-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
         String init = JSON.writeValueAsString(Map.of("reference", ref, "productTypeCode", "AIRTIME_ECONET", "recipientIdentifier", "0771234567",
                 "amountCents", 500, "currency", "USD", "customerPhone", ann, "channel", "WEB"));
-        assertEquals(200, call("POST", "/api/v1/transactions/initiate", null, init, Map.of()).status());
+        assertEquals(201, call("POST", "/api/v1/transactions/initiate", null, init, Map.of()).status());
         CountDownLatch go2 = new CountDownLatch(1);
         List<Future<?>> ps = new ArrayList<>();
         for (int i = 0; i < 10; i++) {

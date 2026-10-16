@@ -280,7 +280,7 @@ public class WalletService {
         }
         if (a.isEmpty()) throw new SecurityException("This payment was not confirmed with the wallet PIN");
         Map<String, Object> auth = a.get(0);
-        if (((Timestamp) auth.get("expires_at")).toLocalDateTime().isBefore(LocalDateTime.now())) {
+        if (ldt(auth.get("expires_at")).isBefore(LocalDateTime.now())) {
             throw new IllegalStateException("The wallet confirmation expired. Please confirm again.");
         }
         if (((Number) auth.get("amount_minor")).longValue() != amount || !upper(currency).equals(auth.get("currency"))) {
@@ -366,7 +366,7 @@ public class WalletService {
             if (((Number) q.get("user_id")).longValue() != userId) throw new IllegalArgumentException("No such quote");
             if ("EXECUTED".equals(q.get("status"))) return Map.<String, Object>of("quoteRef", quoteRef, "status", "EXECUTED", "entryRef", q.get("entry_ref_out"));
             if (!"OPEN".equals(q.get("status"))) throw new IllegalStateException("This quote is " + q.get("status"));
-            if (((Timestamp) q.get("expires_at")).toLocalDateTime().isBefore(LocalDateTime.now())) {
+            if (ldt(q.get("expires_at")).isBefore(LocalDateTime.now())) {
                 jdbc.update("UPDATE fx_quotes SET status = 'EXPIRED' WHERE quote_ref = ?", quoteRef);
                 throw new IllegalStateException("The quote expired. Please get a new quote.");
             }
@@ -494,6 +494,14 @@ public class WalletService {
         byte[] b = new byte[9];
         RANDOM.nextBytes(b);
         return java.util.HexFormat.of().formatHex(b).toUpperCase(Locale.ROOT);
+    }
+
+    /** A DATETIME column as read by the driver (LocalDateTime with Connector/J 8+, Timestamp with older drivers). */
+    public static LocalDateTime ldt(Object v) {
+        if (v instanceof LocalDateTime l) return l;
+        if (v instanceof Timestamp t) return t.toLocalDateTime();
+        if (v instanceof java.util.Date d) return new Timestamp(d.getTime()).toLocalDateTime();
+        throw new IllegalStateException("not a date-time: " + v);
     }
 
     static Timestamp now() {

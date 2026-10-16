@@ -1,6 +1,6 @@
 # Operating PayPort from the portal (no code changes)
 
-_2026-10-16. Migrations V50–V51. Ops console: **Markets & Currencies**, **Channels & Product Lines**, **Products & Payment Methods**._
+_2026-10-16. Migrations V50–V52. Ops console: **Markets & Currencies**, **Channels & Product Lines**, **Products & Payment Methods**, **Customer Wallets**, **Agents & Float**, **POS & WhatsApp**, **Provider Settlement Rules**, **Ledger**. Step-by-step switch-on for every product and credential: [`docs/runbooks/SWITCH_ON.md`](../runbooks/SWITCH_ON.md)._
 
 The rule for every switch: **turning money OFF is immediate** (one person, reason required, audited); **turning money ON needs a second person**, and a COMPLIANCE officer when it enables money. Nobody approves their own request (database CHECK). Every request, decision and switch is in the hash-chained compliance audit log.
 
@@ -11,7 +11,7 @@ The rule for every switch: **turning money OFF is immediate** (one person, reaso
 | Live money in a currency | Markets & Currencies | Stop live money: immediate | Request → COMPLIANCE approves |
 | Bank account, BIC, payout format, statement guideline, FIU format, legal name | Markets & Currencies | — | Request → a second person (COMPLIANCE if it changes where money goes) |
 | A new country | Markets & Currencies → Add a market | — | Starts in SANDBOX; another ADMIN approves the creation; going LIVE as above |
-| A channel (web, mobile, USSD, merchant API, payment links, hosted checkout, QR, WhatsApp, POS) | Channels & Product Lines | Switch off: immediate, refuses new payments with 503 CHANNEL_UNAVAILABLE ("No money was taken") | Switch on (ADMIN/OPS); licence-gated channels only after the licence decision |
+| A channel (web, mobile, USSD, merchant API, payment links, hosted checkout, QR, WhatsApp, POS, agent) | Channels & Product Lines | Switch off: immediate, refuses new payments with 503 CHANNEL_UNAVAILABLE ("No money was taken") | Switch on (ADMIN/OPS); licence-gated channels only after the licence decision |
 | A product line (Phase 8) | Channels & Product Lines | Immediate | ADMIN, only when the licence status is GRANTED or NOT_REQUIRED (two compliance officers; database CHECK) |
 | A product (e.g. Econet airtime, ZESA) and its currencies | Products & Payment Methods | Immediate | Immediate (audited) |
 | A payment method (EcoCash, OneMoney…) | Products & Payment Methods | Immediate | Immediate (audited) |
@@ -26,7 +26,7 @@ The rule for every switch: **turning money OFF is immediate** (one person, reaso
 
 Proven by `PlatformControlsScenarioTest.zambiaGoesLiveFromThePortal_…` — including that the request is refused while blockers remain, that the requester and another ADMIN cannot approve it, and that a suspension is immediate.
 
-**Not configuration:** a country also needs payment providers that operate there. PayPort's current provider adapters (EcoCash, OneMoney, Econet, ZESA…) are Zimbabwean; a Zambian wallet or biller is an adapter to add (Phase 7: "configuration plus adapters").
+**Providers for Zambia:** MTN MoMo and Airtel Money adapters are built (V52; payment methods `MTN_MOMO`, `AIRTEL_MONEY`, inactive). They fail closed until their credentials are configured (see the switch-on runbook), are confirmed by status query before any callback changes a payment, and declare ZMW; another currency is added with `payport.integrations.<CODE>.currencies`. Zambian billers and airtime vendors are still adapters to add when contracted.
 
 ## Screening is never "clear" unless it is
 

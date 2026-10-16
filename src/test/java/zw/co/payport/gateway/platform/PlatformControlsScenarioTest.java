@@ -335,12 +335,16 @@ class PlatformControlsScenarioTest {
         Res inv = call("GET", "/api/v1/fx/quote?from=ZWG&to=USD&amountMinor=26500", null, null);
         assertEquals(990, inv.data().path("convertedMinor").asLong(), "inverse rate, spread applied, rounded down");
 
-        // Parked lines cannot be switched on even with a licence answer.
+        // A line whose code is parked cannot be switched on even with a licence answer (all Phase 8 lines are BUILT
+        // since V52; parking one here proves the guard still holds).
+        jdbc.update("UPDATE service_lines SET harvest_status = 'PARKED' WHERE code = 'WALLETS'");
         Res wl = call("POST", "/api/v1/admin/service-lines/WALLETS/licence-requests", carol, Map.of("status", "NOT_REQUIRED", "reason", "test"));
         call("POST", "/api/v1/admin/service-lines/licence-requests/" + wl.data().path("approvalId").asLong() + "/decide", dave, Map.of("approve", true));
         Res parked = call("POST", "/api/v1/admin/service-lines/WALLETS", adam, Map.of("enabled", true, "reason", "try"));
         assertEquals(409, parked.status());
         assertTrue(parked.message().contains("parked"));
+        jdbc.update("UPDATE service_lines SET harvest_status = 'BUILT' WHERE code = 'WALLETS'");
+        assertEquals(200, call("POST", "/api/v1/admin/service-lines/WALLETS", adam, Map.of("enabled", true, "reason", "built")).status());
     }
 
     // ─── USSD ────────────────────────────────────────────────────────────────

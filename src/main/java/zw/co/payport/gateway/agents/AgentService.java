@@ -277,7 +277,7 @@ public class AgentService {
             List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM cash_out_codes WHERE code_hash = ? FOR UPDATE", h);
             if (rows.isEmpty() || !"ISSUED".equals(rows.get(0).get("status"))) return null;
             Map<String, Object> c = rows.get(0);
-            if (((Timestamp) c.get("expires_at")).toLocalDateTime().isBefore(LocalDateTime.now())) {
+            if (WalletService.ldt(c.get("expires_at")).isBefore(LocalDateTime.now())) {
                 jdbc.update("UPDATE cash_out_codes SET status = 'EXPIRED' WHERE id = ?", c.get("id"));
                 return Map.<String, Object>of("expired", true);
             }
