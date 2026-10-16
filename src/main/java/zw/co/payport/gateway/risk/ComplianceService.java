@@ -37,7 +37,12 @@ public class ComplianceService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcTemplate jdbc;
     private final ScreeningService screening;
-    private final ObjectMapper json = new ObjectMapper();
+    /** Report payloads hold database rows: dates are written as ISO text (no JSR-310 module on this classpath). */
+    private final ObjectMapper json = new ObjectMapper().registerModule(new com.fasterxml.jackson.databind.module.SimpleModule()
+            .addSerializer(LocalDateTime.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance)
+            .addSerializer(LocalDate.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance)
+            .addSerializer(java.sql.Timestamp.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance)
+            .addSerializer(java.time.OffsetDateTime.class, com.fasterxml.jackson.databind.ser.std.ToStringSerializer.instance));
     private final String reportingEntity;
 
     public ComplianceService(JdbcTemplate jdbc, ScreeningService screening,
