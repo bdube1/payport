@@ -288,40 +288,4 @@ public class RiskEngine {
         log.info("[RISK] Re-screened {} merchants and {} customers after a list update: {} potential matches", merchants, customers, hits);
         return Map.of("merchants", merchants, "customers", customers, "potentialMatches", hits);
     }
-
-    /** A threshold given inline ({"thresholdMinor":{"USD":..}}) or by compliance parameter ({"parameter":"CTR.THRESHOLD_MINOR"}). */
-    private Long threshold(JsonNode q, String ccy) {
-        if (q.hasNonNull("parameter")) return params.perCurrency(q.path("parameter").asText(), ccy);
-        return q.path("thresholdMinor").has(ccy) ? q.path("thresholdMinor").path(ccy).asLong() : null;
-    }
-
-    private static String matchRefs(List<?> matches) {
-        return matches.stream().map(o -> o instanceof ScreeningService.Match m ? m.listCode() + ":" + m.entryRef() : String.valueOf(o))
-                .sorted().reduce((a, b) -> a + "," + b).orElse("");
-    }
-
-    private int count(String sql, Object... args) {
-        Integer n = jdbc.queryForObject(sql, Integer.class, args);
-        return n == null ? 0 : n;
-    }
-
-    /**
-     * Merchant onboarding screening (business name, owner, registration number). Always on: a hit
-     * opens a compliance case, and KYB approval is held until compliance closes it.
-     */
-    public void screenMerchant(long merchantId, String businessName, String ownerName, String registrationNumber) {
-        try {
-            String key = "MERCHANT:" + merchantId;
-            List<ScreeningService.Match> m = screening.screen(key, List.of(businessName, ownerName == null ? "" : ownerName),
-                    registrationNumber == null ? List.of() : List.of(registrationNumber), params.number("SCREENING.MIN_SCORE"));
-            if (m.isEmpty()) return;
-            Map<String, Object> d = new LinkedHashMap<>();
-            d.put("score", m.stream().mapToDouble(ScreeningService.Match::score).max().orElse(0));
-            d.put("matches", m);
-            alerts.record(new AlertStore.Hit("MERCHANT_SCREENING", 1, "ENFORCE", "HIGH", "MERCHANT", key, businessName, null,
-                    (Double) d.get("score"), json.writeValueAsString(d), false, "screening|" + matchRefs(m)));
-        } catch (Exception e) {
-            log.error("[RISK] merchant {} screening failed: {}", merchantId, e.getMessage());
-        }
-    }
 }
