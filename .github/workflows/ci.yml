@@ -33,7 +33,14 @@ jobs:
       # Compiles everything, runs unit tests and the Testcontainers MySQL tests
       # (Docker is available on GitHub-hosted runners).
       - name: mvn verify
-        run: mvn -B -ntp verify
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp verify 2>&1 | tee build.log || {
+            # Compiler errors as annotations (raw logs are not readable from outside the runner).
+            grep -E '^\[ERROR\] .*\.java:\[' build.log | sed 's/^\[ERROR\] //' | head -40 | sed 's/^/::error::/'
+            exit 1
+          }
 
       - name: Publish test totals
         if: always()
