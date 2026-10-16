@@ -111,6 +111,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/assistant/chat").permitAll()
                         .requestMatchers("/api/v1/products/**").permitAll()
                         .requestMatchers("/api/v1/bills/customer-info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/billers").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/billers/*/lookup").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*/code/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*/categories").permitAll()

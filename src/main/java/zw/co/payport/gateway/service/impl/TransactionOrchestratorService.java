@@ -78,6 +78,17 @@ public class TransactionOrchestratorService {
 
         product.validateAmount(dto.getAmountCents());
 
+        // Phase 5 biller framework: a bill account must be well-formed, and the biller must accept the
+        // currency and amount, BEFORE the customer is asked to pay (not discovered at delivery).
+        if (billerRegistry != null) {
+            String payCurrency = dto.getCurrency() != null ? dto.getCurrency() : "USD";
+            billerRegistry.find(product.getProviderCode()).ifPresent(b -> {
+                String problem = b.validateAccount(dto.getRecipientIdentifier());
+                if (problem == null) problem = b.validateAmount(dto.getAmountCents(), payCurrency);
+                if (problem != null) throw new IllegalArgumentException(problem);
+            });
+        }
+
         Transaction tx = Transaction.builder()
                 .reference(dto.getReference())
                 .status(TransactionStatus.INITIATED)
@@ -177,13 +188,19 @@ public class TransactionOrchestratorService {
         PaymentProviderAdaptor adaptor = adaptorRegistry.getPaymentAdaptor(p.providerCode());
 
         PaymentProviderAdaptor.PaymentSubmitResult result;
+        long started = System.currentTimeMillis();
         try {
             result = adaptor.submitPayment(p.request());
             if (result == null) {
                 result = PaymentProviderAdaptor.PaymentSubmitResult.builder()
                         .submitted(false).outcomeUnknown(true).message("Provider adaptor returned no result").build();
             }
+            if (providerHealth != null) {
+                if (result.isOutcomeUnknown()) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, "submit outcome unknown");
+                else providerHealth.success(p.providerCode(), System.currentTimeMillis() - started);
+            }
         } catch (Exception e) {
+            if (providerHealth != null) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
             boolean unknown = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e);
             log.error("[ORCHESTRATOR] {} submit for {} threw {} -- outcome {}", p.providerCode(), p.reference(),
                     e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT SENT");
@@ -216,6 +233,16 @@ public class TransactionOrchestratorService {
 
     @org.springframework.beans.factory.annotation.Value("${payport.payments.max-attempts:3}")
     private int maxPaymentAttempts;
+
+    /** Phase 5: provider kill switch and circuit breakers (optional so focused tests can build the service without it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.integration.ProviderHealthService providerHealth;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.billers.BillerRegistry billerRegistry;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.integration.IntegrationRegister integrationRegister;
 
     private org.springframework.transaction.support.TransactionTemplate requiresNew() {
         org.springframework.transaction.support.TransactionTemplate t =
@@ -282,6 +309,15 @@ public class TransactionOrchestratorService {
                 .customerPhone(tx.getCustomerPhone())
                 .description("Payport " + tx.getProductType().getName())
                 .build();
+        // Capability declaration: the provider must accept the payment's currency.
+        if (integrationRegister != null) {
+            var declared = integrationRegister.get(providerCode);
+            if (declared != null && !declared.supportsCurrency(tx.getCurrency())) {
+                throw new IllegalArgumentException(declared.name() + " does not accept " + tx.getCurrency() + " payments");
+            }
+        }
+        // Last check before anything is recorded or sent: suspended provider or open circuit -> refuse now.
+        if (providerHealth != null) providerHealth.acquire(providerCode, paymentMethod.getName() != null ? paymentMethod.getName() : providerCode);
         return new PreparedSubmission(tx.getReference(), providerCode, attemptNo, attemptReference, req);
     }
 
@@ -666,13 +702,26 @@ public class TransactionOrchestratorService {
             result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).message(p.notSupported()).build();
         } else {
             log.info("[ORCHESTRATOR] Calling {} adaptor.deliver for {} ({})", p.providerCode(), reference, p.label());
+            long started = System.currentTimeMillis();
             try {
+                if (providerHealth != null) providerHealth.acquire(p.providerCode(), p.providerCode());
                 result = adaptorRegistry.getFulfilmentAdaptor(p.providerCode()).deliver(p.request());
                 if (result == null) {
                     result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(true)
                             .message("Provider adaptor returned no result").build();
                 }
+                if (providerHealth != null) {
+                    if (result.isOutcomeUnknown()) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, "delivery outcome unknown");
+                    else providerHealth.success(p.providerCode(), System.currentTimeMillis() - started);
+                }
+            } catch (zw.co.payport.gateway.integration.ProviderUnavailableException e) {
+                // Suspended or circuit open: nothing was sent, so this is a definite "not delivered", retried later.
+                log.warn("[ORCHESTRATOR] {} delivery for {} not sent: {}", p.providerCode(), reference, e.getMessage());
+                result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(false)
+                        .errorCode(NOT_SENT).message(p.providerCode() + " is unavailable; the delivery was not sent and will be retried.")
+                        .rawResponse("ProviderUnavailable: " + e.getMessage()).build();
             } catch (Exception e) {
+                if (providerHealth != null) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
                 boolean unknown = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e);
                 log.error("[ORCHESTRATOR] {} deliver for {} threw {} -- outcome {}", p.providerCode(), reference,
                         e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT DELIVERED");
@@ -719,6 +768,17 @@ public class TransactionOrchestratorService {
             notSupported = "No fulfilment adaptor for provider: " + providerCode;
         }
 
+        // Providers that identify a delivery by our reference (eSolutions) get one per attempt,
+        // recorded here, in the same transaction that marks the delivery as started, BEFORE anything
+        // is sent: an unknown outcome is then looked up by the reference the provider actually received.
+        String deliveryReference = null;
+        if (notSupported == null && adaptorRegistry.getFulfilmentAdaptor(providerCode).usesDeliveryReference()) {
+            int attempt = (tx.getRetryCount() == null ? 0 : tx.getRetryCount()) + 1;
+            deliveryReference = zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.forDelivery(tx.getReference(), attempt);
+            tx.setFulfilmentReference(deliveryReference);
+            transactionRepository.save(tx);
+        }
+
         FulfilmentProviderAdaptor.FulfilmentRequest req = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
                 .payportReference(tx.getReference())
                 .recipientIdentifier(tx.getRecipientIdentifier())
@@ -726,6 +786,7 @@ public class TransactionOrchestratorService {
                 .currency(tx.getCurrency())
                 .productTypeCode(productCode)
                 .productConfig(tx.getFulfilmentData())
+                .deliveryReference(deliveryReference)
                 .build();
         return new PreparedDelivery(tx.getReference(), providerCode, label, req, notSupported);
     }

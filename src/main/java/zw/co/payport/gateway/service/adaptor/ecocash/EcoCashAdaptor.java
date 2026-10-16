@@ -113,6 +113,20 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
             
             logEcoCashResponse(transactionStatus, clientCorrelator);
 
+            // Phase 5: a 200 whose status is FAILED/REJECTED/DECLINED is a definite, immediate decline
+            // (no USSD push will come). It used to be treated as "sent", so the customer waited out the
+            // whole payment window and was told TIMED_OUT instead of the provider's reason.
+            if ("FAILED".equals(mapEcoCashStatus(transactionStatus))) {
+                Object text = responseBody.get("text") != null ? responseBody.get("text")
+                        : responseBody.get("message") != null ? responseBody.get("message") : responseBody.get("transactionOperationStatus");
+                return PaymentSubmitResult.builder()
+                        .submitted(false)
+                        .outcomeUnknown(false)
+                        .message(text != null ? String.valueOf(text) : "EcoCash declined the payment")
+                        .rawResponse(response.getBody())
+                        .build();
+            }
+
             boolean submitted = true;
 
             return PaymentSubmitResult.builder()
@@ -242,14 +256,22 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
         logCallbackResult(txStatus, description, ecocashRef);
 
         long amountCents = 0;
+        String currency = "USD";
         try {
             Map<String, Object> paymentAmount = (Map<String, Object>) payload.get("paymentAmount");
             if (paymentAmount != null) {
                 Map<String, Object> chargingInfo = (Map<String, Object>) paymentAmount.get("charginginformation");
                 if (chargingInfo != null) {
                     Object amtObj = chargingInfo.get("amount");
-                    if (amtObj instanceof Number) {
-                        amountCents = Math.round(((Number) amtObj).doubleValue() * 100);
+                    if (amtObj instanceof Number || amtObj instanceof String) {
+                        // Exact decimal -> minor units (a double * 100 can be off by one cent).
+                        amountCents = new java.math.BigDecimal(amtObj.toString().trim()).movePointRight(2)
+                                .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+                    }
+                    // Phase 5: the callback's own currency (ZWG payments were reported as USD, which
+                    // hid currency mismatches from the lifecycle checks).
+                    if (chargingInfo.get("currency") instanceof String c && !c.isBlank()) {
+                        currency = c.trim().toUpperCase();
                     }
                 }
             }
@@ -262,7 +284,7 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
                 .providerReference(ecocashRef != null ? ecocashRef : payportRef)
                 .status(mapEcoCashStatus(txStatus))
                 .amountCents(amountCents)
-                .currency("USD")
+                .currency(currency)
                 .timestamp(java.time.LocalDateTime.now().toString())
                 .rawPayload(rawBody)
                 .build();

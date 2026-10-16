@@ -44,7 +44,7 @@ jobs:
 
       - name: Publish test totals
         if: always()
-        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest'
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest'
 
       - name: Upload test reports
         if: always()

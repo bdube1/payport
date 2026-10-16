@@ -81,6 +81,14 @@ public class GlobalExceptionHandler {
      * RuntimeExceptions with a clear message -- they still fall through
      * to the generic handler below untouched.
      */
+    /** A provider is suspended or not responding: nothing was sent. 503 with a code channels can act on (offer another method). */
+    @ExceptionHandler(zw.co.payport.gateway.integration.ProviderUnavailableException.class)
+    public ResponseEntity<ApiResponse<?>> handleProviderUnavailable(zw.co.payport.gateway.integration.ProviderUnavailableException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] {} unavailable on {} {}", ex.getProviderCode(), req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "60")
+                .body(ApiResponse.error("PROVIDER_UNAVAILABLE", ex.getMessage(), requestId(req)));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<?>> handleRuntimeException(RuntimeException ex, HttpServletRequest req) {
         log.warn("[GATEWAY] {} on {} {}: {}",

@@ -74,7 +74,8 @@ class PaymentLifecycleScenarioTest {
         r.add("DB_PASSWORD", MYSQL::getPassword);
         r.add("JWT_SECRET", () -> "scenario-test-secret-scenario-test-secret-scenario-0123456789");
         r.add("payport.payments.query-providers", () -> "ECOCASH,ONEMONEY,ZIMSWITCH,SIMQ");
-        r.add("payport.payments.resolver.enabled", () -> "false"); // driven explicitly with runOnce
+        r.add("payport.payments.resolver.enabled", () -> "false");
+        r.add("payport.integrations.breaker.enabled", () -> "false"); // scenarios script many provider failures on purpose // driven explicitly with runOnce
         r.add("payport.payments.watchdog.enabled", () -> "false");
         r.add("payport.fulfilment.worker.enabled", () -> "false");
     }

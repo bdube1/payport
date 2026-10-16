@@ -17,6 +17,13 @@ public interface FulfilmentProviderAdaptor {
     String getProviderCode();
 
     /**
+     * True if this provider identifies a delivery by a reference PayPort generates (eSolutions:
+     * vendorReference) that must be recorded before sending, so an unknown outcome can be looked
+     * up by exactly that reference.
+     */
+    default boolean usesDeliveryReference() { return false; }
+
+    /**
      * Deliver the service to the recipient.
      * e.g. credit airtime, generate ZESA token, renew DStv subscription.
      */
@@ -43,6 +50,8 @@ public interface FulfilmentProviderAdaptor {
         private String  currency;
         private String  productTypeCode;
         private String  productConfig;           // JSON from product_types.fulfilment_config
+        /** Set by the orchestrator for providers that use one (usesDeliveryReference): the reference to send, already recorded on the payment. */
+        private String  deliveryReference;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor

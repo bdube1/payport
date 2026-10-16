@@ -40,6 +40,9 @@ public class MoonlightAdaptor implements FulfilmentProviderAdaptor {
     @Override
     public String getProviderCode() { return "MOONLIGHT"; }
 
+    @Override
+    public boolean usesDeliveryReference() { return true; }
+
     public MoonlightCustomerInfo getCustomerInfo(String policyNumber, String sourcePhone) throws Exception {
         String vendorRef = buildVendorRef("MCI");
         log.info("[MOONLIGHT] Customer info for policy {}", maskPolicy(policyNumber));
@@ -68,7 +71,8 @@ public class MoonlightAdaptor implements FulfilmentProviderAdaptor {
     @Override
     public FulfilmentResult deliver(FulfilmentRequest request) throws Exception {
         String policyNumber = request.getRecipientIdentifier();
-        String vendorRef    = buildVendorRef(request.getPayportReference());
+        String vendorRef    = (request.getDeliveryReference() != null ? request.getDeliveryReference()
+                : zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.forDelivery(request.getPayportReference(), 1));
 
         // Extract sourcePhone from productConfig if present
         String sourcePhone = extractSourcePhone(request.getProductConfig());
@@ -216,9 +220,7 @@ public class MoonlightAdaptor implements FulfilmentProviderAdaptor {
     }
 
     private String buildVendorRef(String prefix) {
-        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        String p  = prefix.replaceAll("[^A-Za-z0-9]", "").substring(0, Math.min(prefix.length(), 4));
-        return (p + ts).substring(0, Math.min(p.length() + ts.length(), 20));
+        return zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.lookup(prefix);
     }
 
     private String maskPolicy(String p) {

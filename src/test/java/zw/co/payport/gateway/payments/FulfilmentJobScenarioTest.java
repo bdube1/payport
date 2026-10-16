@@ -59,6 +59,7 @@ class FulfilmentJobScenarioTest {
         r.add("DB_PASSWORD", MYSQL::getPassword);
         r.add("JWT_SECRET", () -> "fulfilment-test-secret-fulfilment-test-secret-fulfil-0123456789");
         r.add("payport.payments.resolver.enabled", () -> "false");
+        r.add("payport.integrations.breaker.enabled", () -> "false"); // scenarios script many provider failures on purpose
         r.add("payport.payments.watchdog.enabled", () -> "false");
         r.add("payport.fulfilment.worker.enabled", () -> "false"); // driven explicitly with runOnce
         r.add("payport.fulfilment.unknown-manual-after-minutes", () -> "120");

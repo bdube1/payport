@@ -41,6 +41,9 @@ public class ZolPaymentAdaptor implements FulfilmentProviderAdaptor {
     @Override
     public String getProviderCode() { return "ZOL"; }
 
+    @Override
+    public boolean usesDeliveryReference() { return true; }
+
     public ZolCustomerInfo getCustomerInfo(String accountNumber) throws Exception {
         String vendorRef = buildVendorRef("ZCI");
         log.info("[ZOL] Customer info for account {}", maskAccount(accountNumber));
@@ -58,7 +61,8 @@ public class ZolPaymentAdaptor implements FulfilmentProviderAdaptor {
     @Override
     public FulfilmentResult deliver(FulfilmentRequest request) throws Exception {
         String accountNumber = request.getRecipientIdentifier();
-        String vendorRef     = buildVendorRef(request.getPayportReference());
+        String vendorRef     = (request.getDeliveryReference() != null ? request.getDeliveryReference()
+                : zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.forDelivery(request.getPayportReference(), 1));
         String sourcePhone   = request.getProductConfig() != null
                 ? extractSourcePhone(request.getProductConfig()) : null;
 
@@ -194,9 +198,7 @@ public class ZolPaymentAdaptor implements FulfilmentProviderAdaptor {
     }
 
     private String buildVendorRef(String prefix) {
-        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        String p  = prefix.replaceAll("[^A-Za-z0-9]", "").substring(0, Math.min(prefix.length(), 4));
-        return (p + ts).substring(0, Math.min(p.length() + ts.length(), 20));
+        return zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.lookup(prefix);
     }
 
     private String maskAccount(String acc) {
