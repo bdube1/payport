@@ -33,7 +33,7 @@ jobs:
       # Official ISO 20022 schemas (Phase 7), verified against scripts/iso20022/schemas.sha256.
       - name: Fetch ISO 20022 schemas
         continue-on-error: true   # the conformance tests then fail with "schema not installed"
-        run: scripts/iso20022/fetch-schemas.sh src/main/resources/iso20022/xsd
+        run: bash scripts/iso20022/fetch-schemas.sh src/main/resources/iso20022/xsd
 
       - name: Upload ISO 20022 schemas
         uses: actions/upload-artifact@v4

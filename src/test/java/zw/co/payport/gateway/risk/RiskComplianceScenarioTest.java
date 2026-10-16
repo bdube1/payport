@@ -506,7 +506,8 @@ class RiskComplianceScenarioTest {
         jdbc.update("UPDATE risk_rules SET approved_by = NULL WHERE code = 'TX_LIMIT_ZWG_TEST'");
         assertThrows(org.springframework.dao.DataAccessException.class,
                 () -> jdbc.update("UPDATE risk_rules SET mode = 'ENFORCE' WHERE code = 'TX_LIMIT_ZWG_TEST'"), "CHECK chk_rr_enforce_approved");
-        jdbc.update("UPDATE risk_rules SET mode = 'OFF' WHERE code = 'TX_LIMIT_ZWG_TEST'");
+        // Test-only rule: removed so other scenarios see only the seeded rule set.
+        jdbc.update("DELETE FROM risk_rules WHERE code = 'TX_LIMIT_ZWG_TEST'");
 
         // Parameters show their source and status; confirming needs two officers.
         Res params = call("GET", "/api/v1/admin/compliance/parameters", carol, null);
