@@ -38,10 +38,25 @@ public final class ReconEngine {
                           boolean paid, String status, LocalDateTime paidAt) {}
 
     public record Finding(Result result, Long lineId, String transactionReference, String providerReference,
-                          Long expectedMinor, Long actualMinor, String currency, String detail) {}
+                          Long expectedMinor, Long actualMinor, String currency, String detail, String method) {
+        public Finding(Result result, Long lineId, String transactionReference, String providerReference,
+                       Long expectedMinor, Long actualMinor, String currency, String detail) {
+            this(result, lineId, transactionReference, providerReference, expectedMinor, actualMinor, currency, detail,
+                    transactionReference == null ? null : "REFERENCE");
+        }
+    }
+
+    /** How close in time a line and a payment must be to pair them by amount when no reference matches. */
+    public static final Duration AMOUNT_TIME_WINDOW = Duration.ofMinutes(10);
 
     private ReconEngine() {}
 
+    /**
+     * Two passes: by reference, then (for lines no reference matched, with a real time of day) by
+     * amount + currency + time within AMOUNT_TIME_WINDOW -- only when the pairing is unique both
+     * ways, so an ambiguous pair is never guessed. Card switch reports (ZimSwitch) and airtime
+     * reports carry no PayPort reference, which is what the second pass is for.
+     */
     public static List<Finding> match(List<Line> lines, List<Payment> payments, LocalDateTime windowStart, LocalDateTime windowEnd,
                                       Duration timingTolerance) {
         Map<String, Payment> byRef = new HashMap<>();
@@ -52,6 +67,7 @@ public final class ReconEngine {
 
         List<Finding> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        List<Line> unreferenced = new ArrayList<>();
         for (Line l : lines) {
             Payment p = null;
             String usedRef = null;
@@ -61,10 +77,8 @@ public final class ReconEngine {
                 if (p == null) p = byRef.get(PaymentAttemptStore.intentReference(r));
                 if (p != null) { usedRef = r; break; }
             }
-            String firstRef = l.references().isEmpty() ? null : l.references().get(0);
             if (p == null) {
-                out.add(new Finding(Result.MISSING_IN_PAYPORT, l.lineId(), null, firstRef, null, l.amountMinor(), l.currency(),
-                        "Provider statement line has no matching PayPort payment"));
+                unreferenced.add(l);
                 continue;
             }
             if (!seen.add(p.reference())) {
@@ -93,6 +107,38 @@ public final class ReconEngine {
                 continue;
             }
             out.add(new Finding(Result.MATCHED, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), p.currency(), null));
+        }
+
+        // Second pass: unique amount + currency + time pairing.
+        Map<Long, List<Payment>> candidatesByLine = new HashMap<>();
+        Map<String, Integer> claims = new HashMap<>();
+        for (Line l : unreferenced) {
+            List<Payment> c = new ArrayList<>();
+            if (l.occurredAt() != null && !l.occurredAt().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                for (Payment p : payments) {
+                    if (!p.paid() || seen.contains(p.reference()) || p.paidAt() == null) continue;
+                    if (p.amountMinor() != l.amountMinor()) continue;
+                    if (l.currency() != null && p.currency() != null && !sameCurrency(l.currency(), p.currency())) continue;
+                    if (Duration.between(p.paidAt(), l.occurredAt()).abs().compareTo(AMOUNT_TIME_WINDOW) > 0) continue;
+                    c.add(p);
+                }
+            }
+            candidatesByLine.put(l.lineId(), c);
+            if (c.size() == 1) claims.merge(c.get(0).reference(), 1, Integer::sum);
+        }
+        for (Line l : unreferenced) {
+            List<Payment> c = candidatesByLine.get(l.lineId());
+            String firstRef = l.references().isEmpty() ? null : l.references().get(0);
+            if (c.size() == 1 && claims.get(c.get(0).reference()) == 1) {
+                Payment p = c.get(0);
+                seen.add(p.reference());
+                out.add(new Finding(Result.MATCHED, l.lineId(), p.reference(), firstRef, p.amountMinor(), l.amountMinor(), p.currency(),
+                        "Matched by amount and time (no reference in the statement)", "AMOUNT_TIME"));
+            } else {
+                out.add(new Finding(Result.MISSING_IN_PAYPORT, l.lineId(), null, firstRef, null, l.amountMinor(), l.currency(),
+                        c.size() > 1 ? "No reference match; " + c.size() + " payments have this amount and time, so none was chosen"
+                                : "Provider statement line has no matching PayPort payment", null));
+            }
         }
 
         for (Payment p : payments) {

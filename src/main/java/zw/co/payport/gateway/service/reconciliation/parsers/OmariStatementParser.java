@@ -170,11 +170,6 @@ public class OmariStatementParser implements StatementParser {
     }
 
     private Long parseAmountToCents(String value) {
-        try {
-            double d = Double.parseDouble(value.replace(",", "").trim());
-            return Math.round(d * 100);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return StatementCells.cents(value);
     }
 }

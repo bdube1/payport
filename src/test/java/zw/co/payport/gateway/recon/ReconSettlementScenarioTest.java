@@ -61,6 +61,8 @@ class ReconSettlementScenarioTest {
         r.add("payport.fulfilment.worker.enabled", () -> "false");
         r.add("payport.settlement.mode", () -> "LIVE");
         r.add("payport.settlement.dual-approval-threshold-minor.USD", () -> "1000");
+        r.add("payport.settlement.automation.currencies", () -> "ZWG");
+        r.add("payport.settlement.automation.auto-approve-limit-minor.ZWG", () -> "100000000");
     }
 
     @TestConfiguration
@@ -77,6 +79,7 @@ class ReconSettlementScenarioTest {
     @Autowired SettlementBatchService settlement;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager txm;
+    @Autowired zw.co.payport.gateway.settlement.SettlementAutomation automation;
 
     private static final AtomicInteger SEQ = new AtomicInteger((int) (System.nanoTime() % 400_000));
 
@@ -86,13 +89,17 @@ class ReconSettlementScenarioTest {
     }
 
     private String payment(long cents, boolean succeed) throws Exception {
+        return payment(cents, succeed, "USD");
+    }
+
+    private String payment(long cents, boolean succeed, String currency) throws Exception {
         String ref = String.format("PP-API-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
         InitiateTransactionRequest req = new InitiateTransactionRequest();
         req.setReference(ref);
-        req.setProductTypeCode("MERCHANT_CHECKOUT");
+        req.setProductTypeCode("ZWG".equals(currency) ? "MERCHANT_CHECKOUT_ZWG" : "MERCHANT_CHECKOUT");
         req.setRecipientIdentifier("+263771234567");
         req.setAmountCents(cents);
-        req.setCurrency("USD");
+        req.setCurrency(currency);
         req.setCustomerPhone("+263771234567");
         req.setChannel("API");
         orchestrator.initiateTransaction(req, "127.0.0.1");
@@ -185,9 +192,13 @@ class ReconSettlementScenarioTest {
     }
 
     private long session(long merchantId, String txRef, long amount, long fee, boolean live) {
+        return session(merchantId, txRef, amount, fee, live, "USD");
+    }
+
+    private long session(long merchantId, String txRef, long amount, long fee, boolean live, String currency) {
         jdbc.update("INSERT INTO checkout_sessions (merchant_id, reference, amount_cents, currency, status, transaction_reference, expires_at, "
-                        + "created_at, updated_at, livemode, commission_amount_cents, net_amount_cents) VALUES (?, ?, ?, 'USD', 'PAID', ?, ?, ?, ?, ?, ?, ?)",
-                merchantId, "ORD-" + SEQ.incrementAndGet(), amount, txRef, LocalDateTime.now().minusDays(2), LocalDateTime.now().minusDays(2),
+                        + "created_at, updated_at, livemode, commission_amount_cents, net_amount_cents) VALUES (?, ?, ?, ?, 'PAID', ?, ?, ?, ?, ?, ?, ?)",
+                merchantId, "ORD-" + SEQ.incrementAndGet(), amount, currency, txRef, LocalDateTime.now().minusDays(2), LocalDateTime.now().minusDays(2),
                 LocalDateTime.now().minusDays(2), live, fee, amount - fee);
         return jdbc.queryForObject("SELECT MAX(id) FROM checkout_sessions", Long.class);
     }
@@ -293,5 +304,32 @@ class ReconSettlementScenarioTest {
         assertThrows(org.springframework.dao.DataAccessException.class, () ->
                 jdbc.update("UPDATE stl_batches SET status = 'INSTRUCTED', file_sha256 = ? WHERE id = ?", "c".repeat(64), id),
                 "the database refuses an instructed PARALLEL batch");
+    }
+
+    @Test
+    void automatedSettlement_isOneSwitch_draftsApprovesByPolicyAndInstructs_withoutPeople() throws Exception {
+        String z1 = payment(40_000, true, "ZWG"), z2 = payment(60_000, true, "ZWG");
+        LocalDateTime now = LocalDateTime.now();
+        String csv = "reference,provider_reference,amount,currency,timestamp\n"
+                + z1 + ",,400.00,ZWG," + now.minusHours(1).withNano(0) + "\n"
+                + z2 + ",,600.00,ZWG," + now.plusHours(2).withNano(0) + "\n";
+        byte[] bytes = csv.getBytes(StandardCharsets.UTF_8);
+        recon.run(recon.importStatement("SIM", "zwg.csv", bytes, recon.parse("SIM", "CSV", bytes), "fin.carol").statementId(), "fin.carol");
+        long m = merchant("Zig Traders " + SEQ.get());
+        session(m, z1, 40_000, 1_200, true, "ZWG");
+        session(m, z2, 60_000, 1_800, true, "ZWG");
+
+        var r = automation.runOnce();
+        assertEquals(1, r.drafted().size(), r.toString());
+        assertEquals(r.drafted(), r.policyApproved(), "within the automatic approval limit and all checks pass");
+        assertEquals(r.drafted(), r.instructed(), "LIVE mode: instructed automatically");
+        long batchId = jdbc.queryForObject("SELECT id FROM stl_batches WHERE batch_ref = ?", Long.class, r.drafted().get(0));
+        assertEquals("INSTRUCTED", settlement.get(batchId).status());
+        assertEquals(97_000L, settlement.get(batchId).totalNetMinor());
+        assertEquals(List.of("SYSTEM:auto-approval-policy"), jdbc.queryForList("SELECT approver FROM stl_batch_approvals WHERE batch_id = ?", String.class, batchId));
+        assertEquals("SYSTEM:settlement-automation", jdbc.queryForObject("SELECT created_by FROM stl_batches WHERE id = ?", String.class, batchId));
+
+        var again = automation.runOnce();
+        assertTrue(again.drafted().isEmpty() && again.instructed().isEmpty(), "nothing is paid twice: " + again);
     }
 }

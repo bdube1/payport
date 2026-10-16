@@ -41,6 +41,9 @@ public class ReconciliationService {
     static final Set<String> PAID_STATUSES = Set.of("PAYMENT_CONFIRMED", "FULFILMENT_PENDING", "FULFILMENT_FAILED", "FULFILMENT_RETRY",
             "MANUAL_FULFILMENT", "COMPLETED", "REFUND_PENDING", "REFUNDED");
 
+    /** Statuses in which PayPort holds that the provider delivered (delivery-side providers). */
+    static final Set<String> DELIVERED_STATUSES = Set.of("COMPLETED", "REFUND_PENDING", "REFUNDED");
+
     public record ImportResult(long statementId, boolean alreadyImported, int lines) {}
 
     public record RunSummary(long runId, long statementId, int lines, int matched, Map<ReconEngine.Result, Integer> counts) {}
@@ -119,17 +122,20 @@ public class ReconciliationService {
         if (start == null || end == null) {
             throw new IllegalStateException("Statement #" + statementId + " has no dated transaction lines");
         }
+        // Date-only statements (EcoCash "Transfer Date"): the last day runs to its end, not to midnight.
+        if (end.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) end = end.plusDays(1).minusSeconds(1);
+        final LocalDateTime windowEnd = end;
 
         List<ReconEngine.Payment> payments = loadPayments(provider, start.minusDays(2), end.plusDays(2), lines);
-        List<ReconEngine.Finding> findings = ReconEngine.match(lines, payments, start, end, timingTolerance);
+        List<ReconEngine.Finding> findings = ReconEngine.match(lines, payments, start, windowEnd, timingTolerance);
 
         Map<ReconEngine.Result, Integer> counts = new EnumMap<>(ReconEngine.Result.class);
         int matched = 0;
         for (ReconEngine.Finding f : findings) {
             counts.merge(f.result(), 1, Integer::sum);
             if (f.lineId() != null) {
-                jdbc.update("UPDATE recon_statement_lines SET match_status = ?, matched_transaction = ? WHERE id = ?",
-                        f.result() == ReconEngine.Result.MATCHED ? "MATCHED" : "EXCEPTION", f.transactionReference(), f.lineId());
+                jdbc.update("UPDATE recon_statement_lines SET match_status = ?, matched_transaction = ?, match_method = ? WHERE id = ?",
+                        f.result() == ReconEngine.Result.MATCHED ? "MATCHED" : "EXCEPTION", f.transactionReference(), f.method(), f.lineId());
             }
             if (f.result() == ReconEngine.Result.MATCHED) {
                 matched++;
@@ -147,7 +153,7 @@ public class ReconciliationService {
             ps.setString(1, provider);
             ps.setLong(2, statementId);
             ps.setTimestamp(3, Timestamp.valueOf(start));
-            ps.setTimestamp(4, Timestamp.valueOf(end));
+            ps.setTimestamp(4, Timestamp.valueOf(windowEnd));
             ps.setInt(5, matchedFinal);
             ps.setInt(6, findings.size() - matchedFinal);
             ps.setString(7, trunc(summary, 2000));
@@ -159,10 +165,20 @@ public class ReconciliationService {
         return new RunSummary(kh.getKey().longValue(), statementId, lines.size(), matched, counts);
     }
 
+    /**
+     * The PayPort side for a provider. Payment providers (payment_methods) are matched against the
+     * payments they collected; delivery providers (airtime, bills: product_types.provider_code, e.g.
+     * NETONE, TELECEL) against what PayPort recorded as delivered.
+     */
     private List<ReconEngine.Payment> loadPayments(String provider, LocalDateTime from, LocalDateTime to, List<ReconEngine.Line> lines) {
-        List<Map<String, Object>> rows = new ArrayList<>(jdbc.queryForList(
-                "SELECT reference, status, amount_cents, currency, provider_reference, payment_correlator, payment_confirmed_at, payment_submitted_at "
-                        + "FROM transactions WHERE payment_provider_code = ? AND payment_submitted_at BETWEEN ? AND ?", provider, from, to));
+        Integer paymentSide = jdbc.queryForObject("SELECT COUNT(*) FROM payment_methods WHERE code = ?", Integer.class, provider);
+        Integer deliverySide = jdbc.queryForObject("SELECT COUNT(*) FROM product_types WHERE provider_code = ?", Integer.class, provider);
+        boolean delivery = (paymentSide == null || paymentSide == 0) && deliverySide != null && deliverySide > 0;
+        String cols = "SELECT t.reference, t.status, t.amount_cents, t.currency, t.provider_reference, t.payment_correlator, "
+                + "t.fulfilment_reference, t.payment_confirmed_at, t.completed_at FROM transactions t ";
+        List<Map<String, Object>> rows = new ArrayList<>(delivery
+                ? jdbc.queryForList(cols + "JOIN product_types p ON p.id = t.product_type_id WHERE p.provider_code = ? AND t.payment_submitted_at BETWEEN ? AND ?", provider, from, to)
+                : jdbc.queryForList(cols + "WHERE t.payment_provider_code = ? AND t.payment_submitted_at BETWEEN ? AND ?", provider, from, to));
         // Payments referenced by a line but submitted outside the window (e.g. very late payments) are matched too.
         Set<String> have = new HashSet<>();
         for (Map<String, Object> r : rows) have.add((String) r.get("reference"));
@@ -170,10 +186,7 @@ public class ReconciliationService {
             for (String ref : l.references()) {
                 String intent = zw.co.payport.gateway.payments.PaymentAttemptStore.intentReference(ref);
                 if (intent == null || have.contains(intent) || !intent.startsWith("PP-")) continue;
-                List<Map<String, Object>> extra = jdbc.queryForList(
-                        "SELECT reference, status, amount_cents, currency, provider_reference, payment_correlator, payment_confirmed_at, payment_submitted_at "
-                                + "FROM transactions WHERE reference = ?", intent);
-                rows.addAll(extra);
+                rows.addAll(jdbc.queryForList(cols + "WHERE t.reference = ?", intent));
                 have.add(intent);
             }
         }
@@ -181,15 +194,24 @@ public class ReconciliationService {
         for (Map<String, Object> r : rows) {
             String ref = (String) r.get("reference");
             Set<String> refs = new HashSet<>();
-            if (r.get("provider_reference") != null) refs.add((String) r.get("provider_reference"));
-            if (r.get("payment_correlator") != null) refs.add((String) r.get("payment_correlator"));
-            for (Map<String, Object> a : jdbc.queryForList("SELECT attempt_reference, provider_reference FROM payment_attempts WHERE transaction_reference = ?", ref)) {
-                if (a.get("attempt_reference") != null) refs.add((String) a.get("attempt_reference"));
-                if (a.get("provider_reference") != null) refs.add((String) a.get("provider_reference"));
+            if (delivery) {
+                if (r.get("fulfilment_reference") != null) refs.add((String) r.get("fulfilment_reference"));
+                // Telecel's agent id is the reference without punctuation, at most 20 characters.
+                String alnum = ref.replaceAll("[^A-Za-z0-9]", "");
+                refs.add(alnum.substring(0, Math.min(20, alnum.length())));
+            } else {
+                if (r.get("provider_reference") != null) refs.add((String) r.get("provider_reference"));
+                if (r.get("payment_correlator") != null) refs.add((String) r.get("payment_correlator"));
+                for (Map<String, Object> a : jdbc.queryForList("SELECT attempt_reference, provider_reference FROM payment_attempts WHERE transaction_reference = ?", ref)) {
+                    if (a.get("attempt_reference") != null) refs.add((String) a.get("attempt_reference"));
+                    if (a.get("provider_reference") != null) refs.add((String) a.get("provider_reference"));
+                }
             }
             String status = (String) r.get("status");
+            boolean done = delivery ? DELIVERED_STATUSES.contains(status) : PAID_STATUSES.contains(status);
+            Object at = delivery ? r.get("completed_at") : r.get("payment_confirmed_at");
             out.add(new ReconEngine.Payment(ref, refs, ((Number) r.get("amount_cents")).longValue(), (String) r.get("currency"),
-                    PAID_STATUSES.contains(status), status, r.get("payment_confirmed_at") == null ? null : toLdt(r.get("payment_confirmed_at"))));
+                    done, status, at == null ? null : toLdt(at)));
         }
         return out;
     }
