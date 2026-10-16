@@ -18,7 +18,8 @@ import java.util.Set;
  * INITIATED          → CANCELLED
  *
  * CRITICAL RULE: FULFILMENT_PENDING can ONLY be entered from PAYMENT_CONFIRMED.
- * CRITICAL RULE: Terminal states (COMPLETED, REFUNDED, CANCELLED, PAYMENT_FAILED) cannot be left.
+ * CRITICAL RULE: Terminal states (REFUNDED, CANCELLED) cannot be left. PAYMENT_FAILED can only start a new
+ * payment attempt on the same intent (PAYMENT_FAILED -> PAYMENT_PENDING), never anything else.
  */
 public enum TransactionStatus {
 
@@ -53,7 +54,9 @@ public enum TransactionStatus {
             case COMPLETED         -> EnumSet.of(REFUND_PENDING);
             case REFUND_PENDING    -> EnumSet.of(REFUNDED);
             // Terminal states - no transitions allowed
-            case PAYMENT_FAILED, REFUNDED, CANCELLED -> EnumSet.noneOf(TransactionStatus.class);
+            // A definitely failed payment may be attempted again on the same intent (new attempt, new provider reference).
+            case PAYMENT_FAILED    -> EnumSet.of(PAYMENT_PENDING);
+            case REFUNDED, CANCELLED -> EnumSet.noneOf(TransactionStatus.class);
         };
     }
 

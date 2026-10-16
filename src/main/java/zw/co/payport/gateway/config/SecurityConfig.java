@@ -95,6 +95,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/transactions/pay").permitAll()
                         .requestMatchers("/api/v1/transactions/*").permitAll()
                         .requestMatchers("/api/v1/transactions/*/timeline").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/transactions/*/outcome").permitAll()
                         .requestMatchers("/api/v1/transactions/*/confirm-omari-otp").permitAll()
 
                         // Payment provider callbacks - reachable without a user JWT

@@ -517,7 +517,7 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
         String description = getStringFromMap(responseMap, "Description");
         
         boolean isSuccess = (status != null && status == 1) && (statusCode != null && statusCode == 0);
-        return new TransactionStatusResult(isSuccess, statusCode, serial, description);
+        return new TransactionStatusResult(isSuccess, statusCode == null ? -1 : statusCode, serial, description);
     }
 
     // ============================================================
@@ -593,10 +593,30 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
 
     @Override
     public FulfilmentStatusResult queryDelivery(String fulfilmentReference) throws Exception {
+        return queryDelivery(fulfilmentReference, "USD");
+    }
+
+    /**
+     * Transaction Status Enquiry (spec section 3.6): "for the case where the submitted transaction request
+     * timed-out and the final status are unknown". Credentials are per currency, so the currency matters.
+     */
+    @Override
+    public FulfilmentStatusResult queryDelivery(String reference, String currency) throws Exception {
+        TransactionStatusResult r = getTransactionStatus(reference, currency == null ? "USD" : currency);
+        String code = String.valueOf(r.getStatusCode());
+        String status;
+        if (r.isSuccess()) {
+            status = "DELIVERED";
+        } else if (r.getStatusCode() < 0) {
+            status = "PENDING";
+        } else {
+            status = zw.co.payport.gateway.payments.DeliveryOutcomeRules.classify("ECONET", code)
+                    == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.UNKNOWN ? "PENDING" : "FAILED";
+        }
         return FulfilmentStatusResult.builder()
-                .status("UNKNOWN")
-                .fulfilmentReference(fulfilmentReference)
-                .message("Status query not implemented for Econet")
+                .status(status)
+                .fulfilmentReference(r.getSerial() != null ? r.getSerial() : reference)
+                .message(r.getDescription())
                 .build();
     }
 
@@ -692,13 +712,17 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
         // against Econet's own published table first, only falling back
         // to the raw description if the code isn't one we have a
         // translation for.
-        String customerMessage = success ? null : translateEconetStatusCode(statusCode, description);
+        // The customer sees Econet's own Description (owner decision); translateEconetStatusCode is kept
+        // only as a fallback when Econet sends no description.
+        if (!success && (description == null || description.isBlank())) {
+            description = translateEconetStatusCode(statusCode, description);
+        }
 
         return FulfilmentResult.builder()
                 .success(success)
                 .fulfilmentReference(serial != null ? serial : fallbackRef)
                 .message(success ? (description != null ? description : "Success") : description)
-                .customerMessage(success ? null : customerMessage)
+                .errorCode(success || statusCode == null ? null : statusCode.toString())
                 .rawResponse(response.toString())
                 .build();
     }

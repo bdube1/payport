@@ -51,11 +51,12 @@ public class TransactionOrchestratorService {
      */
     public record TransactionStatusChangedEvent(String transactionReference, String newStatus) {}
     private final BundleService                bundleService;
-    private final CustomerMessageTranslator     customerMessageTranslator;
     private final org.springframework.transaction.PlatformTransactionManager transactionManager;
     private final zw.co.payport.gateway.payments.PaymentAttemptStore attemptStore;
     private final zw.co.payport.gateway.payments.PaymentCheckStore   checkStore;
     private final jakarta.persistence.EntityManager entityManager;
+    private final zw.co.payport.gateway.recon.ReconExceptionStore reconExceptions;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     // Helper method to safely convert Long to int
     private int toInt(Long value) {
@@ -181,7 +182,8 @@ public class TransactionOrchestratorService {
                     e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT SENT");
             result = PaymentProviderAdaptor.PaymentSubmitResult.builder()
                     .submitted(false).outcomeUnknown(unknown)
-                    .message(p.providerCode() + " call failed: " + e.getMessage())
+                    .message(unknown ? p.providerCode() + " call failed: " + e.getMessage()
+                            : "Could not reach " + p.providerCode() + ". No money was taken.")
                     .rawResponse(e.getClass().getName() + ": " + e.getMessage())
                     .build();
         }
@@ -202,8 +204,11 @@ public class TransactionOrchestratorService {
         return response;
     }
 
-    private record PreparedSubmission(String reference, String providerCode, int attemptNo,
+    private record PreparedSubmission(String reference, String providerCode, int attemptNo, String attemptReference,
                                       PaymentProviderAdaptor.PaymentRequest request) {}
+
+    @org.springframework.beans.factory.annotation.Value("${payport.payments.max-attempts:3}")
+    private int maxPaymentAttempts;
 
     private org.springframework.transaction.support.TransactionTemplate requiresNew() {
         org.springframework.transaction.support.TransactionTemplate t =
@@ -212,6 +217,13 @@ public class TransactionOrchestratorService {
         return t;
     }
 
+    /**
+     * Starts an attempt on the payment intent. The first attempt is sent with the payment
+     * reference; a new attempt is allowed only after the previous one DEFINITELY failed
+     * (PAYMENT_FAILED), and is sent as reference-N because providers reject a reused reference.
+     * A payment that timed out or got no response cannot be attempted again: the first
+     * attempt might still be charged.
+     */
     private PreparedSubmission prepareSubmission(PayTransactionRequest dto) {
         Transaction tx = lockTransaction(dto.getReference());
         assertTransition(tx, TransactionStatus.PAYMENT_PENDING);
@@ -223,6 +235,12 @@ public class TransactionOrchestratorService {
         String providerCode = paymentMethod.getCode().toUpperCase();
         adaptorRegistry.getPaymentAdaptor(providerCode); // fail before anything is recorded if there is no adaptor
 
+        int attemptNo = attemptStore.nextAttemptNo(tx.getReference());
+        if (attemptNo > maxPaymentAttempts) {
+            throw new InvalidStateTransitionException(tx.getReference(), tx.getStatus(), TransactionStatus.PAYMENT_PENDING);
+        }
+        String attemptReference = zw.co.payport.gateway.payments.PaymentAttemptStore.attemptReference(tx.getReference(), attemptNo);
+
         tx.setPaymentMethod(paymentMethod);
         if (dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()) {
             tx.setCustomerPhone(dto.getCustomerPhone());
@@ -230,34 +248,45 @@ public class TransactionOrchestratorService {
 
         LocalDateTime now = LocalDateTime.now();
         transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
-                "SYSTEM", "Payment submitted to " + providerCode, null);
+                "SYSTEM", "Payment attempt " + attemptNo + " submitted to " + providerCode + " as " + attemptReference, null);
         tx.setPaymentSubmittedAt(now);
         tx.setPaymentProviderCode(providerCode);
         tx.setPaymentProviderStatus("SENDING");
+        tx.setPaymentAttemptReference(attemptReference);
+        tx.setPaymentAttemptCount(attemptNo);
+        tx.setPaymentOutcome(null);
+        tx.setFailureReason(null);
+        tx.setFailureDetails(null);
+        tx.setFailedAt(null);
+        if (attemptNo > 1) {
+            tx.setProviderReference(null);
+            tx.setPaymentCorrelator(null);
+        }
         transactionRepository.save(tx);
 
-        int attemptNo = attemptStore.recordSent(tx.getReference(), providerCode, now);
+        attemptStore.recordSent(tx.getReference(), attemptNo, attemptReference, providerCode, now);
         checkStore.open(tx.getReference(), providerCode, now,
                 now.plus(zw.co.payport.gateway.scheduler.PaymentReconciliationScheduler.GRACE));
 
         PaymentProviderAdaptor.PaymentRequest req = PaymentProviderAdaptor.PaymentRequest.builder()
-                .payportReference(tx.getReference())
+                .payportReference(attemptReference)
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
                 .customerPhone(tx.getCustomerPhone())
                 .description("Payport " + tx.getProductType().getName())
                 .build();
-        return new PreparedSubmission(tx.getReference(), providerCode, attemptNo, req);
+        return new PreparedSubmission(tx.getReference(), providerCode, attemptNo, attemptReference, req);
     }
 
     private Transaction recordSubmissionOutcome(PreparedSubmission p, PaymentProviderAdaptor.PaymentSubmitResult result) {
         LocalDateTime now = LocalDateTime.now();
         Transaction tx = lockTransaction(p.reference());
-        boolean stillPending = tx.getStatus() == TransactionStatus.PAYMENT_PENDING;
+        boolean stillPending = tx.getStatus() == TransactionStatus.PAYMENT_PENDING
+                && p.attemptReference().equals(tx.getPaymentAttemptReference());
 
         if (result.isSubmitted()) {
             attemptStore.recordOutcome(p.reference(), p.attemptNo(), zw.co.payport.gateway.payments.PaymentAttemptStore.Status.ACCEPTED,
-                    result.getProviderReference(), null, null, now);
+                    result.getProviderReference(), null, result.getMessage(), now);
             if (tx.getProviderReference() == null || stillPending) {
                 tx.setProviderReference(result.getProviderReference());
             }
@@ -274,9 +303,6 @@ public class TransactionOrchestratorService {
                 }
             }
             transactionRepository.save(tx);
-            if (stillPending) {
-                smsNotificationService.sendPaymentPending(tx, p.providerCode());
-            }
             return tx;
         }
 
@@ -290,7 +316,7 @@ public class TransactionOrchestratorService {
                 checkStore.checkSoon(p.reference(), now.plus(zw.co.payport.gateway.scheduler.PaymentReconciliationScheduler.GRACE));
             }
             log.warn("[ORCHESTRATOR] {} outcome UNKNOWN for {} -- left pending for the resolver, not failed and not re-sent",
-                    p.providerCode(), p.reference());
+                    p.providerCode(), p.attemptReference());
             return tx;
         }
 
@@ -306,33 +332,50 @@ public class TransactionOrchestratorService {
         transitionStatus(tx, TransactionStatus.PAYMENT_FAILED,
                 p.providerCode() + "_API", "Provider rejected: " + result.getMessage(), result.getRawResponse());
         tx.setFailedAt(now);
-        String customerMessage = customerMessageTranslator.forPaymentFailure(result.getMessage());
-        tx.setFailureReason(customerMessage);
+        tx.setFailureReason(providerMessageOr(result.getMessage(), p.providerCode() + " declined the payment."));
         tx.setFailureDetails(result.getRawResponse());
         tx.setPaymentProviderStatus("REJECTED");
         transactionRepository.save(tx);
         checkStore.close(p.reference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "rejected at submit", now);
-        smsNotificationService.sendPaymentFailed(tx, customerMessage);
         return tx;
     }
 
+    /** The provider's own wording when there is one (owner decision: never replace it with ours). */
+    static String providerMessageOr(String providerMessage, String fallback) {
+        if (providerMessage == null || providerMessage.isBlank()) return fallback;
+        return truncate(providerMessage.trim(), 500);
+    }
+
+    /** Outcome shown to the customer when the payment window closes without a definite provider answer. */
+    public enum ExpiryOutcome { TIMED_OUT, NO_RESPONSE }
+
     /**
-     * Timeout watchdog: PAYMENT_PENDING -> PAYMENT_TIMEOUT, under the row lock and only if
-     * the payment is still pending (a confirmation that just landed is never overwritten).
-     * PAYMENT_TIMEOUT is not a failure; the resolver keeps asking the provider.
+     * Closes the payment window: PAYMENT_PENDING -> PAYMENT_TIMEOUT with the outcome the
+     * customer is told (TIMED_OUT or NO_RESPONSE), under the row lock and only if the payment
+     * is still pending on the same attempt (a confirmation that just landed is never
+     * overwritten). Background checks continue for late-payment detection; a late success is
+     * then handled by the late-payment policy, never silently.
      */
     @Transactional
-    public boolean markPaymentTimedOut(String reference, long secondsPending) {
+    public boolean expirePayment(String reference, String attemptReference, ExpiryOutcome outcome, String providerMessage) {
         Transaction tx = lockTransactionOrNull(reference);
-        if (tx == null || tx.getStatus() != TransactionStatus.PAYMENT_PENDING) {
-            return false;
-        }
-        transitionStatus(tx, TransactionStatus.PAYMENT_TIMEOUT, "WATCHDOG",
-                "No provider answer after " + secondsPending + "s; still resolving", null);
-        tx.setFailureReason(String.format("No response from customer after %d seconds -- still watching for a late confirmation.", secondsPending));
-        tx.setFailureDetails("Customer did not complete payment on USSD prompt within the timeout window. A late provider callback can still confirm this payment.");
+        if (tx == null || tx.getStatus() != TransactionStatus.PAYMENT_PENDING) return false;
+        if (attemptReference != null && !attemptReference.equals(tx.getPaymentAttemptReference())) return false;
+        transitionStatus(tx, TransactionStatus.PAYMENT_TIMEOUT, "EXPIRY",
+                outcome == ExpiryOutcome.NO_RESPONSE ? "No response from " + tx.getPaymentProviderCode() + " within the payment window"
+                        : "Payment not completed within the payment window", providerMessage);
+        tx.setPaymentOutcome(outcome.name());
+        tx.setFailureReason(outcome == ExpiryOutcome.NO_RESPONSE
+                ? "No response from " + providerName(tx) + ". The transaction timed out."
+                : providerMessageOr(providerMessage, "The transaction timed out."));
+        tx.setFailureDetails(providerMessage);
         transactionRepository.save(tx);
         return true;
+    }
+
+    private static String providerName(Transaction tx) {
+        return tx.getPaymentMethod() != null && tx.getPaymentMethod().getName() != null ? tx.getPaymentMethod().getName()
+                : String.valueOf(tx.getPaymentProviderCode());
     }
 
     private static String truncate(String s, int max) {
@@ -409,7 +452,7 @@ public class TransactionOrchestratorService {
         }
 
         PaymentProviderAdaptor.CallbackEvent event = PaymentProviderAdaptor.CallbackEvent.builder()
-                .payportReference(tx.getReference())
+                .payportReference(PaymentStatusVerifier.attemptReference(tx))
                 .providerReference(omariResponse.getPaymentReference() != null ? omariResponse.getPaymentReference() : tx.getProviderReference())
                 .status(omariResponse.isError() ? "FAILED" : "SUCCESS")
                 .amountCents(toInt(tx.getAmountCents()))
@@ -417,7 +460,7 @@ public class TransactionOrchestratorService {
                 .timestamp(java.time.LocalDateTime.now().toString())
                 .rawPayload(rawPayload)
                 .failureMessage(omariResponse.isError()
-                        ? (outOfAttemptsMessage != null ? outOfAttemptsMessage : customerMessageTranslator.forPaymentFailure(omariResponse.getMessage()))
+                        ? providerMessageOr(omariResponse.getMessage(), outOfAttemptsMessage != null ? outOfAttemptsMessage : "O'mari declined the payment.")
                         : null)
                 .build();
 
@@ -439,35 +482,70 @@ public class TransactionOrchestratorService {
         APPLIED,
         /** Nothing to do: already in that state, or the event is not a final answer (PENDING). */
         NO_CHANGE,
-        /** The event contradicts what is recorded (success for a failed payment, failure for a paid one, wrong amount). Needs a person. */
+        /** The event contradicts what is recorded (success for a failed/timed-out payment, failure for a paid one, wrong amount, a superseded attempt). Recorded as a reconciliation exception for a person. */
         CONFLICT,
         /** No such payment. */
         UNKNOWN_REF
     }
 
+    /** What happens when a provider confirms a payment AFTER the customer was told it timed out. */
+    public enum LatePaymentPolicy { REVIEW, HONOUR }
+
+    @org.springframework.beans.factory.annotation.Value("${payport.payments.late-success:REVIEW}")
+    private LatePaymentPolicy latePaymentPolicy = LatePaymentPolicy.REVIEW;
+
     /**
      * Applies a definite provider answer. Idempotent and safe under concurrency: the row is
      * locked, so of several identical or racing events exactly one changes the payment, and
-     * a later contradicting event is reported as CONFLICT instead of silently ignored.
+     * a contradicting event is recorded as a reconciliation exception instead of applied or
+     * silently ignored.
+     *
+     * The event's payportReference may carry an attempt suffix (reference-N); it must match
+     * the current attempt. Only the provider's own wording is shown to the customer.
      */
     @Transactional
     public CallbackOutcome handlePaymentCallback(PaymentProviderAdaptor.CallbackEvent event) {
-        log.info("[ORCHESTRATOR] Processing payment callback for reference: {}", event.getPayportReference());
+        String sentReference = event.getPayportReference();
+        String reference = zw.co.payport.gateway.payments.PaymentAttemptStore.intentReference(sentReference);
+        log.info("[ORCHESTRATOR] Processing payment callback for reference: {}", sentReference);
 
-        Transaction tx = lockTransactionOrNull(event.getPayportReference());
+        Transaction tx = lockTransactionOrNull(reference);
         if (tx == null) {
-            log.warn("[ORCHESTRATOR] Callback received for unknown reference: {}", event.getPayportReference());
+            log.warn("[ORCHESTRATOR] Callback received for unknown reference: {}", sentReference);
             return CallbackOutcome.UNKNOWN_REF;
         }
 
         boolean success = "SUCCESS".equals(event.getStatus());
         boolean failed = "FAILED".equals(event.getStatus());
         TransactionStatus current = tx.getStatus();
+        String provider = tx.getPaymentProviderCode();
+
+        // A provider reference that carries an attempt suffix must belong to the current attempt.
+        boolean suffixed = sentReference != null && !sentReference.equals(reference);
+        String currentAttempt = tx.getPaymentAttemptReference() != null ? tx.getPaymentAttemptReference() : tx.getReference();
+        if (sentReference != null && (suffixed || tx.getPaymentAttemptCount() != null && tx.getPaymentAttemptCount() > 1)
+                && !sentReference.equals(currentAttempt)) {
+            if (success) {
+                reconExceptions.raise("PAID_ON_SUPERSEDED_ATTEMPT", provider, tx.getReference(), event.getProviderReference(),
+                        tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        "Provider confirmed attempt " + sentReference + " but the current attempt is " + currentAttempt, "LIFECYCLE");
+                log.error("[ORCHESTRATOR] CONFLICT for {}: success for superseded attempt {} (current {})", reference, sentReference, currentAttempt);
+                return CallbackOutcome.CONFLICT;
+            }
+            return CallbackOutcome.NO_CHANGE;
+        }
+
+        if (!success && !failed) {
+            return CallbackOutcome.NO_CHANGE;
+        }
 
         if (current != TransactionStatus.PAYMENT_PENDING && current != TransactionStatus.PAYMENT_TIMEOUT) {
             boolean paid = !(current == TransactionStatus.INITIATED || current == TransactionStatus.PAYMENT_FAILED
                     || current == TransactionStatus.CANCELLED);
             if ((success && !paid && current != TransactionStatus.INITIATED) || (failed && paid)) {
+                reconExceptions.raise(success ? "PAID_AFTER_FAILURE" : "FAILED_AFTER_PAID", provider, tx.getReference(),
+                        event.getProviderReference(), tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        "Provider says " + event.getStatus() + " but the payment is " + current, "LIFECYCLE");
                 log.error("[ORCHESTRATOR] CONFLICT for {}: provider says {} but the payment is {} -- not changed; needs review",
                         tx.getReference(), event.getStatus(), current);
                 return CallbackOutcome.CONFLICT;
@@ -476,13 +554,23 @@ public class TransactionOrchestratorService {
             return CallbackOutcome.NO_CHANGE;
         }
 
-        if (!success && !failed) {
-            return CallbackOutcome.NO_CHANGE;
-        }
-
         if (event.getAmountCents() > 0 && event.getAmountCents() != toInt(tx.getAmountCents())) {
+            reconExceptions.raise("AMOUNT_MISMATCH", provider, tx.getReference(), event.getProviderReference(),
+                    tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                    "Provider reported " + event.getAmountCents() + " for a payment of " + tx.getAmountCents(), "LIFECYCLE");
             log.error("[ORCHESTRATOR] AMOUNT MISMATCH for {} - expected {} cents got {} cents - rejecting callback",
                     tx.getReference(), tx.getAmountCents(), event.getAmountCents());
+            return CallbackOutcome.CONFLICT;
+        }
+
+        if (success && current == TransactionStatus.PAYMENT_TIMEOUT && latePaymentPolicy == LatePaymentPolicy.REVIEW) {
+            // The customer was told the payment timed out (or got no response). Confirming now could deliver to
+            // someone who already paid again; a person decides: honour (deliver) or refund.
+            reconExceptions.raise("PAID_AFTER_TIMEOUT", provider, tx.getReference(), event.getProviderReference(),
+                    tx.getAmountCents(), event.getAmountCents() > 0 ? event.getAmountCents() : tx.getAmountCents(), tx.getCurrency(),
+                    "Provider confirmed payment after the customer was told " + tx.getPaymentOutcome(), "LIFECYCLE");
+            log.error("[ORCHESTRATOR] LATE PAYMENT for {}: provider confirmed after {} -- held for review (honour or refund)",
+                    tx.getReference(), tx.getPaymentOutcome());
             return CallbackOutcome.CONFLICT;
         }
 
@@ -494,35 +582,13 @@ public class TransactionOrchestratorService {
         }
 
         if (success) {
-            transitionStatus(tx, TransactionStatus.PAYMENT_CONFIRMED,
-                    "PAYMENT_CALLBACK", "Payment confirmed by provider", event.getRawPayload());
-
-            tx.setPaymentConfirmedAt(LocalDateTime.now());
-            tx.setPaymentCorrelator(event.getPayportReference());
-            tx.setPaymentProviderStatus("CONFIRMED");
-            tx.setPaymentConfirmedAmountCents(event.getAmountCents());
-            tx.setPaymentConfirmedCurrency(event.getCurrency());
-            if (event.getRawPayload() != null) {
-                tx.setPaymentProviderRawResponse(truncate(event.getRawPayload(), 4000));
-            }
-            transactionRepository.save(tx);
-            checkStore.close(tx.getReference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "SUCCESS", LocalDateTime.now());
-
-            smsNotificationService.sendPaymentConfirmed(tx);
-            fulfilmentQueueService.enqueue(tx.getReference());
-
-            log.info("[ORCHESTRATOR] Payment confirmed and fulfilment enqueued for: {}", tx.getReference());
+            confirmPayment(tx, "PAYMENT_CALLBACK", "Payment confirmed by provider", event);
         } else {
             transitionStatus(tx, TransactionStatus.PAYMENT_FAILED,
                     "PAYMENT_CALLBACK", "Payment failed by provider", event.getRawPayload());
-
             tx.setFailedAt(LocalDateTime.now());
-            tx.setFailureReason(
-                    event.getFailureMessage() != null && !event.getFailureMessage().isBlank()
-                            ? event.getFailureMessage()
-                            : "Your payment was declined by the provider." +
-                                (event.getProviderReference() != null ? " Reference: " + event.getProviderReference() : "")
-            );
+            tx.setPaymentOutcome(null);
+            tx.setFailureReason(providerMessageOr(event.getFailureMessage(), providerName(tx) + " declined the payment."));
             tx.setFailureDetails(event.getRawPayload());
             tx.setPaymentProviderStatus("FAILED");
             if (event.getRawPayload() != null) {
@@ -530,11 +596,53 @@ public class TransactionOrchestratorService {
             }
             transactionRepository.save(tx);
             checkStore.close(tx.getReference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "FAILED", LocalDateTime.now());
-
-            smsNotificationService.sendPaymentFailed(tx, "Payment was not approved");
             log.info("[ORCHESTRATOR] Payment failed for: {}", tx.getReference());
         }
         return CallbackOutcome.APPLIED;
+    }
+
+    private void confirmPayment(Transaction tx, String actor, String notes, PaymentProviderAdaptor.CallbackEvent event) {
+        transitionStatus(tx, TransactionStatus.PAYMENT_CONFIRMED, actor, notes, event.getRawPayload());
+        tx.setPaymentConfirmedAt(LocalDateTime.now());
+        tx.setPaymentCorrelator(tx.getReference());
+        tx.setPaymentProviderStatus("CONFIRMED");
+        tx.setPaymentOutcome(null);
+        tx.setFailureReason(null);
+        tx.setPaymentConfirmedAmountCents(event.getAmountCents());
+        tx.setPaymentConfirmedCurrency(event.getCurrency());
+        if (event.getRawPayload() != null) {
+            tx.setPaymentProviderRawResponse(truncate(event.getRawPayload(), 4000));
+        }
+        transactionRepository.save(tx);
+        checkStore.close(tx.getReference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "SUCCESS", LocalDateTime.now());
+        // No SMS here: the customer gets one SMS, when the transaction completes (owner decision).
+        fulfilmentQueueService.enqueue(tx.getReference());
+        log.info("[ORCHESTRATOR] Payment confirmed and fulfilment enqueued for: {}", tx.getReference());
+    }
+
+    /**
+     * Ops decision on a late payment (PAID_AFTER_TIMEOUT): honour it, i.e. confirm and
+     * deliver. Requires an APPROVED maker-checker request (platform_approvals) of type
+     * HONOUR_LATE_PAYMENT for this payment; the decider is a different person than the
+     * requester (enforced by ApprovalStore and the database).
+     */
+    @Transactional
+    public TransactionResponse honourLatePayment(String reference, String approvalRef, String operator) {
+        Transaction tx = lockTransaction(reference);
+        if (tx.getStatus() != TransactionStatus.PAYMENT_TIMEOUT) {
+            throw new IllegalStateException("Only a timed-out payment can be honoured (status " + tx.getStatus() + ")");
+        }
+        Integer approved = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM platform_approvals WHERE approval_ref = ? "
+                + "AND action_type = 'HONOUR_LATE_PAYMENT' AND subject_ref = ? AND status = 'APPROVED'", Integer.class, approvalRef, reference);
+        if (approved == null || approved == 0) {
+            throw new IllegalStateException("No approved HONOUR_LATE_PAYMENT request " + approvalRef + " for " + reference);
+        }
+        PaymentProviderAdaptor.CallbackEvent ev = PaymentProviderAdaptor.CallbackEvent.builder()
+                .payportReference(reference).status("SUCCESS").amountCents(tx.getAmountCents()).currency(tx.getCurrency())
+                .rawPayload("Late payment honoured by " + operator + " under approval " + approvalRef).build();
+        confirmPayment(tx, "OPS:" + operator, "Late payment honoured (approval " + approvalRef + ")", ev);
+        reconExceptions.resolve("PAID_AFTER_TIMEOUT", reference, "HONOURED", operator, "approval " + approvalRef);
+        return TransactionResponse.from(tx);
     }
 
     /** What a delivery run did. retryAt is set when a definite failure has an automatic retry scheduled. */
@@ -544,10 +652,16 @@ public class TransactionOrchestratorService {
         static FulfilmentOutcome of(Kind k, String detail) { return new FulfilmentOutcome(k, null, detail); }
     }
 
-    @org.springframework.beans.factory.annotation.Value("${payport.fulfilment.auto-retry:false}")
-    private boolean autoRetryDefiniteFailures;
+    /**
+     * Automatic retry of delivery failures whose provider code the specification marks as
+     * temporary (DeliveryOutcomeRules). Providers without a code table are never retried.
+     */
+    @org.springframework.beans.factory.annotation.Value("${payport.fulfilment.auto-retry:true}")
+    private boolean autoRetryDefiniteFailures = true;
 
     private static final int MAX_DELIVERY_ATTEMPTS = 4;
+    /** Error code for a delivery request that provably never left PayPort (connection refused, unknown host). */
+    private static final String NOT_SENT = "NOT_SENT";
     private static final int[] RETRY_DELAYS_SECONDS = {30, 120, 300, 600};
 
     private record PreparedDelivery(String reference, String providerCode, String label,
@@ -587,7 +701,9 @@ public class TransactionOrchestratorService {
                 log.error("[ORCHESTRATOR] {} deliver for {} threw {} -- outcome {}", p.providerCode(), reference,
                         e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT DELIVERED");
                 result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(unknown)
-                        .message(p.providerCode() + " call failed: " + e.getMessage())
+                        .errorCode(unknown ? null : NOT_SENT)
+                        .message(unknown ? p.providerCode() + " call failed: " + e.getMessage()
+                                : "Could not reach " + p.providerCode() + "; the service was not delivered.")
                         .rawResponse(e.getClass().getName() + ": " + e.getMessage()).build();
             }
         }
@@ -655,7 +771,10 @@ public class TransactionOrchestratorService {
                     result.getFulfilmentReference(), result.getFulfilmentData(), result.getRawResponse());
             return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, result.getFulfilmentReference());
         }
-        if (result.isOutcomeUnknown()) {
+        String code = zw.co.payport.gateway.payments.DeliveryOutcomeRules.code(p.providerCode(), result.getErrorCode(), result.getRawResponse());
+        zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict verdict =
+                zw.co.payport.gateway.payments.DeliveryOutcomeRules.classify(p.providerCode(), code);
+        if (result.isOutcomeUnknown() || verdict == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.UNKNOWN) {
             tx.setFailureDetails(truncate(result.getRawResponse(), 4000));
             transactionRepository.save(tx);
             auditLogService.log(tx.getReference(), tx.getStatus(), tx.getStatus(), p.providerCode() + "_API",
@@ -664,9 +783,9 @@ public class TransactionOrchestratorService {
             log.warn("[ORCHESTRATOR] Delivery outcome UNKNOWN for {} -- not retried; resolving by query", p.reference());
             return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, result.getMessage());
         }
-        LocalDateTime retryAt = handleFulfilmentFailure(tx, (p.label().equals("data bundle") ? "Data bundle delivery failed: " : "")
-                + result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-        return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, result.getMessage());
+        LocalDateTime retryAt = handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), code,
+                verdict == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.RETRYABLE || NOT_SENT.equals(code));
+        return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, (code != null ? "[" + code + "] " : "") + result.getMessage());
     }
 
     private void completeDelivery(Transaction tx, String providerCode, String notes, String fulfilmentReference,
@@ -702,13 +821,13 @@ public class TransactionOrchestratorService {
                 return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "no adaptor to query for " + providerCode);
             }
             String queryRef = snapshot.getFulfilmentReference() != null ? snapshot.getFulfilmentReference() : reference;
-            q = adaptorRegistry.getFulfilmentAdaptor(providerCode).queryDelivery(queryRef);
+            q = adaptorRegistry.getFulfilmentAdaptor(providerCode).queryDelivery(queryRef, snapshot.getCurrency());
         } catch (Exception e) {
             return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "delivery query failed: " + e.getMessage());
         }
         String status = q == null || q.getStatus() == null ? "UNKNOWN" : q.getStatus().toUpperCase();
         String detail = providerCode + " delivery query: " + status + (q != null && q.getMessage() != null ? " (" + q.getMessage() + ")" : "");
-        if (!"DELIVERED".equals(status) && !"FAILED".equals(status)) {
+        if (!"DELIVERED".equals(status) && !"FAILED".equals(status) && !"NOT_FOUND".equals(status)) {
             return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, detail);
         }
         final FulfilmentProviderAdaptor.FulfilmentStatusResult answer = q;
@@ -721,7 +840,9 @@ public class TransactionOrchestratorService {
                 completeDelivery(tx, providerCode, "Delivery confirmed by provider query", answer.getFulfilmentReference(), null, detail);
                 return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, detail);
             }
-            LocalDateTime retryAt = handleFulfilmentFailure(tx, "Provider confirmed not delivered: " + answer.getMessage(), detail, null);
+            // NOT_FOUND: the provider never received the request, so sending it is safe. FAILED: the original
+            // request failed; the spec (e.g. e-Solutions 4.2.2) says conclude, so no automatic retry.
+            LocalDateTime retryAt = handleFulfilmentFailure(tx, answer.getMessage(), detail, null, "NOT_FOUND".equals(status));
             return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, detail);
         });
     }
@@ -732,42 +853,35 @@ public class TransactionOrchestratorService {
 
     /**
      * Records a DEFINITE delivery failure (the provider said no). Returns when to retry, or
-     * null if no automatic retry is scheduled (then the customer is told delivery is delayed
-     * and ops decide: retry or refund).
+     * null if no automatic retry is scheduled (ops decide: retry or refund).
      *
-     * Automatic retries (payport.fulfilment.auto-retry, default off) apply only to definite
-     * failures. Before Phase 2 they never actually ran: the queued retry found the payment in
-     * FULFILMENT_FAILED, which executeFulfilment skipped. Default off keeps that behaviour
-     * until each provider's failure codes have been confirmed as safe to retry.
-     *
-     * customerMessage is the adaptor's own translation when it has one (e.g. Econet status
-     * codes); otherwise the generic CustomerMessageTranslator is used.
+     * Retried automatically only when the provider's code is temporary per its specification
+     * (DeliveryOutcomeRules.RETRYABLE) or the provider says it never received the request,
+     * with back-off and at most MAX_DELIVERY_ATTEMPTS deliveries. The customer sees the
+     * provider's own message; no SMS is sent for failures (owner decision).
      */
-    private LocalDateTime handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse, String customerMessage) {
+    private LocalDateTime handleFulfilmentFailure(Transaction tx, String providerMessage, String rawResponse, String code, boolean retryable) {
         String reference = tx.getReference();
         tx.setRetryCount((tx.getRetryCount() == null ? 0 : tx.getRetryCount()) + 1);
-        tx.setFailureReason(customerMessage != null && !customerMessage.isBlank()
-                ? customerMessage
-                : customerMessageTranslator.forFulfilmentFailure(failureMessage));
+        tx.setFailureReason(providerMessageOr(providerMessage, "The service could not be delivered."));
         tx.setFailureDetails(rawResponse);
 
         transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED, "SYSTEM",
-                "Delivery attempt " + tx.getRetryCount() + " failed: " + failureMessage, rawResponse);
+                "Delivery attempt " + tx.getRetryCount() + " failed" + (code != null ? " [" + code + "]" : "") + ": " + providerMessage, rawResponse);
 
-        if (autoRetryDefiniteFailures && tx.getRetryCount() < MAX_DELIVERY_ATTEMPTS) {
+        if (autoRetryDefiniteFailures && retryable && tx.getRetryCount() < MAX_DELIVERY_ATTEMPTS) {
             int delaySeconds = RETRY_DELAYS_SECONDS[Math.min(tx.getRetryCount() - 1, RETRY_DELAYS_SECONDS.length - 1)];
             transitionStatus(tx, TransactionStatus.FULFILMENT_RETRY, "SYSTEM",
-                    "Automatic retry in " + delaySeconds + "s (provider definitely did not deliver)", null);
+                    "Automatic retry in " + delaySeconds + "s (provider code " + code + " is temporary per its specification)", null);
             transactionRepository.save(tx);
-            log.warn("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}), retry in {}s - Reason: {}",
-                    reference, tx.getRetryCount(), delaySeconds, failureMessage);
+            log.warn("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}, code {}), retry in {}s",
+                    reference, tx.getRetryCount(), code, delaySeconds);
             return LocalDateTime.now().plusSeconds(delaySeconds);
         }
 
         transactionRepository.save(tx);
-        smsNotificationService.sendFulfilmentDelayed(tx);
-        log.error("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}); no automatic retry. Reason: {}. Ops: retry or refund.",
-                reference, tx.getRetryCount(), failureMessage);
+        log.error("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}, code {}); no automatic retry. Reason: {}. Ops: retry or refund.",
+                reference, tx.getRetryCount(), code, providerMessage);
         return null;
     }
 
@@ -810,8 +924,6 @@ public class TransactionOrchestratorService {
         transitionStatus(tx, TransactionStatus.REFUND_PENDING,
                 "OPS:" + operatorUsername, "Refund initiated: " + reason, null);
         transactionRepository.save(tx);
-
-        smsNotificationService.sendRefundInitiated(tx);
 
         return TransactionResponse.from(tx);
     }

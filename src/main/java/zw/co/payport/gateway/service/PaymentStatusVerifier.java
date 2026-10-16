@@ -32,7 +32,12 @@ import java.util.stream.Collectors;
 public class PaymentStatusVerifier {
 
     /** Normalised provider answer. status is SUCCESS, FAILED, PENDING or UNKNOWN. amountCents/currency may be null. */
-    public record Verified(String status, Long amountCents, String currency, String providerReference, String detail) {
+    public record Verified(String status, Long amountCents, String currency, String providerReference, String detail,
+                           String providerMessage) {
+        public Verified(String status, Long amountCents, String currency, String providerReference, String detail) {
+            this(status, amountCents, currency, providerReference, detail, null);
+        }
+
         public boolean isDefinite() {
             return "SUCCESS".equals(status) || "FAILED".equals(status);
         }
@@ -77,13 +82,13 @@ public class PaymentStatusVerifier {
         try {
             switch (provider.toUpperCase()) {
                 case "ECOCASH": {
-                    EcoCashAdaptor.QueryResult r = ecoCashAdaptor.queryTransaction(tx.getReference(), tx.getCustomerPhone());
+                    EcoCashAdaptor.QueryResult r = ecoCashAdaptor.queryTransaction(attemptReference(tx), tx.getCustomerPhone());
                     return new Verified(normalise(ecoCashAdaptor.mapEcoCashStatus(r.getTransactionStatus())),
                             toCents(r.getAmount()), r.getCurrency(), r.getEcocashReference(),
                             "EcoCash status query: " + r.getTransactionStatus());
                 }
                 case "ONEMONEY": {
-                    OneMoneyAdaptor.C2BQueryResult r = oneMoneyAdaptor.queryC2BTransaction(tx.getReference());
+                    OneMoneyAdaptor.C2BQueryResult r = oneMoneyAdaptor.queryC2BTransaction(attemptReference(tx));
                     return new Verified(normalise(oneMoneyAdaptor.mapOneMoneyStatus(r.getOrderStatus())),
                             toCents(r.getOrderAmt()), r.getCurrency(), r.getOrderNo(),
                             "OneMoney status query: orderStatus=" + r.getOrderStatus());
@@ -92,12 +97,12 @@ public class PaymentStatusVerifier {
                     if (adaptorRegistry == null || !adaptorRegistry.hasPaymentAdaptor(provider)) {
                         return new Verified("UNKNOWN", null, null, null, "No status query for provider " + provider);
                     }
-                    String queryRef = firstNonBlank(tx.getPaymentCorrelator(), tx.getProviderReference(), tx.getReference());
+                    String queryRef = firstNonBlank(tx.getPaymentCorrelator(), tx.getProviderReference(), attemptReference(tx));
                     PaymentProviderAdaptor.PaymentStatusResult r = adaptorRegistry.getPaymentAdaptor(provider).queryStatus(queryRef);
                     if (r == null) return new Verified("UNKNOWN", null, null, null, provider + " status query returned nothing");
                     return new Verified(normalise(r.getStatus()), r.getAmountCents() > 0 ? r.getAmountCents() : null, null,
                             r.getProviderReference(), provider + " status query: " + r.getStatus()
-                            + (r.getMessage() != null ? " (" + r.getMessage() + ")" : ""));
+                            + (r.getMessage() != null ? " (" + r.getMessage() + ")" : ""), r.getMessage());
                 }
             }
         } catch (Exception e) {
@@ -137,8 +142,9 @@ public class PaymentStatusVerifier {
             }
         }
         return PaymentProviderAdaptor.CallbackEvent.builder()
-                .payportReference(tx.getReference())
+                .payportReference(attemptReference(tx))
                 .providerReference(v.providerReference() != null ? v.providerReference() : tx.getProviderReference())
+                .failureMessage(v.providerMessage())
                 .status(v.status())
                 .amountCents(v.amountCents() != null ? v.amountCents() : 0)
                 .currency(v.currency() != null ? v.currency() : tx.getCurrency())
@@ -176,6 +182,12 @@ public class PaymentStatusVerifier {
     private static String canonical(String c) {
         String u = c.trim().toUpperCase();
         return "ZIG".equals(u) ? "ZWG" : u;
+    }
+
+    /** The reference the current attempt was sent with (the payment reference for attempt 1). */
+    public static String attemptReference(Transaction tx) {
+        String a = tx.getPaymentAttemptReference();
+        return a != null && !a.isBlank() ? a : tx.getReference();
     }
 
     private static String firstNonBlank(String... values) {

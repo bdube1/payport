@@ -26,9 +26,11 @@ import java.util.List;
  *  - Only a definite provider answer (SUCCESS with a matching amount, or FAILED) changes
  *    a payment. Time passing NEVER marks a payment FAILED.
  *  - A payment is never re-sent to resolve it; only status queries are made.
- *  - Polling backs off: every 10 seconds for the first 30 minutes, then every 10 minutes;
- *    after 72 hours automatic checks stop and the payment is marked for manual resolution
- *    (payment_checks.status = MANUAL), with the provider's last answer recorded.
+ *  - Polling backs off: every 10 seconds for the first 30 minutes (ZimSwitch: at most every
+ *    35 s, its rate limit), then every 10 minutes. The customer is told the outcome when the
+ *    payment window closes (PaymentTimeoutWatchdog); checks continue only to detect a late
+ *    payment, for payport.payments.late-detection-hours (default 24), then the check is
+ *    closed as MANUAL and statement reconciliation (Phase 3) is the remaining safety net.
  *  - A definite SUCCESS for a different amount goes straight to MANUAL.
  *
  * The schedule lives in payment_checks, so it survives restarts, and the run is guarded
@@ -44,7 +46,10 @@ public class PaymentReconciliationScheduler {
     static final Duration FAST_WINDOW = Duration.ofMinutes(30);
     static final Duration FAST_INTERVAL = Duration.ofSeconds(10);
     static final Duration SLOW_INTERVAL = Duration.ofMinutes(10);
-    static final Duration STOP_AFTER = Duration.ofHours(72);
+    /** Default for payport.payments.late-detection-hours (was 72 h; owner decision: shorter). */
+    static final Duration STOP_AFTER = Duration.ofHours(24);
+    /** ZimSwitch (OPPWA) allows two status requests per checkout per minute. */
+    static final Duration ZIMSWITCH_MIN_INTERVAL = Duration.ofSeconds(35);
     static final int BATCH = 200;
 
     private final TransactionRepository transactionRepository;
@@ -56,14 +61,18 @@ public class PaymentReconciliationScheduler {
 
     public PaymentReconciliationScheduler(TransactionRepository transactionRepository, PaymentStatusVerifier verifier,
                                           TransactionOrchestratorService orchestratorService, PaymentCheckStore checks,
-                                          JobRunner jobs, @Value("${payport.payments.resolver.enabled:true}") boolean enabled) {
+                                          JobRunner jobs, @Value("${payport.payments.resolver.enabled:true}") boolean enabled,
+                                          @Value("${payport.payments.late-detection-hours:24}") long lateDetectionHours) {
         this.transactionRepository = transactionRepository;
         this.verifier = verifier;
         this.orchestratorService = orchestratorService;
         this.checks = checks;
         this.jobs = jobs;
         this.enabled = enabled;
+        this.stopAfter = Duration.ofHours(lateDetectionHours);
     }
+
+    private final Duration stopAfter;
 
     public record Summary(int backfilled, int checked, int resolved, int stillOpen, int manual) {}
 
@@ -111,10 +120,14 @@ public class PaymentReconciliationScheduler {
             checks.close(c.reference(), PaymentCheckStore.Status.RESOLVED, "already " + tx.getStatus(), now);
             return Result.CLOSED;
         }
-        Decision d = decide(c.submittedAt(), c.lastCheckedAt(), now);
+        Decision d = decide(c.submittedAt(), c.lastCheckedAt(), now, stopAfter);
+        if (d == Decision.CHECK && "ZIMSWITCH".equalsIgnoreCase(c.providerCode()) && c.lastCheckedAt() != null
+                && Duration.between(c.lastCheckedAt(), now).compareTo(ZIMSWITCH_MIN_INTERVAL) < 0) {
+            d = Decision.WAIT;
+        }
         if (d == Decision.STOP) {
             checks.close(c.reference(), PaymentCheckStore.Status.MANUAL,
-                    "no definite answer after " + STOP_AFTER.toHours() + "h; last: " + c.lastResult(), now);
+                    "no definite answer after " + stopAfter.toHours() + "h; last: " + c.lastResult(), now);
             return Result.MANUAL;
         }
         if (d == Decision.WAIT) {
@@ -170,9 +183,13 @@ public class PaymentReconciliationScheduler {
 
     /** Pure scheduling rule, unit-tested. */
     static Decision decide(LocalDateTime submittedAt, LocalDateTime lastCheckedAt, LocalDateTime now) {
+        return decide(submittedAt, lastCheckedAt, now, STOP_AFTER);
+    }
+
+    static Decision decide(LocalDateTime submittedAt, LocalDateTime lastCheckedAt, LocalDateTime now, Duration stopAfter) {
         Duration age = Duration.between(submittedAt, now);
         if (age.compareTo(GRACE) < 0) return Decision.WAIT;
-        if (age.compareTo(STOP_AFTER) >= 0) return Decision.STOP;
+        if (age.compareTo(stopAfter) >= 0) return Decision.STOP;
         if (age.compareTo(FAST_WINDOW) < 0 || lastCheckedAt == null) return Decision.CHECK;
         return Duration.between(lastCheckedAt, now).compareTo(SLOW_INTERVAL) >= 0 ? Decision.CHECK : Decision.WAIT;
     }

@@ -78,12 +78,18 @@
 | ID | Risk | Status |
 |---|---|---|
 | R45 | ZimSwitch webhooks were checked for structure only: a forged body with the success result code marked a card payment paid | **Fixed on `phase2-payment-lifecycle`**: ZimSwitch callbacks are confirmed by status query |
-| R46 | Staff `/api/v1/test` endpoints buy ZESA tokens with PayPort's float and mark any payment PAID, with no provider, audit row or second approver | **Contained on `phase2-payment-lifecycle`**: off unless `PAYPORT_TEST_ENDPOINTS_ENABLED=true`. Confirm whether ops use them; if so, replace with a four-eyes ops action |
+| R46 | Staff `/api/v1/test` endpoints buy ZESA tokens with PayPort's float and mark any payment PAID, with no provider, audit row or second approver | **Removed** (owner decision: never skip payment) |
 | R47 | The provider was called inside the DB transaction: an exception rolled the payment back to INITIATED, allowing a second push | **Fixed** (commit before call) |
 | R48 | Read timeouts and 5xx responses marked payments FAILED with a failure SMS while the customer may have been charged | **Fixed** (UNKNOWN outcome, resolved by query) |
 | R49 | Fulfilment "automatic retries" never ran: the retry found the payment in FULFILMENT_FAILED and skipped it | **Fixed**: automatic retry of *definite* failures works, but is off by default pending per-provider review |
-| R50 | Econet airtime has no delivery query, so a timed-out delivery can only be resolved by a person | Open: request a status API from Econet; until then, MANUAL queue (runbook) |
+| R50 | Econet delivery query was never implemented although the spec has `get_transaction_status` | **Fixed**: implemented; also fixed a null-code crash in its parser |
 | R51 | The audit log used a separate transaction: an extra pooled connection per status change, and audit rows that survived a rolled-back change | **Fixed**: audit joins the caller's transaction |
+
+| R52 | ZimSwitch (OPPWA) webhooks are AES-256-GCM encrypted per the docs; the handler expected plain JSON, so real webhooks could never be read | **Fixed**: decryption (`ZIMSWITCH_WEBHOOK_SECRET`); confirmation stays by status query |
+| R53 | OPPWA status mapping treated every unrecognised code as FAILED and all `800.400.*` as pending (includes 3-D Secure rejections) | **Fixed**: published code groups; undocumented codes are UNKNOWN |
+| R54 | NetOne delivery query reused its agent reference, which NetOne rejects (HTTP 429) after the first query; HTTP 400 answers were treated as transport errors | **Fixed** |
+| R55 | e-Solutions "in progress" (09) and "still awaiting confirmation" were recorded as delivery failures, so an ops retry could buy a second ZESA token | **Fixed**: UNKNOWN, resolved by resend/lookup as the spec requires |
+| R56 | A provider success after the customer was told "timed out" could be delivered to a customer who already paid again | **Mitigated**: held for four-eyes review (honour or refund), reconciliation exception `PAID_AFTER_TIMEOUT` |
 
 **Phase 2 status of earlier risks:**
 - **R4 / R6:** closed by design on the Phase 2 branch. The callback inbox and query-confirmed callbacks cover R4; the durable resolver, with no time-based failure, covers R6.

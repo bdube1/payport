@@ -31,8 +31,8 @@ class PaymentReconciliationSchedulerTest {
     }
 
     @Test
-    void stopsAutomaticChecksAfter72HoursWithoutFailingThePayment() {
-        assertEquals(Decision.STOP, PaymentReconciliationScheduler.decide(NOW.minusHours(72), NOW.minusMinutes(30), NOW));
-        assertEquals(Decision.CHECK, PaymentReconciliationScheduler.decide(NOW.minusHours(71), NOW.minusMinutes(30), NOW));
+    void stopsLateDetectionAfter24HoursByDefault() {
+        assertEquals(Decision.STOP, PaymentReconciliationScheduler.decide(NOW.minusHours(24), NOW.minusMinutes(30), NOW));
+        assertEquals(Decision.CHECK, PaymentReconciliationScheduler.decide(NOW.minusHours(23), NOW.minusMinutes(30), NOW));
     }
 }

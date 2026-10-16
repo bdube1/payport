@@ -10,7 +10,7 @@ FROM payment_checks c JOIN transactions t ON t.reference = c.transaction_referen
 WHERE c.status = 'MANUAL' ORDER BY c.closed_at DESC;
 ```
 
-**Meaning:** either 72 hours passed with no definite answer, or the provider confirmed a different amount (`last_result` starts with `AMOUNT MISMATCH`). The payment was **not** marked failed.
+**Meaning:** either 24 hours (`PAYMENT_LATE_DETECTION_HOURS`) passed with no definite answer after the payment window closed, or the provider confirmed a different amount (`last_result` starts with `AMOUNT MISMATCH`). The payment was **not** marked failed.
 
 **Action:** check the payment in the provider's portal.
 - **Paid at the right amount:** confirm through the provider's status query path. If the payment is still pending, reopen the check with the update below; the resolver asks again on its next run.
@@ -49,9 +49,9 @@ WHERE j.status IN ('UNKNOWN','MANUAL') ORDER BY j.unknown_since;
 
 ## 4. Definite delivery failures (`fulfilment_jobs.status = 'FAILED'`)
 
-The provider said no. The payment is FULFILMENT_FAILED, and the customer received the "delivery delayed" SMS.
+The provider said no, with a code its specification marks as final (`docs/phase2/PROVIDER_ERROR_CODES.md`). The payment is FULFILMENT_FAILED; the customer sees the provider's own message (no SMS is sent for failures). Temporary codes are retried automatically and do not land here unless every retry failed.
 
-**Action:** use the existing ops retry or refund. A retry queues the job again. Automatic retry is off (`FULFILMENT_AUTO_RETRY=false`) until each provider's failure codes are confirmed as safe to retry.
+**Action:** use the existing ops retry or refund. A retry queues the job again.
 
 ## 5. Health signals to alert on
 
@@ -72,5 +72,32 @@ The provider said no. The payment is FULFILMENT_FAILED, and the customer receive
 | `PAYMENT_WATCHDOG_ENABLED` | `true` | PENDING → TIMEOUT after `payport.gateway.payment-timeout-seconds` |
 | `FULFILMENT_WORKER_ENABLED` | `true` | Delivery worker |
 | `FULFILMENT_UNKNOWN_MANUAL_AFTER_MINUTES` | `120` | Unknown delivery → MANUAL |
-| `FULFILMENT_AUTO_RETRY` | `false` | Automatic retry of definite delivery failures |
-| `PAYPORT_TEST_ENDPOINTS_ENABLED` | `false` | Staff test endpoints (R46). Never enable in production |
+| `FULFILMENT_AUTO_RETRY` | `true` | Automatic retry of delivery failures whose code the provider spec marks as temporary |
+| `PAYMENT_TIMEOUT_SECONDS` | `180` | Payment window; `ZIMSWITCH_TIMEOUT_SECONDS` 1800, `OMARI_TIMEOUT_SECONDS` 300 |
+| `PAYMENT_LATE_DETECTION_HOURS` | `24` | How long after the window closes PayPort keeps asking, to detect a late payment |
+| `PAYMENT_LATE_SUCCESS` | `REVIEW` | Late payment after "timed out": REVIEW (four-eyes honour or refund) or HONOUR (deliver automatically) |
+| `PAYMENT_MAX_ATTEMPTS` | `3` | Attempts per transaction after definite failures |
+| `ZIMSWITCH_WEBHOOK_SECRET` | none | AES-256-GCM key of the OPPWA webhook; without it encrypted webhooks are rejected (the resolver still confirms payments) |
+| `SETTLEMENT_MODE` | `PARALLEL` | PARALLEL: draft and approve only. LIVE: legacy settlement stops, batches can be instructed |
+| `SETTLEMENT_HOLD_HOURS` | `24` | Collections younger than this are not eligible |
+| `SETTLEMENT_REQUIRE_RECONCILED` | `true` | Only collections MATCHED on a provider statement are eligible |
+| `SETTLEMENT_DUAL_APPROVAL_THRESHOLD_MINOR` | `1000000` | Batches above this net (minor units) need two approvers |
+
+## 7. Late payments (`recon_exceptions.category = 'PAID_AFTER_TIMEOUT'`)
+
+The provider confirmed a payment after the customer was told it timed out (or got no response). It is not delivered automatically (`PAYMENT_LATE_SUCCESS=REVIEW`).
+
+- **Honour (deliver):** `POST /api/v1/admin/finance/late-payments/{ref}/honour-request` with a reason; a different FINANCE user approves with `POST /api/v1/admin/finance/late-payments/approvals/{approvalId}/approve`. The payment is then confirmed and delivered, and the customer gets the success SMS.
+- **Refund:** refund through the provider, then record it: `POST /api/v1/admin/finance/recon/exceptions/{id}/resolve` with `{"resolution":"REFUNDED","note":"<provider refund reference>"}`.
+
+## 8. Statement reconciliation
+
+`POST /api/v1/admin/finance/recon/statements?provider=ECOCASH` with the file (`format=CSV` for PayPort's generic CSV: `reference,provider_reference,amount,currency,timestamp[,type]`). The same file is imported only once. Review `GET /api/v1/admin/finance/recon/exceptions`; record each decision with a note (`EXPLAINED_TIMING`, `REFUND_REQUIRED`, `REFUNDED`, `PROVIDER_CORRECTED`, `WRITTEN_OFF`, `FALSE_POSITIVE`). Reconciliation never changes a payment.
+
+## 9. Settlement batches
+
+1. `GET /settlement/eligible?currency=USD`, then `POST /settlement/batches {"currency":"USD"}` (maker).
+2. `GET /settlement/batches/{id}`: items, and the comparison with the legacy settlement during the parallel run.
+3. `POST /settlement/batches/{id}/approve` by one or two other FINANCE users.
+4. LIVE mode only: `POST /settlement/batches/{id}/instruct` returns the payout file. Calling it again returns the same file; it never creates new instructions.
+5. `POST /settlement/payout-results` with the bank's file (`instruction_ref,status,bank_reference,reason`). PAID needs the bank reference; the file's hash is the proof. Returned payouts release their collections for the next batch.

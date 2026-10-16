@@ -201,6 +201,18 @@ public class Transaction {
     private LocalDateTime initiatedAt;
 
     private LocalDateTime paymentSubmittedAt;
+
+    /** TIMED_OUT or NO_RESPONSE when the payment window closed without a provider answer; null otherwise. */
+    @Column(name = "payment_outcome", length = 20)
+    private String paymentOutcome;
+
+    /** Reference sent to the provider for the current attempt (reference, or reference-N for attempt N). */
+    @Column(name = "payment_attempt_reference", length = 40)
+    private String paymentAttemptReference;
+
+    /** Attempts sent so far (null on rows created before V39 is treated as 0). */
+    @Column(name = "payment_attempt_count")
+    private Integer paymentAttemptCount;
     private LocalDateTime paymentConfirmedAt;
     private LocalDateTime fulfilmentStartedAt;
     private LocalDateTime completedAt;

@@ -28,6 +28,11 @@ public interface FulfilmentProviderAdaptor {
      */
     FulfilmentStatusResult queryDelivery(String fulfilmentReference) throws Exception;
 
+    /** Currency-aware variant for providers whose credentials differ per currency (Econet). */
+    default FulfilmentStatusResult queryDelivery(String fulfilmentReference, String currency) throws Exception {
+        return queryDelivery(fulfilmentReference);
+    }
+
     // ─── Normalised DTOs ──────────────────────────────────────────────────────
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -49,6 +54,8 @@ public interface FulfilmentProviderAdaptor {
          * queryDelivery() or hands the case to a person.
          */
         private boolean outcomeUnknown;
+        /** The provider's own result/error code, when it has one (see DeliveryOutcomeRules). */
+        private String  errorCode;
         private String  fulfilmentReference;     // provider's delivery reference
         private String  fulfilmentData;          // JSON - e.g. {"token":"1234-5678-9012"} for ZESA
         private String  message;
@@ -70,7 +77,7 @@ public interface FulfilmentProviderAdaptor {
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     class FulfilmentStatusResult {
-        private String  status;                  // DELIVERED | FAILED | PENDING | UNKNOWN
+        private String  status;                  // DELIVERED | FAILED | NOT_FOUND (never received) | PENDING | UNKNOWN
         private String  fulfilmentReference;
         private String  message;
     }

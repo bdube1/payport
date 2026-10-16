@@ -32,6 +32,12 @@ public class TransactionResponse {
     private String fulfilmentData;
     private Integer retryCount;
     private String failureReason;
+    /** The customer-facing outcome: REQUIRES_PAYMENT, PROCESSING, SUCCEEDED, FAILED, TIMED_OUT, NO_RESPONSE, REFUNDED, CANCELLED. */
+    private String outcome;
+    /** The provider's own message for FAILED; the timeout / no-response wording otherwise. */
+    private String outcomeMessage;
+    /** Payment attempts made on this transaction (a new attempt is allowed after a definite failure). */
+    private Integer paymentAttempts;
     private LocalDateTime initiatedAt;
     private LocalDateTime paymentConfirmedAt;
     private LocalDateTime completedAt;
@@ -89,6 +95,9 @@ public class TransactionResponse {
                 .amountFormatted(full.getAmountFormatted())
                 .currency(full.getCurrency())
                 .failureReason(full.getFailureReason())
+                .outcome(full.getOutcome())
+                .outcomeMessage(full.getOutcomeMessage())
+                .paymentAttempts(full.getPaymentAttempts())
                 .initiatedAt(full.getInitiatedAt())
                 .paymentConfirmedAt(full.getPaymentConfirmedAt())
                 .completedAt(full.getCompletedAt())

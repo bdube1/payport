@@ -171,9 +171,11 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
     // API spec and is consistently clearer than what they actually send back
     // in the field. Falls back to their raw text for any code not catalogued.
     static String buildAirtimeMessage(String replyCode, String replyMsg, boolean success) {
+        // The customer sees NetOne's own wording (owner decision, Phase 2 review); our catalogued
+        // description is only a fallback when NetOne sends no text.
+        if (replyMsg != null && !replyMsg.isBlank()) return replyMsg.trim();
         String knownDescription = REPLY_CODE_DESCRIPTIONS.get(replyCode);
-        String description = knownDescription != null ? knownDescription : replyMsg;
-        return success ? description : "NetOne airtime failed: " + description;
+        return knownDescription != null ? knownDescription : (success ? "Success" : "NetOne could not complete the recharge");
     }
 
     private FulfilmentResult deliverAirtime(FulfilmentRequest request) throws Exception {
@@ -268,6 +270,26 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
                     .rawResponse(response.getBody())
                     .build();
 
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            // NetOne answers failures with HTTP 400 and a ReplyCode/ReplyMsg body (spec section 16): that is a
+            // provider answer, not a transport error, so keep its code and wording.
+            String body = e.getResponseBodyAsString();
+            String replyCode = null, replyMsg = null;
+            try {
+                Map<String, Object> m = objectMapper.readValue(body, Map.class);
+                replyCode = getStringFromMap(m, "ReplyCode");
+                replyMsg = getStringFromMap(m, "ReplyMsg");
+            } catch (Exception ignored) { }
+            log.warn("[NETONE] Airtime HTTP {} replyCode={} msg={}", e.getStatusCode(), replyCode, replyMsg);
+            if (replyCode == null) {
+                return FulfilmentResult.builder().success(false)
+                        .outcomeUnknown(e.getStatusCode().is5xxServerError())
+                        .message(replyMsg != null ? replyMsg : "NetOne HTTP " + e.getStatusCode().value())
+                        .rawResponse(body).build();
+            }
+            return FulfilmentResult.builder().success(false).errorCode(replyCode)
+                    .message(buildAirtimeMessage(replyCode, replyMsg, false))
+                    .rawResponse(body).build();
         } catch (Exception e) {
             log.error("[NETONE] Airtime delivery failed: {}", e.getMessage());
             return FulfilmentResult.builder()
@@ -320,6 +342,17 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
             logQueryResponse(replyCode, replyMsg, originalAgentRef);
 
             return new QueryTransactionResult(replyCode, replyMsg, originalAgentRef, rawReply);
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            // A 4xx with a ReplyCode body is still NetOne's answer (e.g. 3 = request not found).
+            try {
+                Map<String, Object> m = objectMapper.readValue(e.getResponseBodyAsString(), Map.class);
+                String code = getStringFromMap(m, "ReplyCode");
+                if (code != null) {
+                    return new QueryTransactionResult(code, getStringFromMap(m, "ReplyMsg"), originalAgentReference, e.getResponseBodyAsString());
+                }
+            } catch (Exception ignored) { }
+            log.error("[NETONE] Query transaction failed: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
             log.error("[NETONE] Query transaction failed: {}", e.getMessage());
             throw e;
@@ -464,10 +497,18 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
     public FulfilmentStatusResult queryDelivery(String fulfilmentReference) throws Exception {
         log.info("[NETONE] Querying delivery for reference: {}", fulfilmentReference);
         
-        QueryTransactionResult result = queryTransaction(fulfilmentReference + "-query", fulfilmentReference);
-        
+        // x-agent-reference may be used only once (HTTP 429 otherwise), so every query gets a fresh one.
+        QueryTransactionResult result = queryTransaction(fulfilmentReference + "-Q" + (System.currentTimeMillis() % 1_000_000_000L), fulfilmentReference);
+        String code = result.getReplyCode();
+        // Spec section 9.2.1: 2 success; 0 pending; 1 busy; 3 request not found (never received: safe to send again);
+        // any other value is the original request's failure code.
+        String status = "2".equals(code) ? "DELIVERED"
+                : ("0".equals(code) || "1".equals(code) || code == null) ? "PENDING"
+                : "3".equals(code) ? "NOT_FOUND"
+                : zw.co.payport.gateway.payments.DeliveryOutcomeRules.classify("NETONE", code)
+                        == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.UNKNOWN ? "PENDING" : "FAILED";
         return FulfilmentStatusResult.builder()
-                .status("2".equals(result.getReplyCode()) ? "DELIVERED" : "PENDING")
+                .status(status)
                 .fulfilmentReference(fulfilmentReference)
                 .message(result.getReplyMsg())
                 .build();

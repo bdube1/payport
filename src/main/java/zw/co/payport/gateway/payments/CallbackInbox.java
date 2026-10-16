@@ -120,7 +120,8 @@ public class CallbackInbox {
         if (claimed == null || claimed.getPayportReference() == null || claimed.getPayportReference().isBlank()) {
             return new Outcome(Status.INVALID, "no PayPort reference in callback", null, claimed == null ? null : claimed.getStatus());
         }
-        String ref = claimed.getPayportReference();
+        // Providers echo the attempt reference (reference-N after a retried payment); the payment is the intent.
+        String ref = PaymentAttemptStore.intentReference(claimed.getPayportReference());
         Transaction tx = transactionRepository.findByReference(ref).orElse(null);
         if (tx == null) {
             return new Outcome(Status.UNKNOWN_REF, "no such payment", ref, claimed.getStatus());

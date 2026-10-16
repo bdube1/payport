@@ -35,6 +35,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
@@ -195,7 +196,8 @@ class FulfilmentJobScenarioTest {
         worker.runOnce(LocalDateTime.now().plusMinutes(6));
         assertEquals(TransactionStatus.FULFILMENT_FAILED, status(ref));
         assertEquals(JobStatus.FAILED, job(ref));
-        verify(sms, times(1)).sendFulfilmentDelayed(argThat(t -> ref.equals(t.getReference())));
+        verify(sms, never()).sendFulfilmentDelayed(any()); // no SMS for failures (owner decision)
+        assertEquals("simulated", transactions.findByReference(ref).orElseThrow().getFailureReason(), "the provider's own words");
         assertEquals(1, deliveries(ref));
 
         s.deliver = SimulatorFulfilmentAdaptor.Deliver.OK;
@@ -231,18 +233,28 @@ class FulfilmentJobScenarioTest {
         worker.runOnce(LocalDateTime.now());
         assertEquals(TransactionStatus.FULFILMENT_FAILED, status(ref));
         assertEquals(JobStatus.FAILED, job(ref));
-        verify(sms, times(1)).sendFulfilmentDelayed(argThat(t -> ref.equals(t.getReference())));
+        verify(sms, never()).sendFulfilmentDelayed(any());
+        assertEquals("Invalid meter number", transactions.findByReference(ref).orElseThrow().getFailureReason(), "the provider's own words");
         worker.runOnce(LocalDateTime.now().plusHours(1));
         assertEquals(1, deliveries(ref));
     }
 
     @Test
-    void connectionRefused_isADefiniteNonDelivery() throws Exception {
+    void connectionRefused_neverLeftPayPort_soItIsRetriedAutomatically_andDeliveredOnce() throws Exception {
         String ref = confirmedPayment();
-        SimulatorFulfilmentAdaptor.script(ref).deliver = SimulatorFulfilmentAdaptor.Deliver.CONNECT_REFUSED;
+        SimulatorFulfilmentAdaptor.Script s = SimulatorFulfilmentAdaptor.script(ref);
+        s.deliver = SimulatorFulfilmentAdaptor.Deliver.CONNECT_REFUSED;
         worker.runOnce(LocalDateTime.now());
-        assertEquals(TransactionStatus.FULFILMENT_FAILED, status(ref));
-        assertEquals(JobStatus.FAILED, job(ref));
+        assertEquals(TransactionStatus.FULFILMENT_RETRY, status(ref));
+        assertEquals(JobStatus.QUEUED, job(ref));
+
+        s.deliver = SimulatorFulfilmentAdaptor.Deliver.OK;
+        worker.runOnce(LocalDateTime.now().plusSeconds(10)); // back-off not elapsed (30 s)
+        assertEquals(1, deliveries(ref));
+        worker.runOnce(LocalDateTime.now().plusSeconds(40));
+        assertEquals(TransactionStatus.COMPLETED, status(ref));
+        assertEquals(2, deliveries(ref), "one refused connection, one delivery");
+        verify(sms, times(1)).sendDeliverySuccess(argThat(t -> ref.equals(t.getReference())));
     }
 
     @Test

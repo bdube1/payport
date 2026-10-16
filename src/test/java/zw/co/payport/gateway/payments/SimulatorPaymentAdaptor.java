@@ -27,6 +27,7 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
         public volatile Submit submit = Submit.ACCEPT;
         public volatile Query query = Query.PENDING;
         public volatile Long queryAmountCents;            // null = report the requested amount
+        public volatile String queryMessage;              // the provider's wording on a query answer
         public volatile Consumer<String> duringSubmit;    // runs after the provider "received" the request, before it answers
         public final AtomicInteger submits = new AtomicInteger();
         public final AtomicInteger queries = new AtomicInteger();
@@ -48,7 +49,12 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
 
     /** A provider callback body. */
     public static String callbackBody(String reference, String status, long amountCents, String providerId) {
-        return "{\"ref\":\"" + reference + "\",\"status\":\"" + status + "\",\"amount\":" + amountCents + ",\"id\":\"" + providerId + "\"}";
+        return callbackBody(reference, status, amountCents, providerId, null);
+    }
+
+    public static String callbackBody(String reference, String status, long amountCents, String providerId, String message) {
+        return "{\"ref\":\"" + reference + "\",\"status\":\"" + status + "\",\"amount\":" + amountCents + ",\"id\":\"" + providerId + "\""
+                + (message == null ? "" : ",\"message\":\"" + message + "\"") + "}";
     }
 
     @Override
@@ -64,7 +70,7 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
         switch (s.submit) {
             case CONNECT_REFUSED -> throw new ConnectException("Connection refused");
             case REJECT_4XX -> {
-                return PaymentSubmitResult.builder().submitted(false).message("Insufficient funds").rawResponse("{\"error\":\"INSUFFICIENT_FUNDS\"}").build();
+                return PaymentSubmitResult.builder().submitted(false).message("Insufficient funds in your wallet").rawResponse("{\"error\":\"INSUFFICIENT_FUNDS\"}").build();
             }
             default -> { }
         }
@@ -92,6 +98,7 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
                 .status((String) m.get("status"))
                 .amountCents(m.get("amount") == null ? 0 : ((Number) m.get("amount")).longValue())
                 .providerReference((String) m.get("id"))
+                .failureMessage((String) m.get("message"))
                 .currency("USD")
                 .rawPayload(rawBody)
                 .build();
@@ -106,6 +113,6 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
         if (s.query == Query.DOWN) throw new SocketTimeoutException("Read timed out");
         long amount = s.queryAmountCents != null ? s.queryAmountCents : s.requestedAmountCents;
         return PaymentStatusResult.builder().status(s.query.name()).amountCents(amount)
-                .providerReference("SIM-" + ref).message("simulated").build();
+                .providerReference("SIM-" + ref).message(s.queryMessage).build();
     }
 }

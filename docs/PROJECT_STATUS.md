@@ -3,6 +3,18 @@
 _Last updated: 2026-10-16 (Phase 2 payment lifecycle). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
+**Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**, on `phase2-payment-lifecycle`:
+- Stripe-style payment intents and attempts, with per-provider payment windows instead of 72 h of "pending".
+- On-the-spot outcomes for USSD: SUCCEEDED, FAILED, TIMED_OUT or NO_RESPONSE.
+- Idempotency keys.
+- SMS only on success.
+- The provider's own messages.
+- Retry rules from the provider specs.
+- Staff skip-payment endpoints removed.
+
+See `docs/adr/0011-payment-intents-and-outcomes.md`, `docs/phase2/PROVIDER_ERROR_CODES.md` and `docs/phase3/PHASE3_REPORT.md`. CI evidence: see the latest run on the branch.
+
+### Phase 2
 **Phase 2: payment lifecycle. Code complete and CI-verified on `phase2-payment-lifecycle`** (see `docs/phase2/PHASE2_REPORT.md`, ADR-0010, `docs/runbooks/PAYMENT_OPERATIONS.md`).
 
 | Phase 2 acceptance | Status |
