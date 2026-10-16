@@ -97,6 +97,9 @@
 | R61 | No way to stop traffic to a failing or compromised provider except a deploy | G | [Observed] | **Fixed (Phase 5)**: audited kill switch per provider (shared across instances) and circuit breakers, both refusing before anything is sent |
 | R62 | EcoCash callbacks were always recorded as USD and amounts converted via floating point; a synchronous EcoCash decline was treated as 'sent' (customer waited out the window) | G | [Observed] | **Fixed (Phase 5)**: callback currency, exact decimal amounts, immediate declines definite (`EcoCashContractTest`) |
 | R63 | Production could start with webhook secrets encrypted under a key derived from the JWT secret, or with SSRF test switches on | G | [Observed] | **Fixed**: `PAYPORT_ENV` defaults to production, which requires `PAYPORT_DATA_KEY` and refuses the switches |
+| R64 | Every `@PreAuthorize` denial returned HTTP 400 (the generic RuntimeException handler caught `AccessDeniedException`) | G | [Observed] | **Fixed (Phase 6)**: 403, or 401 when anonymous |
+| R65 | No transaction monitoring, screening or case management; no FIU reporting | G | [Observed] | **Built (Phase 6)**, OBSERVE mode. Thresholds, the FIU format and the dispute deadlines are PROVISIONAL until compliance confirms them; screening lists still to be sourced |
+| R66 | Customers were never told of failures or timeouts outside the app (SMS is success-only by owner decision) | G | [Observed] | **Fixed in the backend**: push notifications for every final outcome; the mobile app must register its token (frontend plan) |
 
 **Phase 2 status of earlier risks:**
 - **R4 / R6:** closed by design on the Phase 2 branch. The callback inbox and query-confirmed callbacks cover R4; the durable resolver, with no time-based failure, covers R6.

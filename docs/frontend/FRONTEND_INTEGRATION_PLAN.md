@@ -68,9 +68,18 @@ _Reviewed 2026-10-16 against `payport-ops` (48cb36a), `payport-merchant` (1df842
 
 | Item | Decision needed |
 |---|---|
-| Mobile calls `POST /api/v1/profile/push-token`, which does not exist (silent 404). | Do we send push notifications? They are free, unlike SMS, which is limited to successes. If yes, the backend stores tokens and sends pushes for success, failure and timeout. If no, remove the call from the app. |
-| Merchant signup has no page in these four repos (the endpoint exists). | Is merchant onboarding on the public website? If so, which repo? |
-| `/api/v1/bills/customer-info` is public and returns account holder names. | Now rate-limited per IP. Should lookups need a logged-in customer or a captcha? |
+| Push notifications | **Decided (yes), backend done.** `POST`/`DELETE /api/v1/profile/push-token` and pushes for every final outcome. **Mobile still has to obtain and register the token**: `expo-notifications` `getExpoPushTokenAsync({projectId})` after login, `registerPushToken(token)`, and DELETE on logout. Today `registerPushToken` exists in `lib/api.ts` but is never called. |
+| Merchant signup | **Decided (merchant portal), done:** `payport-merchant` PR #1 (`/signup`). |
+| Public bill lookups | **Decided:** stay public, with no login and no captcha. They are rate-limited per IP. |
+
+### Phase 6 additions (payport-ops)
+
+| Screen | Endpoints | Notes |
+|---|---|---|
+| **Compliance console** (new section, COMPLIANCE role only; add `COMPLIANCE` to `ROUTE_ROLES`) | `/api/v1/admin/compliance/alerts`, `cases`, `cases/{id}` (assign, notes, propose, decide), `rules` and `rule-changes`, `screening/lists` (create, load, check), `reports` (STR/CTR: approve, submitted) | The decide and approve buttons are disabled for the proposer or preparer (the server refuses as well). Never show compliance data to other roles. |
+| **Dispute timelines** (in `DisputesPage`) | `/api/v1/admin/dispute-timelines`, `…/{id}/acknowledge` | Badges: ON_TRACK, AT_RISK, BREACHED, MET, MET_LATE. |
+| **Users page** | existing | Allow creating `COMPLIANCE` users. |
+| Consumer and mobile | `/initiate` may return **403 `PAYMENT_NOT_ALLOWED`** | Show the message as sent: it is neutral and quotes the reference. |
 
 ## 4. Order of work (after the backend is complete)
 

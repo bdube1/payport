@@ -1,43 +1,35 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-16 (Phase 5 provider integrations and the Phase 4 follow-ups). Living document; updated at the end of every phase and whenever a blocker changes._
+_Last updated: 2026-10-16 (Phase 6 risk and compliance). Living document; updated at the end of every phase and whenever a blocker changes._
 
 ## Current phase
-**Phase 5 (provider and biller integrations), plus the Phase 4 follow-ups**, on `phase2-payment-lifecycle`. See:
+**Phase 6 (risk and compliance), plus the owner's decisions on push, merchant signup and bill lookups**, on `phase2-payment-lifecycle`. See:
+- `docs/phase6/PHASE6_REPORT.md`
 - `docs/phase5/PHASE5_REPORT.md`
 - `docs/phase4/PHASE4_REPORT.md`
 - `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`
-- `docs/api/MERCHANT_API.md`
 
-CI run 38885749278 (2026-10-16), all jobs green:
-- `build-and-test`: **165 passed, 0 failed**. Guarded suites:
-  - ApplicationSmokeTest, LivemodeMigrationTest
-  - PaymentLifecycleScenarioTest, FulfilmentJobScenarioTest
-  - ReconSettlementScenarioTest
-  - MerchantPlatformAcceptanceTest, MerchantPlatformUnitTest
-  - StatementParsersTest, PaymentWindowsTest
-  - ProviderIntegrationScenarioTest, EsolutionsContractTest, EcoCashContractTest, CircuitBreakerTest
+CI run 38895163667 (2026-10-16), all jobs green:
+- `build-and-test`: **173 passed, 0 failed**.
 - `ledger-db`: **106 / 106**.
-- `migrations-production-like` (through V43): pass.
+- `migrations-production-like` (through V45): pass.
 
 | Item | Status |
 |---|---|
-| Merchant currency enablement on every live path: API keys, payment links (creation and each visit), dashboard sessions, hosted pay step | **Done.** Withdrawing a currency also stops open links and sessions. The sandbox is unaffected. |
-| `PAYPORT_DATA_KEY` required in production | **Done.** `PAYPORT_ENV` defaults to production. The app refuses to start without an explicit 32-byte key (no derived, zero or short keys) and refuses the webhook test switches. |
-| Phase 4 acceptance (merchant onboards → keys → sandbox → balances and settlement → webhooks, no DB access) | **Met** (`MerchantPlatformAcceptanceTest`) |
-| Phase 5 build: register, kill switch, circuit breakers, biller framework, contract tests | **Done**, tested on spec fixtures and MySQL |
-| Phase 5 acceptance (one provider and one biller against real test environments) | **Not met.** There is no sandbox access; the register records SPEC_ONLY and has the evidence workflow ready. |
-| Frontend review | Done. The plan is in `docs/frontend/FRONTEND_INTEGRATION_PLAN.md`. The backend is fixed first (error messages); wiring the frontends comes next. |
+| Push notifications (owner: yes) | **Backend done** (`PushNotificationScenarioTest`). The mobile app must register its token (frontend plan). |
+| Merchant signup in the merchant portal | **Done**: `payport-merchant` PR #1 (`/signup`). Builds and renders. |
+| Public bill lookups (owner: public, no login, no captcha) | Kept public, rate-limited per IP. |
+| Phase 6 acceptance (scenario library + access controls) | **Met** (`RiskComplianceScenarioTest`) |
+| Phase 5 acceptance (real test environments) | Not met: no sandbox access (owner confirmed). |
 
-Money defect found and fixed in Phase 5: **R57**. An eSolutions delivery with an unknown outcome was looked up by the wrong reference, so an issued ZESA token could be recorded as not delivered.
+Defect found in Phase 6 and fixed: **R64**. Every authorization denial in the API returned 400 instead of 403.
 
-Owner inputs still needed:
-- Provider sandboxes, the ZimSwitch webhook secret and the sponsor bank's payout format. All three are confirmed unavailable for now.
-- Sign-off to retire the legacy settlement.
-- Push notifications: yes or no (mobile calls an endpoint that does not exist).
-- Where merchant signup lives.
-- Whether public bill lookups need a login or captcha.
-- `PAYPORT_DATA_KEY` in production.
+Owner and compliance inputs needed:
+- Confirm the PROVISIONAL compliance values (thresholds, FIU format, RBZ dispute deadlines, case SLA).
+- Source the screening lists.
+- Appoint at least two COMPLIANCE users.
+- Set `PAYPORT_DATA_KEY` in production.
+- Sign off retiring the legacy settlement.
 
 ### Phase 3 and the Phase 2 review
 **Phase 3 (reconciliation and settlement) and the owner's Phase 2 review changes**:
