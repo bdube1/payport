@@ -39,6 +39,8 @@ public class PaymentLinkService {
         if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
             throw new RuntimeException("currency must be USD or ZWG");
         }
+        // Links always take live money, so the currency must be enabled for the merchant.
+        checkoutSessionService.requireLiveCurrency(merchant.getId(), currency);
         PaymentLink link = PaymentLink.builder()
                 .merchantId(merchant.getId())
                 .slug(randomSlug())

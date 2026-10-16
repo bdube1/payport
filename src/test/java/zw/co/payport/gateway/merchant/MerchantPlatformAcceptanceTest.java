@@ -328,5 +328,26 @@ class MerchantPlatformAcceptanceTest {
         Res liveUsd = call("POST", "/api/v1/merchant/checkout-sessions", liveKey, Map.of("amountCents", 1_000, "currency", "USD"));
         assertEquals(201, liveUsd.status(), liveUsd.body().toString());
         assertTrue(liveUsd.data().path("livemode").asBoolean());
+
+        // 11. Currency enablement holds on every live path, not only API keys.
+        Res zwgLink = call("POST", "/api/v1/merchant/payment-links", dashboard, Map.of("amountCents", 500, "currency", "ZWG", "description", "Tip"));
+        assertEquals(400, zwgLink.status(), "a ZWG payment link cannot be created: " + zwgLink.body());
+        Res usdLink = call("POST", "/api/v1/merchant/payment-links", dashboard, Map.of("amountCents", 500, "currency", "USD", "description", "Tip"));
+        assertEquals(201, usdLink.status(), usdLink.body().toString());
+        String slug = usdLink.data().path("slug").asText();
+        Res visit = call("POST", "/api/v1/pay/" + slug + "/start", null, Map.of());
+        assertEquals(200, visit.status(), visit.body().toString());
+        long linkSession = visit.data().path("checkoutSessionId").asLong();
+
+        // PayPort withdraws USD: existing links, open sessions and API sessions all stop taking live money.
+        assertEquals(200, call("POST", "/api/v1/admin/platform/merchants/" + merchantId + "/enablements", bob,
+                Map.of("country", "ZW", "currency", "USD", "enabled", false)).status());
+        assertEquals(400, call("POST", "/api/v1/pay/" + slug + "/start", null, Map.of()).status(), "the link no longer starts a checkout");
+        Res payDisabled = call("POST", "/api/v1/checkout/" + linkSession + "/pay", null, Map.of("customerPhone", "+263771234567", "paymentMethodCode", "ECOCASH"));
+        assertEquals(400, payDisabled.status(), "an open live session cannot be paid once the currency is withdrawn: " + payDisabled.body());
+        assertTrue(payDisabled.body().toString().contains("not enabled"), payDisabled.body().toString());
+        assertEquals(400, call("POST", "/api/v1/merchant/checkout-sessions", liveKey, Map.of("amountCents", 1_000, "currency", "USD")).status());
+        assertEquals(201, call("POST", "/api/v1/merchant/checkout-sessions", sk2, Map.of("amountCents", 1_000, "currency", "ZWG")).status(),
+                "sandbox is never restricted by enablements");
     }
 }

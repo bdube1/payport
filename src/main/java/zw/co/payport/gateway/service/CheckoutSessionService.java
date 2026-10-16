@@ -71,14 +71,7 @@ public class CheckoutSessionService {
         }
 
         boolean livemode = resolveLivemode(merchant, apiKeyId);
-        if (livemode && apiKeyId != null) {
-            // Phase 4 market enablement: a live key takes payments only in currencies PayPort enabled for the merchant.
-            Integer enabled = jdbc.queryForObject("SELECT COUNT(*) FROM merchant_enablements WHERE merchant_id = ? AND currency = ? AND status = 'ENABLED'",
-                    Integer.class, merchant.getId(), currency);
-            if (enabled == null || enabled == 0) {
-                throw new RuntimeException("Live payments in " + currency + " are not enabled for this account");
-            }
-        }
+        if (livemode) requireLiveCurrency(merchant.getId(), currency);
 
         CheckoutSession session = CheckoutSession.builder()
                 .merchantId(merchant.getId())
@@ -100,6 +93,24 @@ public class CheckoutSessionService {
         checkoutSessionRepository.save(session);
         log.info("[CHECKOUT] Session created: id={} merchant={} amount={} {} livemode={}", session.getId(), merchant.getId(), req.amountCents(), currency, livemode);
         return session;
+    }
+
+    /** Thrown when a merchant tries to take live money in a currency PayPort has not enabled for it. */
+    public static class CurrencyNotEnabledException extends RuntimeException {
+        public CurrencyNotEnabledException(String currency) {
+            super("Live payments in " + currency + " are not enabled for this account");
+        }
+    }
+
+    /**
+     * Market enablement (Phase 4), enforced on every path that can move live money: API-key
+     * sessions, payment links (creation and every visit), dashboard checkouts and the hosted
+     * page's pay step (an enablement can be withdrawn after a session was created).
+     */
+    public void requireLiveCurrency(Long merchantId, String currency) {
+        Integer enabled = jdbc.queryForObject("SELECT COUNT(*) FROM merchant_enablements WHERE merchant_id = ? AND currency = ? AND status = 'ENABLED'",
+                Integer.class, merchantId, currency == null ? "" : currency.toUpperCase());
+        if (enabled == null || enabled == 0) throw new CurrencyNotEnabledException(currency);
     }
 
     /**
@@ -289,6 +300,7 @@ public class CheckoutSessionService {
         if (!"ACTIVE".equals(merchant.getStatus())) {
             throw new RuntimeException("This merchant account is not currently active");
         }
+        if (!isTestMode) requireLiveCurrency(merchant.getId(), session.getCurrency());
 
         String productTypeCode = "ZWG".equals(session.getCurrency()) ? "MERCHANT_CHECKOUT_ZWG" : "MERCHANT_CHECKOUT";
         String txReference = generateTransactionReference();

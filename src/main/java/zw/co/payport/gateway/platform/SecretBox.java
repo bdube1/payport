@@ -17,8 +17,9 @@ import java.util.Base64;
  * Stored form: "enc:v1:" + base64(iv || ciphertext+tag). Values without the prefix are legacy
  * plaintext and are returned as they are (R14: they are re-encrypted when next written).
  *
- * Key: PAYPORT_DATA_KEY (base64 of 32 random bytes). Until it is configured the key is derived
- * from the JWT secret and a warning is logged -- set a separate key in production.
+ * Key: PAYPORT_DATA_KEY (base64 of 32 random bytes). Required in production (startup fails
+ * without it). Only non-production deployments (PAYPORT_ENV=local/dev/test/ci/sandbox/staging)
+ * may fall back to a key derived from the JWT secret.
  */
 @Slf4j
 @Component
@@ -28,21 +29,48 @@ public class SecretBox {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final byte[] key;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public SecretBox(@Value("${payport.security.data-key:}") String dataKey,
-                     @Value("${payport.security.jwt-secret:}") String jwtSecret) {
-        try {
-            if (dataKey != null && !dataKey.isBlank()) {
-                this.key = Base64.getDecoder().decode(dataKey.trim());
-                if (key.length != 32) throw new IllegalArgumentException("PAYPORT_DATA_KEY must be 32 bytes (base64)");
-            } else {
-                log.warn("[SECRETS] PAYPORT_DATA_KEY not set: deriving the data key from the JWT secret. Set a separate key in production.");
-                this.key = MessageDigest.getInstance("SHA-256").digest(("payport-data-key|" + jwtSecret).getBytes(StandardCharsets.UTF_8));
+                     @Value("${payport.security.jwt-secret:}") String jwtSecret,
+                     @Value("${payport.environment:production}") String environment) {
+        this(dataKey, jwtSecret, DeploymentEnvironment.isProduction(environment));
+    }
+
+    /**
+     * In production PAYPORT_DATA_KEY must be provisioned explicitly: a key derived from the JWT
+     * secret is refused (the two secrets would stand or fall together), and so is a key with no
+     * entropy (all bytes equal). Startup fails rather than storing secrets under a weak key.
+     */
+    public SecretBox(String dataKey, String jwtSecret, boolean production) {
+        if (dataKey != null && !dataKey.isBlank()) {
+            byte[] k;
+            try {
+                k = Base64.getDecoder().decode(dataKey.trim());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("PAYPORT_DATA_KEY is not valid base64");
             }
-        } catch (IllegalArgumentException e) {
-            throw e;
+            if (k.length != 32) throw new IllegalStateException("PAYPORT_DATA_KEY must be 32 bytes (base64), got " + k.length);
+            boolean allSame = true;
+            for (byte b : k) if (b != k[0]) { allSame = false; break; }
+            if (allSame && production) throw new IllegalStateException("PAYPORT_DATA_KEY has no entropy; generate one with: openssl rand -base64 32");
+            this.key = k;
+            return;
+        }
+        if (production) {
+            throw new IllegalStateException("PAYPORT_DATA_KEY is required in production (base64 of 32 random bytes: openssl rand -base64 32). "
+                    + "Set PAYPORT_ENV=local|dev|test|staging only for non-production deployments.");
+        }
+        log.warn("[SECRETS] PAYPORT_DATA_KEY not set ({} deployment): deriving a data key from the JWT secret. Never do this in production.", "non-production");
+        try {
+            this.key = MessageDigest.getInstance("SHA-256").digest(("payport-data-key|" + jwtSecret).getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Test helper: non-production rules. */
+    public SecretBox(String dataKey, String jwtSecret) {
+        this(dataKey, jwtSecret, false);
     }
 
     public String seal(String plaintext) {

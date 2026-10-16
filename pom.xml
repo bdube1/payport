@@ -231,6 +231,17 @@
                 </configuration>
             </plugin>
 
+            <!-- Tests run as a non-production deployment (PAYPORT_ENV defaults to production, which
+                 requires PAYPORT_DATA_KEY and forbids local-testing switches). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <environmentVariables>
+                        <PAYPORT_ENV>test</PAYPORT_ENV>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

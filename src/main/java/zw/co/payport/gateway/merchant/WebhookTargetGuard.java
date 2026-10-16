@@ -25,10 +25,20 @@ public class WebhookTargetGuard {
     private final boolean allowPrivate;
     private final boolean allowHttp;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public WebhookTargetGuard(@Value("${payport.webhooks.allow-private-targets:false}") boolean allowPrivate,
-                              @Value("${payport.webhooks.allow-http:false}") boolean allowHttp) {
+                              @Value("${payport.webhooks.allow-http:false}") boolean allowHttp,
+                              @Value("${payport.environment:production}") String environment) {
+        if ((allowPrivate || allowHttp) && zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment)) {
+            throw new IllegalStateException("payport.webhooks.allow-private-targets / allow-http are for local testing and are refused in production (R13)");
+        }
         this.allowPrivate = allowPrivate;
         this.allowHttp = allowHttp;
+    }
+
+    /** Non-production construction (tests). */
+    public WebhookTargetGuard(boolean allowPrivate, boolean allowHttp) {
+        this(allowPrivate, allowHttp, "test");
     }
 
     /** Throws IllegalArgumentException with a reason the merchant can act on. */

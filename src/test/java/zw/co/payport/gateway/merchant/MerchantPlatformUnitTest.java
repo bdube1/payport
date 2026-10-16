@@ -97,4 +97,22 @@ class MerchantPlatformUnitTest {
         assertEquals("Insufficient funds", SandboxScenarios.forPhone("+263770000001").providerMessage());
         assertFalse(SandboxScenarios.forPhone("0770000002").success());
     }
+
+    @Test
+    void production_requiresAnExplicitDataKey_andForbidsLocalTestingSwitches() {
+        assertTrue(zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(null), "unset = production (fail safe)");
+        assertTrue(zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction("prod"));
+        assertFalse(zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction("staging"));
+        String real = Base64.getEncoder().encodeToString(new java.security.SecureRandom().generateSeed(32));
+        assertThrows(IllegalStateException.class, () -> new SecretBox("", "jwt-secret", true), "no derived key in production");
+        assertThrows(IllegalStateException.class, () -> new SecretBox(Base64.getEncoder().encodeToString(new byte[32]), "j", true), "no zero key");
+        assertThrows(IllegalStateException.class, () -> new SecretBox(Base64.getEncoder().encodeToString(new byte[16]), "j", true), "wrong length");
+        assertThrows(IllegalStateException.class, () -> new SecretBox("not base64!!", "j", true));
+        SecretBox prod = new SecretBox(real, "j", true);
+        assertEquals("s", prod.open(prod.seal("s")));
+        assertDoesNotThrow(() -> new SecretBox("", "jwt-secret", false), "derived key allowed outside production");
+        assertThrows(IllegalStateException.class, () -> new WebhookTargetGuard(true, false, "production"));
+        assertThrows(IllegalStateException.class, () -> new WebhookTargetGuard(false, true, null));
+        assertDoesNotThrow(() -> new WebhookTargetGuard(false, false, "production"));
+    }
 }
