@@ -273,10 +273,10 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
         } catch (org.springframework.web.client.HttpStatusCodeException e) {
             // NetOne answers failures with HTTP 400 and a ReplyCode/ReplyMsg body (spec section 16): that is a
             // provider answer, not a transport error, so keep its code and wording.
-            String body = e.getResponseBodyAsString();
+            String errorBody = e.getResponseBodyAsString();
             String replyCode = null, replyMsg = null;
             try {
-                Map<String, Object> m = objectMapper.readValue(body, Map.class);
+                Map<String, Object> m = objectMapper.readValue(errorBody, Map.class);
                 replyCode = getStringFromMap(m, "ReplyCode");
                 replyMsg = getStringFromMap(m, "ReplyMsg");
             } catch (Exception ignored) { }
@@ -285,11 +285,11 @@ public class NetOneAirtimeAdaptor implements FulfilmentProviderAdaptor {
                 return FulfilmentResult.builder().success(false)
                         .outcomeUnknown(e.getStatusCode().is5xxServerError())
                         .message(replyMsg != null ? replyMsg : "NetOne HTTP " + e.getStatusCode().value())
-                        .rawResponse(body).build();
+                        .rawResponse(errorBody).build();
             }
             return FulfilmentResult.builder().success(false).errorCode(replyCode)
                     .message(buildAirtimeMessage(replyCode, replyMsg, false))
-                    .rawResponse(body).build();
+                    .rawResponse(errorBody).build();
         } catch (Exception e) {
             log.error("[NETONE] Airtime delivery failed: {}", e.getMessage());
             return FulfilmentResult.builder()
