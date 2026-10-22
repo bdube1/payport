@@ -12,7 +12,7 @@ public class AuthRequests {
         private String fullName;
 
         @NotBlank(message = "Phone number is required")
-        @Pattern(regexp = "^\\+263\\d{9}$", message = "Phone must be in E.164 format e.g. +263771234567")
+        @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "Phone must be in international (E.164) format, e.g. +263771234567")
         private String phone;
 
         @NotBlank(message = "PIN is required")

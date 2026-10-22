@@ -9,6 +9,8 @@ import zw.co.payport.gateway.enums.TransactionStatus;
 import zw.co.payport.gateway.model.request.InitiateTransactionRequest;
 import zw.co.payport.gateway.model.request.PayTransactionRequest;
 import zw.co.payport.gateway.model.response.TransactionResponse;
+import zw.co.payport.gateway.entity.ApiKey;
+import zw.co.payport.gateway.repository.ApiKeyRepository;
 import zw.co.payport.gateway.repository.CheckoutSessionRepository;
 import zw.co.payport.gateway.repository.MerchantRepository;
 import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
@@ -44,7 +46,13 @@ public class CheckoutSessionService {
     private final EmailService emailService;
     private final CommissionService commissionService;
     private final RefundService refundService;
+    private final ApiKeyRepository apiKeyRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final zw.co.payport.gateway.markets.MarketRegistry markets;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channels;
 
     public record CreateSessionRequest(
             String reference, Long amountCents, String currency, String description,
@@ -62,9 +70,15 @@ public class CheckoutSessionService {
             throw new RuntimeException("amountCents must be a positive integer");
         }
         String currency = (req.currency() == null || req.currency().isBlank()) ? merchant.getDefaultCurrency() : req.currency().toUpperCase();
-        if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
-            throw new RuntimeException("currency must be USD or ZWG");
+        try {
+            currency = markets.requireSupportedCurrency(currency);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException(e.getMessage());
         }
+
+        if (channels != null && apiKeyId != null) channels.require("API");
+        boolean livemode = resolveLivemode(merchant, apiKeyId);
+        if (livemode) requireLiveCurrency(merchant.getId(), currency);
 
         CheckoutSession session = CheckoutSession.builder()
                 .merchantId(merchant.getId())
@@ -79,12 +93,66 @@ public class CheckoutSessionService {
                 .cancelUrl(req.cancelUrl())
                 .metadata(req.metadata())
                 .apiKeyId(apiKeyId)
+                .livemode(livemode)
                 .expiresAt(LocalDateTime.now().plusMinutes(DEFAULT_EXPIRY_MINUTES))
                 .build();
 
         checkoutSessionRepository.save(session);
-        log.info("[CHECKOUT] Session created: id={} merchant={} amount={} {}", session.getId(), merchant.getId(), req.amountCents(), currency);
+        log.info("[CHECKOUT] Session created: id={} merchant={} amount={} {} livemode={}", session.getId(), merchant.getId(), req.amountCents(), currency, livemode);
         return session;
+    }
+
+    /** Thrown when a merchant tries to take live money in a currency PayPort has not enabled for it. */
+    public static class CurrencyNotEnabledException extends RuntimeException {
+        public CurrencyNotEnabledException(String currency) {
+            super("Live payments in " + currency + " are not enabled for this account");
+        }
+    }
+
+    /**
+     * Market enablement (Phase 4), enforced on every path that can move live money: API-key
+     * sessions, payment links (creation and every visit), dashboard checkouts and the hosted
+     * page's pay step (an enablement can be withdrawn after a session was created).
+     */
+    public boolean isSupportedCurrency(String currency) {
+        return markets.supportedCurrency(currency);
+    }
+
+    public void requireLiveCurrency(Long merchantId, String currency) {
+        // A sandbox market's currency can never take live money, whatever the enablements say.
+        if (currency == null || !markets.liveCurrency(currency)) throw new CurrencyNotEnabledException(currency);
+        Integer enabled = jdbc.queryForObject("SELECT COUNT(*) FROM merchant_enablements WHERE merchant_id = ? AND currency = ? AND status = 'ENABLED'",
+                Integer.class, merchantId, currency == null ? "" : currency.toUpperCase());
+        if (enabled == null || enabled == 0) throw new CurrencyNotEnabledException(currency);
+    }
+
+    /**
+     * Decides, once, whether a session moves real money (R1 fix).
+     *
+     *   - Created with an API key: that key's environment (LIVE = real, TEST = simulated).
+     *   - Created without an API key (payment links, merchant-dashboard checkouts): live.
+     *     These are customer-facing features of an approved merchant; they were previously
+     *     simulated by accident, which marked unpaid sessions PAID and made them settleable.
+     *
+     * An API key id that no longer resolves to a key is refused rather than guessed.
+     */
+    boolean resolveLivemode(Merchant merchant, Long apiKeyId) {
+        ApiKey key = apiKeyId == null ? null : apiKeyRepository.findById(apiKeyId).orElse(null);
+        return decideLivemode(merchant.getId(), apiKeyId, key);
+    }
+
+    /** Pure rule behind resolveLivemode, unit-tested. */
+    static boolean decideLivemode(Long merchantId, Long apiKeyId, ApiKey key) {
+        if (apiKeyId == null) {
+            return true;
+        }
+        if (key == null) {
+            throw new RuntimeException("API key not found for this checkout session");
+        }
+        if (!merchantId.equals(key.getMerchantId())) {
+            throw new RuntimeException("API key does not belong to this merchant");
+        }
+        return "LIVE".equals(key.getEnvironment());
     }
 
     public List<CheckoutSession> listForMerchant(Long merchantId) {
@@ -107,6 +175,8 @@ public class CheckoutSessionService {
     public Map<String, CurrencyTotals> balanceByCurrency(Long merchantId) {
         Map<String, long[]> raw = new LinkedHashMap<>(); // [gross, commission, net]
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            // Test-mode sessions never represent money owed to the merchant.
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus()) && !"PARTIALLY_REFUNDED".equals(s.getStatus()) && !"REFUNDED".equals(s.getStatus())) continue;
             // Already claimed by a Settlement -- it's been moved from
             // "owed" to "settled", tracked in the settlements table now,
@@ -142,6 +212,7 @@ public class CheckoutSessionService {
     public List<MethodBreakdown> collectionsByPaymentMethod(Long merchantId) {
         Map<String, long[]> raw = new LinkedHashMap<>(); // key = "currency|method" -> [count, gross]
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus())) continue;
             String method = s.getPaymentMethodCode() != null ? s.getPaymentMethodCode() : "UNKNOWN";
             String key = s.getCurrency() + "|" + method;
@@ -170,6 +241,7 @@ public class CheckoutSessionService {
         }
 
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantId(merchantId)) {
+            if (!Boolean.TRUE.equals(s.getLivemode())) continue;
             if (!"PAID".equals(s.getStatus())) continue;
             if (currency != null && !currency.equalsIgnoreCase(s.getCurrency())) continue;
             if (s.getCreatedAt().isBefore(cutoff)) continue;
@@ -222,21 +294,29 @@ public class CheckoutSessionService {
      */
     public record PaymentSubmissionResult(CheckoutSession session, String widgetJsUrl, String paymentCorrelator) {}
 
-    public PaymentSubmissionResult submitPayment(Long sessionId, String customerPhone, String customerEmail, String paymentMethodCode, String ipAddress, boolean isTestMode) throws Exception {
+    /**
+     * Test or live is a property of the session (decided at creation), never of the
+     * caller: the hosted page is public, so nothing the browser sends may choose
+     * whether a real provider is called.
+     */
+    public PaymentSubmissionResult submitPayment(Long sessionId, String customerPhone, String customerEmail, String paymentMethodCode, String ipAddress) throws Exception {
         CheckoutSession session = getOrThrow(sessionId);
+        boolean isTestMode = !Boolean.TRUE.equals(session.getLivemode());
         expireIfPastDue(session);
 
         if (!"CREATED".equals(session.getStatus())) {
             throw new RuntimeException("This checkout session cannot accept payment (status: " + session.getStatus() + ")");
         }
+        if (channels != null) channels.require("HOSTED_CHECKOUT");
 
         Merchant merchant = merchantRepository.findById(session.getMerchantId())
                 .orElseThrow(() -> new RuntimeException("Merchant not found"));
         if (!"ACTIVE".equals(merchant.getStatus())) {
             throw new RuntimeException("This merchant account is not currently active");
         }
+        if (!isTestMode) requireLiveCurrency(merchant.getId(), session.getCurrency());
 
-        String productTypeCode = "ZWG".equals(session.getCurrency()) ? "MERCHANT_CHECKOUT_ZWG" : "MERCHANT_CHECKOUT";
+        String productTypeCode = markets.checkoutProductType(session.getCurrency());
         String txReference = generateTransactionReference();
 
         InitiateTransactionRequest initiateReq = new InitiateTransactionRequest();
@@ -261,10 +341,11 @@ public class CheckoutSessionService {
 
         TransactionResponse result;
         if (isTestMode) {
-            // Structural, not conventional: a TEST key never reaches the
-            // real submitPayment() call below at all.
-            log.info("[CHECKOUT] TEST-mode key -- simulating payment instead of calling a real provider for session {}", sessionId);
-            result = orchestrator.simulateTestPayment(txReference, true);
+            // Structural, not conventional: a test-mode session never reaches
+            // the real submitPayment() call below at all.
+            log.info("[CHECKOUT] Test-mode session -- simulating payment instead of calling a real provider for session {}", sessionId);
+            zw.co.payport.gateway.merchant.SandboxScenarios.Outcome sandbox = zw.co.payport.gateway.merchant.SandboxScenarios.forPhone(customerPhone);
+            result = orchestrator.simulateTestPayment(txReference, sandbox.success(), sandbox.providerMessage());
         } else {
             PayTransactionRequest payReq = new PayTransactionRequest();
             payReq.setReference(txReference);
@@ -386,7 +467,7 @@ public class CheckoutSessionService {
 
     private String formatAmount(Long amountCents, String currency) {
         double value = amountCents / 100.0;
-        String symbol = "ZWG".equals(currency) ? "ZWG " : "$";
+        String symbol = markets.symbol(currency);
         return symbol + String.format("%.2f", value);
     }
 

@@ -71,6 +71,19 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             }
 
             ApiKey apiKey = keyOpt.get();
+            if (apiKey.getExpiresAt() != null && apiKey.getExpiresAt().isBefore(LocalDateTime.now())) {
+                log.warn("[API_KEY_AUTH] Expired API key {} used against {}", apiKey.getPublicKey(), path);
+                deny(response, 401, "API_KEY_EXPIRED", "This API key has expired. Use its replacement.");
+                return;
+            }
+            String required = zw.co.payport.gateway.merchant.ApiKeyScopes.required(request.getMethod(), path);
+            if (!zw.co.payport.gateway.merchant.ApiKeyScopes.allows(zw.co.payport.gateway.merchant.ApiKeyScopes.parse(apiKey.getScopes()), required)) {
+                log.warn("[API_KEY_AUTH] Key {} lacks scope {} for {} {}", apiKey.getPublicKey(), required, request.getMethod(), path);
+                deny(response, 403, "INSUFFICIENT_SCOPE", zw.co.payport.gateway.merchant.ApiKeyScopes.DASHBOARD_ONLY.equals(required)
+                        ? "This endpoint is only available from the dashboard, not with an API key."
+                        : "This API key does not have the '" + required + "' scope.");
+                return;
+            }
             Merchant merchant = merchantRepository.findById(apiKey.getMerchantId()).orElse(null);
             if (merchant == null) {
                 log.warn("[API_KEY_AUTH] API key {} references a merchant that no longer exists", apiKey.getPublicKey());
@@ -109,5 +122,11 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private static void deny(HttpServletResponse response, int status, String code, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"success\":false,\"error\":{\"code\":\"" + code + "\",\"message\":\"" + message + "\"}}");
     }
 }

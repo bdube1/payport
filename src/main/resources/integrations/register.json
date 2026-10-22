@@ -1,0 +1,306 @@
+{
+  "_comment": "Integration register (Phase 5). One entry per provider adaptor; IntegrationRegisterTest fails if an adaptor is missing here or an entry has no adaptor. verification: SPEC_ONLY (built from the spec, contract-tested on fixtures), SANDBOX_VERIFIED, PRODUCTION_VERIFIED. Raise it only with recorded evidence (provider_verifications).",
+  "providers": [
+    {
+      "code": "ECOCASH",
+      "name": "EcoCash",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "submit",
+        "callback",
+        "status_query",
+        "refund"
+      ],
+      "callbackAuth": "QUERY_CONFIRMED",
+      "endpointProperty": "payport.ecocash.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Callbacks are confirmed by status query before they are applied."
+    },
+    {
+      "code": "ONEMONEY",
+      "name": "OneMoney",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "submit",
+        "callback",
+        "status_query"
+      ],
+      "callbackAuth": "QUERY_CONFIRMED",
+      "endpointProperty": "payport.onemoney.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Default base URL is an internal IP over http: confirm the production endpoint before go-live."
+    },
+    {
+      "code": "OMARI",
+      "name": "O'mari",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "submit",
+        "otp_confirm",
+        "status_query"
+      ],
+      "callbackAuth": "SYNCHRONOUS_OTP",
+      "endpointProperty": "payport.omari.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Base URL points at UAT. Confirmation is the customer's OTP through PayPort, not a callback."
+    },
+    {
+      "code": "ZIMSWITCH",
+      "name": "ZimSwitch (cards)",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "submit",
+        "widget",
+        "callback",
+        "status_query"
+      ],
+      "callbackAuth": "SIGNATURE_AND_QUERY",
+      "endpointProperty": "payport.zimswitch.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Base URL is the OPPWA test host; webhook secret not yet issued (callbacks are query-confirmed meanwhile)."
+    },
+    {
+      "code": "ECONET",
+      "name": "Econet airtime and data",
+      "kind": "FULFILMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "deliver",
+        "status_query"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.econet.endpoint",
+      "verification": "SPEC_ONLY",
+      "notes": ""
+    },
+    {
+      "code": "NETONE",
+      "name": "NetOne airtime and data",
+      "kind": "FULFILMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "deliver",
+        "status_query"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.netone.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": ""
+    },
+    {
+      "code": "TELECEL",
+      "name": "Telecel airtime",
+      "kind": "FULFILMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "deliver",
+        "status_query"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.telecel.endpoint",
+      "verification": "SPEC_ONLY",
+      "notes": "SOAP."
+    },
+    {
+      "code": "ZESA",
+      "name": "ZESA prepaid electricity",
+      "kind": "BILLER",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "lookup",
+        "deliver",
+        "resend_lookup"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.esolutions.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Via eSolutions (base URL is their TEST host). Every vend draws vendor float: an unknown outcome is resolved by resend, never re-vended."
+    },
+    {
+      "code": "NYARADZO",
+      "name": "Nyaradzo funeral policy",
+      "kind": "BILLER",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "lookup",
+        "deliver",
+        "resend_lookup"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.esolutions.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Via eSolutions; amounts sent in dollars, not cents (spec)."
+    },
+    {
+      "code": "MOONLIGHT",
+      "name": "Moonlight funeral policy",
+      "kind": "BILLER",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "lookup",
+        "deliver",
+        "resend_lookup"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.esolutions.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Via eSolutions."
+    },
+    {
+      "code": "ZOL",
+      "name": "ZOL internet",
+      "kind": "BILLER",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "lookup",
+        "deliver",
+        "resend_lookup"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.esolutions.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Via eSolutions. ZWG support to be confirmed with eSolutions."
+    },
+    {
+      "code": "BULAWAYO",
+      "name": "City of Bulawayo bills",
+      "kind": "BILLER",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "lookup",
+        "deliver",
+        "resend_lookup"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "payport.esolutions.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Via eSolutions."
+    },
+    {
+      "code": "MERCHANT",
+      "name": "Merchant checkout (internal)",
+      "kind": "INTERNAL",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "deliver"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "",
+      "verification": "PRODUCTION_VERIFIED",
+      "notes": "No external call: marks merchant checkout payments delivered."
+    },
+    {
+      "code": "MTN_MOMO",
+      "name": "MTN MoMo",
+      "kind": "PAYMENT",
+      "currencies": [
+        "ZMW"
+      ],
+      "operations": [
+        "submit",
+        "callback",
+        "status_query"
+      ],
+      "callbackAuth": "QUERY_CONFIRMED",
+      "endpointProperty": "payport.mtn-momo.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "MoMo Open API Collection RequestToPay. Callbacks are unsigned at MTN, so they only trigger our status query. Currencies can be widened per market with payport.integrations.MTN_MOMO.currencies. Fails closed until credentials are configured."
+    },
+    {
+      "code": "AIRTEL_MONEY",
+      "name": "Airtel Money",
+      "kind": "PAYMENT",
+      "currencies": [
+        "ZMW"
+      ],
+      "operations": [
+        "submit",
+        "callback",
+        "status_query"
+      ],
+      "callbackAuth": "QUERY_CONFIRMED",
+      "endpointProperty": "payport.airtel-money.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Airtel Africa Open API Collections. Callbacks only trigger our status query. Currencies can be widened with payport.integrations.AIRTEL_MONEY.currencies. Fails closed until credentials are configured."
+    },
+    {
+      "code": "WALLET",
+      "name": "PayPort Wallet (internal)",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG",
+        "ZMW"
+      ],
+      "operations": [
+        "submit",
+        "status_query"
+      ],
+      "callbackAuth": "INTERNAL_PIN",
+      "endpointProperty": "",
+      "verification": "SPEC_ONLY",
+      "notes": "No external call: debits the holder's wallet in the ledger, only with a PIN-confirmed authorisation for the payment. No callbacks."
+    },
+    {
+      "code": "PAYPORT_WALLET",
+      "name": "Wallet top-up (internal)",
+      "kind": "INTERNAL",
+      "currencies": [
+        "USD",
+        "ZWG",
+        "ZMW"
+      ],
+      "operations": [
+        "deliver",
+        "status_query"
+      ],
+      "callbackAuth": "NONE",
+      "endpointProperty": "",
+      "verification": "SPEC_ONLY",
+      "notes": "No external call: credits the wallet in the ledger once the top-up payment is confirmed. Idempotent per payment."
+    }
+  ]
+}

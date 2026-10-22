@@ -78,6 +78,7 @@ public class AdminMerchantTransactionsController {
         m.put("currency", s.getCurrency());
         m.put("paymentMethodCode", s.getPaymentMethodCode());
         m.put("status", s.getStatus());
+        m.put("livemode", Boolean.TRUE.equals(s.getLivemode()));
         m.put("commissionAmountCents", s.getCommissionAmountCents());
         m.put("netAmountCents", s.getNetAmountCents());
         m.put("customerPhone", s.getCustomerPhone());

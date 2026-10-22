@@ -21,8 +21,14 @@ public class WebhookDelivery {
     @Column(nullable = false)
     private Long webhookId;
 
-    @Column(nullable = false)
+    /** Null for events that are not about a checkout session (e.g. payouts). */
     private Long checkoutSessionId;
+
+    /** Stable id of the event; a replay re-sends the same event id so receivers can de-duplicate. */
+    private String eventId;
+
+    /** The delivery this one replays (merchant-requested resend), if any. */
+    private Long replayOf;
 
     @Column(nullable = false)
     private String eventType;

@@ -35,12 +35,19 @@ public class SecurityConfig {
 
     private final UserRepository userRepository;
 
+    @org.springframework.beans.factory.annotation.Value("${payport.environment:production}")
+    private String environment = "production";
+
+    @org.springframework.beans.factory.annotation.Value("${payport.cors.extra-origins:}")
+    private String extraOrigins = "";
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtAuthenticationFilter jwtAuthFilter,
                                                    ApiKeyAuthenticationFilter apiKeyAuthFilter,
                                                    MerchantJwtAuthenticationFilter merchantJwtAuthFilter,
-                                                   RateLimitFilter rateLimitFilter) throws Exception {
+                                                   RateLimitFilter rateLimitFilter,
+                                                   MetricsTokenFilter metricsTokenFilter) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -83,6 +90,18 @@ public class SecurityConfig {
                         // permitted.
                         .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/checkout/*/pay").permitAll()
+                        // Phase 8: QR for an open session, QR resolution, USSD aggregator (HMAC-signed), FX quotes
+                        .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*/qr").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/qr/resolve").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ussd").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/fx/quote").permitAll()
+                        // Phase 8: POS terminals sign every request (HMAC + nonce, PosService); WhatsApp Cloud API
+                        // webhook (X-Hub-Signature-256, WhatsAppService). No user login on either.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/pos/sales/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales/*/card").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()
 
                         // Payment Links -- a customer visiting a shareable
                         // link has no more auth than a hosted checkout page
@@ -95,6 +114,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/transactions/pay").permitAll()
                         .requestMatchers("/api/v1/transactions/*").permitAll()
                         .requestMatchers("/api/v1/transactions/*/timeline").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/transactions/*/outcome").permitAll()
                         .requestMatchers("/api/v1/transactions/*/confirm-omari-otp").permitAll()
 
                         // Payment provider callbacks - reachable without a user JWT
@@ -103,6 +123,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/callbacks/**").permitAll()
 
                         .requestMatchers("/actuator/health").permitAll()
+                        // Phase 9: liveness/readiness probes; Prometheus scrape is checked by MetricsTokenFilter.
+                        .requestMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/info").permitAll()
                         .requestMatchers("/").permitAll()
 
@@ -110,21 +133,37 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/assistant/chat").permitAll()
                         .requestMatchers("/api/v1/products/**").permitAll()
                         .requestMatchers("/api/v1/bills/customer-info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/billers").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/billers/*/lookup").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*/code/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bundles/*/categories").permitAll()
+
+                        // Phase 9 defence in depth: staff consoles and merchant APIs are closed by URL as well as by
+                        // each controller's @PreAuthorize, so a route added without a guard is still not open to
+                        // customers (three admin controllers were found unguarded by the authorization matrix test).
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "OPS", "FINANCE", "COMPLIANCE", "OPS_MANAGER")
+                        .requestMatchers("/api/v1/merchant/**").hasAnyRole("MERCHANT", "MERCHANT_PENDING")
 
                         // Everything else requires a valid login. Staff-only endpoints are
                         // further restricted via @PreAuthorize on their controllers.
                         .anyRequest().authenticated()
                 )
                 // Rate limit login/register before anything else, then JWT auth
+                .addFilterBefore(metricsTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(merchantJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // Phase 9: an API serves JSON only, so the strictest policy applies: nothing may be loaded,
+                // framed or referred from a response. HSTS and nosniff are Spring Security defaults.
                 .headers(headers -> headers
-                        .frameOptions(frame -> frame.sameOrigin())
+                        .frameOptions(frame -> frame.deny())
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"))
+                        .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter("Permissions-Policy",
+                                "camera=(), microphone=(), geolocation=(), payment=()"))
+                        .httpStrictTransportSecurity(h -> h.includeSubDomains(true).maxAgeInSeconds(31536000))
                 );
 
         return http.build();
@@ -142,18 +181,23 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
+        List<String> origins = new java.util.ArrayList<>(List.of(
                 "https://payport.africa",
                 "https://www.payport.africa",
                 "https://app.payport.africa",
                 "https://admin.payport.africa",
-                "https://merchant.payport.africa",
-                // Local dev only -- these origins can never exist on the public internet.
-                "http://localhost:4321",
-                "http://localhost:3000",
-                "http://localhost:3001",
-                "http://localhost:3002"
-        ));
+                "https://merchant.payport.africa"));
+        // Phase 9 (R36): localhost origins only outside production. A production deployment that needs
+        // another browser origin lists it in payport.cors.extra-origins (comma-separated, https only).
+        if (!zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment)) {
+            origins.addAll(List.of("http://localhost:4321", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
+                    "http://localhost:5173", "http://localhost:8081"));
+        }
+        for (String o : extraOrigins.split(",")) {
+            String t = o.trim();
+            if (t.startsWith("https://")) origins.add(t);
+        }
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

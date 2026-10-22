@@ -40,4 +40,14 @@ public class ApiKey {
 
     private LocalDateTime lastUsedAt;
     private LocalDateTime revokedAt;
+
+    /** Comma-separated scopes, or "*" for full access (keys created before Phase 4). See ApiKeyScopes. */
+    @Column(nullable = false)
+    @Builder.Default
+    private String scopes = "*";
+
+    private LocalDateTime expiresAt;
+
+    /** The key this one replaced (rotation). */
+    private Long rotatedFromId;
 }

@@ -1,0 +1,174 @@
+# PayPort CI: the real build with real dependencies. This is the verification gate for
+# every phase: no change is considered built or tested until this workflow passes.
+name: ci
+
+on:
+  push:
+    branches: [ main, 'phase*' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Testcontainers needs the Docker Engine API version the runner's daemon accepts.
+      - name: Docker diagnostics for Testcontainers
+        run: |
+          echo "::notice title=docker::$(docker version --format 'server {{.Server.Version}} api {{.Server.APIVersion}} min-api {{.Server.MinAPIVersion}}')"
+          echo "api.version=$(docker version --format '{{.Server.APIVersion}}')" > ~/.docker-java.properties
+          echo "DOCKER_API_VERSION=$(docker version --format '{{.Server.APIVersion}}')" >> "$GITHUB_ENV"
+
+      # ISO 20022 schemas are in the repository; verify them against the pins (PROVENANCE.md).
+      - name: Verify ISO 20022 schemas
+        run: bash scripts/iso20022/fetch-schemas.sh src/main/resources/iso20022/xsd
+
+      # Compiles everything, runs unit tests and the Testcontainers MySQL tests
+      # (Docker is available on GitHub-hosted runners).
+      - name: mvn verify
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp verify 2>&1 | tee build.log || {
+            # Compiler errors as annotations (raw logs are not readable from outside the runner).
+            grep -E '^\[ERROR\] .*\.java:\[' build.log | sed 's/^\[ERROR\] //' | head -40 | sed 's/^/::error::/'
+            exit 1
+          }
+
+      - name: Publish test totals
+        if: always()
+        run: scripts/ci/test-summary.sh build-and-test 'ApplicationSmokeTest|LivemodeMigrationTest|PaymentLifecycleScenarioTest|FulfilmentJobScenarioTest|ReconSettlementScenarioTest|MerchantPlatformAcceptanceTest|MerchantPlatformUnitTest|StatementParsersTest|PaymentWindowsTest|ProviderIntegrationScenarioTest|EsolutionsContractTest|EcoCashContractTest|CircuitBreakerTest|RiskComplianceScenarioTest|NameMatcherTest|PushNotificationScenarioTest|UnSanctionsListParseTest|Iso20022ConformanceScenarioTest|Iso20022MappingTest|MarketRegistryTest|PlatformControlsScenarioTest|EmvQrTest|ApiContractExportTest|Phase8UnitTest|Phase8CompletionScenarioTest|SecurityResilienceScenarioTest'
+
+      - name: Upload API contract
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-contract
+          path: target/api-contract.json
+          if-no-files-found: warn
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: warn
+
+  migrations-production-like:
+    # Applies every migration with binary logging ON and as a user WITHOUT SUPER,
+    # which is how production MySQL is set up. Catches privilege problems the
+    # Testcontainers run (root-like user) cannot.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: payport
+          MYSQL_USER: payport
+          MYSQL_PASSWORD: payport
+        ports: [ '3306:3306' ]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations in order as the non-SUPER app user
+        run: scripts/phase0.5/apply-migrations.sh 127.0.0.1 3306 payport payport payport
+
+  ledger-db:
+    # Phase 1 ledger, shadow-posting and platform tests against real MySQL 8, exactly as
+    # production is meant to run: binlog on, migrations as a separate migration user, the
+    # app as a least-privilege user (scripts/db/grant-least-privilege.sh).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: payport
+        ports: [ '3306:3306' ]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Create migration and app users
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "
+            CREATE USER 'pp_migrate'@'%' IDENTIFIED BY 'mig'; GRANT ALL ON payport.* TO 'pp_migrate'@'%';
+            CREATE USER 'pp_app'@'%' IDENTIFIED BY 'app';"
+      - name: Apply migrations as the migration user
+        run: scripts/phase0.5/apply-migrations.sh 127.0.0.1 3306 payport pp_migrate mig
+      - name: Least-privilege grants for the app user
+        run: scripts/db/grant-least-privilege.sh 127.0.0.1 3306 root root payport pp_app %
+      - name: Ledger tests (real database)
+        run: >-
+          mvn -B -ntp test -Dgroups=ledger-db -Dsurefire.failIfNoSpecifiedTests=false
+          "-Dledger.test.appUrl=jdbc:mysql://127.0.0.1:3306/payport?user=pp_app&password=app&allowPublicKeyRetrieval=true&useSSL=false"
+          "-Dledger.test.adminUrl=jdbc:mysql://127.0.0.1:3306/payport?user=root&password=root&allowPublicKeyRetrieval=true&useSSL=false"
+      - name: Publish test totals
+        if: always()
+        run: scripts/ci/test-summary.sh ledger-db
+      # Phase 9: back up the database the ledger tests just wrote (routines and triggers included),
+      # restore it into an empty database and prove the copy is whole (rows, procedures, balances,
+      # ledger integrity). The restore time is the RTO evidence.
+      - name: Disaster-recovery drill (backup, restore, verify)
+        run: |
+          scripts/phase9/dr-drill.sh 127.0.0.1 3306 root root payport payport_dr_copy dr-report.txt
+          echo "::notice title=dr-drill::$(grep -E 'restore \(RTO\)|backup:' dr-report.txt | tr -s ' ' | paste -sd ';' -) $(grep RESULT dr-report.txt)"
+      - name: Upload DR report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-drill-report
+          path: dr-report.txt
+          if-no-files-found: warn
+
+  dependency-scan:
+    # Phase 9: known-vulnerability report for the Maven dependencies (OSV database). Report only:
+    # findings are triaged in docs/phase9/PHASE9_REPORT.md, they do not block a build by themselves.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: OSV scan of pom.xml
+        run: |
+          curl -sSfL -o osv-scanner https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64
+          chmod +x osv-scanner
+          set +e
+          ./osv-scanner --lockfile=pom.xml --format=table > osv-report.txt 2>&1
+          code=$?
+          set -e
+          cat osv-report.txt
+          n=$(grep -cE '^\| https://osv.dev' osv-report.txt || true)
+          echo "::notice title=dependency-scan::osv-scanner exit $code, $n advisories listed (report artifact osv-report)"
+          rows=$(grep -E '^\| https://osv.dev' osv-report.txt | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$5); gsub(/ /,"",$6); gsub(/https:\/\/osv.dev\//,"",$2); print $5"@"$6" "$2}' | sort -u | paste -sd ';' - || true)
+          echo "::warning title=osv-all::${rows:-none}"
+      - name: Upload OSV report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-report
+          path: osv-report.txt
+          if-no-files-found: warn

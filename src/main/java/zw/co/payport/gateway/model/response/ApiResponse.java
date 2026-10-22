@@ -28,6 +28,12 @@ public class ApiResponse<T> {
     private boolean success;
     private T data;
     private ErrorDetail error;
+    /**
+     * Error responses only: the same text as error.message, also at the top level. The frontends
+     * read response.data.message in ~80 places (ops, merchant, consumer, mobile), so without this the
+     * real reason -- including the provider's own wording -- never reached the person.
+     */
+    private String message;
     private Meta meta;
 
     public static <T> ApiResponse<T> success(T data, String requestId) {
@@ -44,6 +50,7 @@ public class ApiResponse<T> {
     public static <T> ApiResponse<T> error(String code, String message, String requestId) {
         return ApiResponse.<T>builder()
                 .success(false)
+                .message(message)
                 .error(ErrorDetail.builder()
                         .code(code)
                         .message(message)

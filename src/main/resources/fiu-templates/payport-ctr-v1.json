@@ -1,0 +1,30 @@
+{
+  "title": "Threshold (Cash) Transaction Report",
+  "reportType": "CTR",
+  "outputFormat": "GOAML_XML",
+  "goaml": { "reportCode": "CTR", "submissionCode": "E" },
+  "basis": [
+    "MLPC Act s30(6) and FIU directives on threshold reporting (RBZ Guideline 01-2025 s3.133-3.135)",
+    "Threshold and aggregation from compliance parameters CTR.THRESHOLD_MINOR and CTR.AGGREGATION_HOURS (PROVISIONAL until the FIU directive for payment service providers is confirmed)",
+    "A suspicious transaction above the threshold is reported both as an STR and a CTR (Guideline 01-2025 s3.135(b))"
+  ],
+  "sections": [
+    { "id": "A", "label": "Reporting institution", "fields": [
+      { "name": "rentity_id", "label": "goAML reporting entity ID", "source": "param:FIU.REPORTING_ENTITY_ID", "required": true },
+      { "name": "rentity_name", "label": "Institution name", "source": "param:FIU.REPORTING_ENTITY_NAME", "required": true },
+      { "name": "entity_reference", "label": "Internal report reference", "source": "report.ref", "required": true }
+    ]},
+    { "id": "B", "label": "Reporting officer", "fields": [
+      { "name": "officer_name", "label": "Compliance officer (preparer)", "source": "officer.full_name", "required": true },
+      { "name": "officer_email", "label": "Email", "source": "officer.email", "required": true }
+    ]},
+    { "id": "C", "label": "Period and threshold", "fields": [
+      { "name": "period", "label": "Reporting period", "source": "report.period", "required": true },
+      { "name": "thresholds", "label": "Threshold by currency (minor units)", "source": "param:CTR.THRESHOLD_MINOR", "required": true },
+      { "name": "aggregation_hours", "label": "Aggregation window (hours)", "source": "param:CTR.AGGREGATION_HOURS", "required": true }
+    ]},
+    { "id": "D", "label": "Reportable transactions", "fields": [
+      { "name": "lines", "label": "Customers and aggregated transactions at or above the threshold", "source": "report.lines", "required": true }
+    ]}
+  ]
+}

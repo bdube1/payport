@@ -29,6 +29,9 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
     @Override
     public String getProviderCode() { return "ZESA"; }
 
+    @Override
+    public boolean usesDeliveryReference() { return true; }
+
     public static String validateMeter(String meterNumber) {
         if (meterNumber == null) return "Meter number is required";
         String clean = meterNumber.trim().replaceAll("\\s+", "");
@@ -45,30 +48,30 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
         }
 
         String vendorRef = buildVendorRef("CI");
-        log.info("[ZESA] ========== CUSTOMER INFO DEBUG ==========");
-        log.info("[ZESA] Meter number: {}", meterNumber);
-        log.info("[ZESA] Request currency code sent to eSolutions: {}", currencyCode);
-        log.info("[ZESA] Vendor reference: {}", vendorRef);
+        log.debug("[ZESA] ========== CUSTOMER INFO DEBUG ==========");
+        log.info("[ZESA] Customer info for meter {} ({})", maskMeter(meterNumber), currencyCode);
+        log.debug("[ZESA] Request currency code sent to eSolutions: {}", currencyCode);
+        log.debug("[ZESA] Vendor reference: {}", vendorRef);
 
         ESolutionsResponse resp = client.customerInfo(
                 MERCHANT, PRODUCT, meterNumber.trim(), currencyCode, 0, vendorRef);
 
         // DEBUG: Print RAW response before any processing
         String rawJson = resp.getRawJson();
-        log.info("[ZESA] ========== RAW eSolutions RESPONSE ==========");
-        log.info("[ZESA] Full JSON response: {}", rawJson);
+        log.debug("[ZESA] ========== RAW eSolutions RESPONSE ==========");
+        log.debug("[ZESA] Full JSON response: {}", rawJson);
 
         // DEBUG: Print ALL fields from the response
-        log.info("[ZESA] ========== PARSED RESPONSE FIELDS ==========");
-        log.info("[ZESA] responseCode: {}", resp.getResponseCode());
-        log.info("[ZESA] narrative: {}", resp.getNarrative());
-        log.info("[ZESA] currencyCode (from response): {}", resp.getCurrencyCode());
-        log.info("[ZESA] settlementCurrency: {}", resp.getSettlementCurrency());
-        log.info("[ZESA] customerData: {}", resp.getCustomerData());
-        log.info("[ZESA] utilityAccount: {}", resp.getUtilityAccount());
-        log.info("[ZESA] transactionRef: {}", resp.getTransactionRef());
-        log.info("[ZESA] merchantName: {}", resp.getMerchantName());
-        log.info("[ZESA] productName: {}", resp.getProductName());
+        log.debug("[ZESA] ========== PARSED RESPONSE FIELDS ==========");
+        log.debug("[ZESA] responseCode: {}", resp.getResponseCode());
+        log.debug("[ZESA] narrative: {}", resp.getNarrative());
+        log.debug("[ZESA] currencyCode (from response): {}", resp.getCurrencyCode());
+        log.debug("[ZESA] settlementCurrency: {}", resp.getSettlementCurrency());
+        log.debug("[ZESA] customerData: {}", resp.getCustomerData());
+        log.debug("[ZESA] utilityAccount: {}", resp.getUtilityAccount());
+        log.debug("[ZESA] transactionRef: {}", resp.getTransactionRef());
+        log.debug("[ZESA] merchantName: {}", resp.getMerchantName());
+        log.debug("[ZESA] productName: {}", resp.getProductName());
 
         if (!resp.isSuccess()) {
             String errorMsg = buildErrorMessage(resp);
@@ -98,19 +101,19 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
         // Get the currency directly from response - NO MODIFICATION
         String meterCurrency = resp.getCurrencyCode();
 
-        log.info("[ZESA] ========== FINAL VALUES ==========");
-        log.info("[ZESA] customerName: {}", customerName);
-        log.info("[ZESA] customerAddress: {}", customerAddress);
-        log.info("[ZESA] meterCurrency (direct from resp.getCurrencyCode()): {}", meterCurrency);
+        log.debug("[ZESA] ========== FINAL VALUES ==========");
+        log.debug("[ZESA] customerName: {}", customerName);
+        log.debug("[ZESA] customerAddress: {}", customerAddress);
+        log.debug("[ZESA] meterCurrency (direct from resp.getCurrencyCode()): {}", meterCurrency);
 
         if (meterCurrency == null || meterCurrency.isBlank()) {
             log.warn("[ZESA] WARNING: No currency code in eSolutions response for meter {}", maskMeter(meterNumber));
             log.warn("[ZESA] This should not happen. Check eSolutions configuration.");
             meterCurrency = "USD";
-            log.info("[ZESA] Defaulting to: {}", meterCurrency);
+            log.debug("[ZESA] Defaulting to: {}", meterCurrency);
         }
 
-        log.info("[ZESA] ========== END CUSTOMER INFO ==========");
+        log.debug("[ZESA] ========== END CUSTOMER INFO ==========");
 
         return new ZesaCustomerInfo(
                 customerName,
@@ -133,7 +136,8 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
                     .build();
         }
 
-        String vendorRef = buildVendorRef(request.getPayportReference());
+        String vendorRef = (request.getDeliveryReference() != null ? request.getDeliveryReference()
+                : zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.forDelivery(request.getPayportReference(), 1));
         log.info("[ZESA] Token purchase for meter {} ref={} amount={} currency={}",
                 maskMeter(meterNumber), vendorRef, request.getAmountCents(), request.getCurrency());
 
@@ -197,6 +201,7 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
             log.error("[ZESA] Resend itself failed for {}: {}", originalVendorRef, e.getMessage(), e);
             return FulfilmentResult.builder()
                     .success(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .fulfilmentReference(originalVendorRef)
                     .message("Could not confirm whether this token was already generated -- needs manual verification before retrying.")
                     .rawResponse("Resend attempt failed: " + e.getMessage())
@@ -224,13 +229,19 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
 
     @Override
     public FulfilmentStatusResult queryDelivery(String originalVendorRef) throws Exception {
-        log.info("[ZESA] Resend lookup for originalRef={}", originalVendorRef);
+        return queryDelivery(originalVendorRef, "USD");
+    }
+
+    /** Resend/lookup in the payment's own currency (ZWG meters were looked up as USD before). */
+    @Override
+    public FulfilmentStatusResult queryDelivery(String originalVendorRef, String currency) throws Exception {
+        log.info("[ZESA] Resend lookup for originalRef={} ({})", originalVendorRef, currency);
         String newVendorRef = buildVendorRef("RS");
 
         ESolutionsResponse resp = client.resend(
                 MERCHANT, PRODUCT,
                 null,
-                0, "USD",
+                0, currency == null || currency.isBlank() ? "USD" : currency,
                 originalVendorRef,
                 newVendorRef
         );
@@ -450,9 +461,7 @@ public class ZesaTokenAdaptor implements FulfilmentProviderAdaptor {
     }
 
     private String buildVendorRef(String prefix) {
-        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        String p = prefix.replaceAll("[^A-Za-z0-9]", "").substring(0, Math.min(prefix.length(), 4));
-        return (p + ts).substring(0, Math.min(p.length() + ts.length(), 20));
+        return zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.lookup(prefix);
     }
 
     private String maskMeter(String meter) {

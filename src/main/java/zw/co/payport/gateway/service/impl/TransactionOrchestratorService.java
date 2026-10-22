@@ -51,24 +51,12 @@ public class TransactionOrchestratorService {
      */
     public record TransactionStatusChangedEvent(String transactionReference, String newStatus) {}
     private final BundleService                bundleService;
-    private final CustomerMessageTranslator     customerMessageTranslator;
-
-    // When true, skips the real payment provider for ZESA/TelOne/Bulawayo/ZOL/
-    // Nyaradzo/Moonlight bills and Econet airtime/data, simulating a successful
-    // payment and proceeding straight to fulfilment. For end-to-end testing
-    // with unfunded test accounts only -- must be false in production.
-    private static final boolean TEST_BYPASS_BILL_PAYMENTS = false;
-
-    private static final List<String> BYPASS_PRODUCT_CODES = List.of(
-            "ZESA_TOKEN",
-            "TELONE_BILL",
-            "BULAWAYO_BILL",
-            "ZOL_PAYMENT",
-            "NYARADZO_PAYMENT",
-            "MOONLIGHT_PAYMENT",
-            "AIRTIME_ECONET",
-            "DATA_ECONET"
-    );
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager;
+    private final zw.co.payport.gateway.payments.PaymentAttemptStore attemptStore;
+    private final zw.co.payport.gateway.payments.PaymentCheckStore   checkStore;
+    private final jakarta.persistence.EntityManager entityManager;
+    private final zw.co.payport.gateway.recon.ReconExceptionStore reconExceptions;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     // Helper method to safely convert Long to int
     private int toInt(Long value) {
@@ -83,12 +71,61 @@ public class TransactionOrchestratorService {
             throw new DuplicateReferenceException(dto.getReference());
         }
 
+        // Channel switched off from the portal: refuse before anything is created or sent. Merchant
+        // checkout ("API") is checked by CheckoutSessionService (API key, payment link, hosted page).
+        String channel = dto.getChannel() == null ? "WEB" : dto.getChannel().toUpperCase(java.util.Locale.ROOT);
+        if (channelService != null && !"API".equals(channel)) channelService.require(channel);
+
         ProductType product = productTypeRepository
                 .findByCodeAndIsActiveTrue(dto.getProductTypeCode())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Product type not found or inactive: " + dto.getProductTypeCode()));
 
         product.validateAmount(dto.getAmountCents());
+
+        // Numbering plans come from the market settings: a market switched on in the portal accepts its customers.
+        if (marketRegistry != null && dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()
+                && !marketRegistry.validMobileInAnyMarket(dto.getCustomerPhone())) {
+            throw new IllegalArgumentException("Customer phone is not a mobile number in a country PayPort serves");
+        }
+
+        // Currency switches from the portal: the platform must accept the currency (and, outside merchant
+        // checkout, take live money in it), and the product must have it switched on.
+        String payCcy = dto.getCurrency() == null ? "USD" : dto.getCurrency().toUpperCase(java.util.Locale.ROOT);
+        if (marketRegistry != null) {
+            boolean ok = "API".equals(channel) ? marketRegistry.supportedCurrency(payCcy) : marketRegistry.liveCurrency(payCcy);
+            if (!ok) throw new IllegalArgumentException("Payments in " + payCcy + " are not available at the moment");
+        }
+        Integer productCurrencies = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_currencies WHERE product_type_id = ?", Integer.class, product.getId());
+        if (productCurrencies != null && productCurrencies > 0) {
+            Integer active = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_currencies WHERE product_type_id = ? AND currency = ? AND is_active = TRUE",
+                    Integer.class, product.getId(), payCcy);
+            if (active == null || active == 0) throw new IllegalArgumentException(product.getName() + " is not available in " + payCcy + " at the moment");
+        }
+
+        // Phase 6: transaction monitoring (OBSERVE = alert only; ENFORCE + BLOCK refuses here, before payment).
+        if (riskEngine != null) {
+            riskEngine.evaluate(new zw.co.payport.gateway.risk.RiskEngine.Payment(dto.getReference(), dto.getCustomerPhone(), null,
+                    dto.getAmountCents() == null ? 0 : dto.getAmountCents(), dto.getCurrency() != null ? dto.getCurrency() : "USD",
+                    product.getCode(), dto.getRecipientIdentifier()));
+        }
+
+        // Phase 5 biller framework: a bill account must be well-formed, and the biller must accept the
+        // currency and amount, BEFORE the customer is asked to pay (not discovered at delivery).
+        if (billerRegistry != null) {
+            String payCurrency = dto.getCurrency() != null ? dto.getCurrency() : "USD";
+            billerRegistry.find(product.getProviderCode()).ifPresent(b -> {
+                String problem = b.validateAccount(dto.getRecipientIdentifier());
+                if (problem == null) problem = b.validateAmount(dto.getAmountCents(), payCurrency);
+                if (problem != null) throw new IllegalArgumentException(problem);
+            });
+        }
+
+        // Phase 8 wallet top-up: the wallet must exist, be usable and have room BEFORE the customer pays.
+        if ("WALLET".equalsIgnoreCase(product.getCategory())) {
+            if (walletService == null) throw new IllegalArgumentException("Wallet top-ups are not available");
+            walletService.validateTopUp(dto.getRecipientIdentifier(), payCcy, dto.getAmountCents() == null ? 0 : dto.getAmountCents());
+        }
 
         Transaction tx = Transaction.builder()
                 .reference(dto.getReference())
@@ -135,6 +172,12 @@ public class TransactionOrchestratorService {
      */
     @Transactional
     public TransactionResponse simulateTestPayment(String reference, boolean simulateSuccess) {
+        return simulateTestPayment(reference, simulateSuccess, null);
+    }
+
+    /** Test mode only: a simulated provider answer (failureMessage = the simulated provider's words on a decline). */
+    @Transactional
+    public TransactionResponse simulateTestPayment(String reference, boolean simulateSuccess, String failureMessage) {
         log.info("[ORCHESTRATOR] TEST MODE: simulating {} payment for: {}", simulateSuccess ? "successful" : "failed", reference);
 
         Transaction tx = loadTransaction(reference);
@@ -152,116 +195,284 @@ public class TransactionOrchestratorService {
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
                 .rawPayload("{\"status\":\"TEST_MODE\",\"message\":\"Simulated by merchant test API key, no real provider was called\"}")
+                .failureMessage(simulateSuccess ? null : failureMessage)
                 .build();
 
         handlePaymentCallback(simulatedEvent);
         return TransactionResponse.from(loadTransaction(reference));
     }
 
-    @Transactional
+    /**
+     * Sends a payment to the provider, safely under failures (Phase 2, ADR-0010).
+     *
+     * 1. tx1 (committed BEFORE the provider call): lock the payment, move it to
+     *    PAYMENT_PENDING, record the attempt as SENT and open a resolver check. Two
+     *    identical /pay requests serialise on the row lock; the second finds the payment
+     *    already pending and is refused, so the customer gets exactly one push.
+     * 2. The provider call runs outside any database transaction.
+     * 3. tx2 records what came back:
+     *    - ACCEPTED: provider reference stored, "pending" SMS sent;
+     *    - REJECTED (the provider definitely did not take the payment): PAYMENT_FAILED;
+     *    - UNKNOWN (read timeout, 5xx, broken connection...): the customer may have been
+     *      charged, so the payment stays PENDING with no failure SMS, and the resolver
+     *      settles it by status query. It is never re-sent.
+     *    A callback that arrived while the call was in flight has already moved the
+     *    payment on; tx2 then records the attempt and leaves the payment alone.
+     */
     public TransactionResponse submitPayment(PayTransactionRequest dto) throws Exception {
         log.info("[ORCHESTRATOR] Submitting payment for: {}", dto.getReference());
 
-        Transaction tx = loadTransaction(dto.getReference());
+        PreparedSubmission p = requiresNew().execute(s -> prepareSubmission(dto));
+        PaymentProviderAdaptor adaptor = adaptorRegistry.getPaymentAdaptor(p.providerCode());
+
+        PaymentProviderAdaptor.PaymentSubmitResult result;
+        long started = System.currentTimeMillis();
+        try {
+            result = adaptor.submitPayment(p.request());
+            if (result == null) {
+                result = PaymentProviderAdaptor.PaymentSubmitResult.builder()
+                        .submitted(false).outcomeUnknown(true).message("Provider adaptor returned no result").build();
+            }
+            if (providerHealth != null) {
+                if (result.isOutcomeUnknown()) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, "submit outcome unknown");
+                else providerHealth.success(p.providerCode(), System.currentTimeMillis() - started);
+            }
+        } catch (Exception e) {
+            if (providerHealth != null) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
+            boolean unknown = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e);
+            log.error("[ORCHESTRATOR] {} submit for {} threw {} -- outcome {}", p.providerCode(), p.reference(),
+                    e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT SENT");
+            result = PaymentProviderAdaptor.PaymentSubmitResult.builder()
+                    .submitted(false).outcomeUnknown(unknown)
+                    .message(unknown ? p.providerCode() + " call failed: " + e.getMessage()
+                            : "Could not reach " + p.providerCode() + ". No money was taken.")
+                    .rawResponse(e.getClass().getName() + ": " + e.getMessage())
+                    .build();
+        }
+
+        final PaymentProviderAdaptor.PaymentSubmitResult outcome = result;
+        Transaction tx = requiresNew().execute(s -> recordSubmissionOutcome(p, outcome));
+
+        log.info("[ORCHESTRATOR] Payment submitted: {} attempt={} outcome={} status={}", tx.getReference(), p.attemptNo(),
+                outcome.isSubmitted() ? "ACCEPTED" : outcome.isOutcomeUnknown() ? "UNKNOWN" : "REJECTED", tx.getStatus());
+
+        TransactionResponse response = TransactionResponse.from(tx);
+        // ZimSwitch: result.getMessage() IS the widget script URL (see ZimSwitchAdaptor.submitPayment),
+        // saved as paymentProviderMessage; the frontend needs it to load the card form.
+        if (outcome.isSubmitted() && "ZIMSWITCH".equalsIgnoreCase(p.providerCode())) {
+            response.setWidgetJsUrl(outcome.getMessage());
+            response.setPaymentCorrelator(outcome.getProviderReference());
+        }
+        return response;
+    }
+
+    private record PreparedSubmission(String reference, String providerCode, int attemptNo, String attemptReference,
+                                      PaymentProviderAdaptor.PaymentRequest request) {}
+
+    @org.springframework.beans.factory.annotation.Value("${payport.payments.max-attempts:3}")
+    private int maxPaymentAttempts;
+
+    /** Phase 5: provider kill switch and circuit breakers (optional so focused tests can build the service without it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.integration.ProviderHealthService providerHealth;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.billers.BillerRegistry billerRegistry;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.RiskEngine riskEngine;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channelService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.markets.MarketRegistry marketRegistry;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.integration.IntegrationRegister integrationRegister;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.wallets.WalletService walletService;
+
+    private org.springframework.transaction.support.TransactionTemplate requiresNew() {
+        org.springframework.transaction.support.TransactionTemplate t =
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        t.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return t;
+    }
+
+    /**
+     * Starts an attempt on the payment intent. The first attempt is sent with the payment
+     * reference; a new attempt is allowed only after the previous one DEFINITELY failed
+     * (PAYMENT_FAILED), and is sent as reference-N because providers reject a reused reference.
+     * A payment that timed out or got no response cannot be attempted again: the first
+     * attempt might still be charged.
+     */
+    private PreparedSubmission prepareSubmission(PayTransactionRequest dto) {
+        Transaction tx = lockTransaction(dto.getReference());
         assertTransition(tx, TransactionStatus.PAYMENT_PENDING);
 
         PaymentMethod paymentMethod = paymentMethodRepository
                 .findByCodeAndIsActiveTrue(dto.getPaymentMethodCode())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Payment method not found or inactive: " + dto.getPaymentMethodCode()));
+        String providerCode = paymentMethod.getCode().toUpperCase();
+        adaptorRegistry.getPaymentAdaptor(providerCode); // fail before anything is recorded if there is no adaptor
+
+        int attemptNo = attemptStore.nextAttemptNo(tx.getReference());
+        if (attemptNo > maxPaymentAttempts) {
+            throw new InvalidStateTransitionException(tx.getReference(), tx.getStatus(), TransactionStatus.PAYMENT_PENDING);
+        }
+        String attemptReference = zw.co.payport.gateway.payments.PaymentAttemptStore.attemptReference(tx.getReference(), attemptNo);
 
         tx.setPaymentMethod(paymentMethod);
-
         if (dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()) {
             tx.setCustomerPhone(dto.getCustomerPhone());
         }
 
-        String productCode = tx.getProductType().getCode();
-        boolean isBypassProduct = BYPASS_PRODUCT_CODES.contains(productCode);
-
-        if (TEST_BYPASS_BILL_PAYMENTS && isBypassProduct) {
-            log.info("[TEST_BYPASS] Skipping actual payment for product: {} reference: {}",
-                    productCode, tx.getReference());
-
-            transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
-                    "TEST_BYPASS", "Test bypass - moving to pending", null);
-            tx.setPaymentSubmittedAt(LocalDateTime.now());
-            transactionRepository.save(tx);
-
-            PaymentProviderAdaptor.CallbackEvent simulatedEvent = PaymentProviderAdaptor.CallbackEvent.builder()
-                    .payportReference(tx.getReference())
-                    .providerReference("TEST_BYPASS_" + System.currentTimeMillis())
-                    .status("SUCCESS")
-                    .amountCents(toInt(tx.getAmountCents()))
-                    .currency(tx.getCurrency())
-                    .rawPayload("{\"status\":\"TEST_BYPASS\", \"message\":\"Test bypass - payment simulated\"}")
-                    .build();
-
-            handlePaymentCallback(simulatedEvent);
-            log.info("[TEST_BYPASS] Payment bypass completed for: {}", tx.getReference());
-            return TransactionResponse.from(tx);
+        LocalDateTime now = LocalDateTime.now();
+        transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
+                "SYSTEM", "Payment attempt " + attemptNo + " submitted to " + providerCode + " as " + attemptReference, null);
+        tx.setPaymentSubmittedAt(now);
+        tx.setPaymentProviderCode(providerCode);
+        tx.setPaymentProviderStatus("SENDING");
+        tx.setPaymentAttemptReference(attemptReference);
+        tx.setPaymentAttemptCount(attemptNo);
+        tx.setPaymentOutcome(null);
+        tx.setFailureReason(null);
+        tx.setFailureDetails(null);
+        tx.setFailedAt(null);
+        if (attemptNo > 1) {
+            tx.setProviderReference(null);
+            tx.setPaymentCorrelator(null);
         }
+        transactionRepository.save(tx);
 
-        PaymentProviderAdaptor adaptor = adaptorRegistry.getPaymentAdaptor(dto.getPaymentMethodCode());
+        attemptStore.recordSent(tx.getReference(), attemptNo, attemptReference, providerCode, now);
+        checkStore.open(tx.getReference(), providerCode, now,
+                now.plus(zw.co.payport.gateway.scheduler.PaymentReconciliationScheduler.GRACE));
 
-        PaymentProviderAdaptor.PaymentRequest paymentReq = PaymentProviderAdaptor.PaymentRequest.builder()
-                .payportReference(tx.getReference())
+        PaymentProviderAdaptor.PaymentRequest req = PaymentProviderAdaptor.PaymentRequest.builder()
+                .payportReference(attemptReference)
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
                 .customerPhone(tx.getCustomerPhone())
                 .description("Payport " + tx.getProductType().getName())
                 .build();
+        // Capability declaration: the provider must accept the payment's currency.
+        if (integrationRegister != null) {
+            var declared = integrationRegister.get(providerCode);
+            if (declared != null && !declared.supportsCurrency(tx.getCurrency())) {
+                throw new IllegalArgumentException(declared.name() + " does not accept " + tx.getCurrency() + " payments");
+            }
+        }
+        // Last check before anything is recorded or sent: suspended provider or open circuit -> refuse now.
+        if (providerHealth != null) providerHealth.acquire(providerCode, paymentMethod.getName() != null ? paymentMethod.getName() : providerCode);
+        return new PreparedSubmission(tx.getReference(), providerCode, attemptNo, attemptReference, req);
+    }
 
-        transitionStatus(tx, TransactionStatus.PAYMENT_PENDING,
-                "SYSTEM", "Payment submitted to " + dto.getPaymentMethodCode(), null);
+    private Transaction recordSubmissionOutcome(PreparedSubmission p, PaymentProviderAdaptor.PaymentSubmitResult result) {
+        LocalDateTime now = LocalDateTime.now();
+        Transaction tx = lockTransaction(p.reference());
+        boolean stillPending = tx.getStatus() == TransactionStatus.PAYMENT_PENDING
+                && p.attemptReference().equals(tx.getPaymentAttemptReference());
 
-        tx.setPaymentSubmittedAt(LocalDateTime.now());
+        if (result.isSubmitted()) {
+            attemptStore.recordOutcome(p.reference(), p.attemptNo(), zw.co.payport.gateway.payments.PaymentAttemptStore.Status.ACCEPTED,
+                    result.getProviderReference(), null, result.getMessage(), now);
+            if (tx.getProviderReference() == null || stillPending) {
+                tx.setProviderReference(result.getProviderReference());
+            }
+            if (tx.getPaymentCorrelator() == null || stillPending) {
+                tx.setPaymentCorrelator(result.getProviderReference());
+            }
+            if (stillPending) {
+                tx.setPaymentProviderStatus("SUBMITTED");
+                if (result.getMessage() != null && !result.getMessage().isBlank()) {
+                    tx.setPaymentProviderMessage(result.getMessage());
+                }
+                if (result.getRawResponse() != null) {
+                    tx.setPaymentProviderRawResponse(truncate(result.getRawResponse(), 4000));
+                }
+            }
+            transactionRepository.save(tx);
+            return tx;
+        }
+
+        if (result.isOutcomeUnknown()) {
+            attemptStore.recordOutcome(p.reference(), p.attemptNo(), zw.co.payport.gateway.payments.PaymentAttemptStore.Status.UNKNOWN,
+                    null, "UNKNOWN_OUTCOME", result.getMessage(), now);
+            if (stillPending) {
+                tx.setPaymentProviderStatus("UNKNOWN");
+                tx.setPaymentProviderMessage(truncate("Outcome unknown, confirming with the provider: " + result.getMessage(), 500));
+                transactionRepository.save(tx);
+                checkStore.checkSoon(p.reference(), now.plus(zw.co.payport.gateway.scheduler.PaymentReconciliationScheduler.GRACE));
+            }
+            log.warn("[ORCHESTRATOR] {} outcome UNKNOWN for {} -- left pending for the resolver, not failed and not re-sent",
+                    p.providerCode(), p.attemptReference());
+            return tx;
+        }
+
+        attemptStore.recordOutcome(p.reference(), p.attemptNo(), zw.co.payport.gateway.payments.PaymentAttemptStore.Status.REJECTED,
+                null, "REJECTED", result.getMessage(), now);
+        if (!stillPending) {
+            // A callback already moved the payment on (e.g. confirmed) although the submit call says rejected:
+            // the provider contradicts itself. Never undo a confirmation here; flag it.
+            log.error("[ORCHESTRATOR] CONTRADICTION for {}: submit was rejected ({}) but the payment is already {} -- left as is; review",
+                    p.reference(), result.getMessage(), tx.getStatus());
+            return tx;
+        }
+        transitionStatus(tx, TransactionStatus.PAYMENT_FAILED,
+                p.providerCode() + "_API", "Provider rejected: " + result.getMessage(), result.getRawResponse());
+        tx.setFailedAt(now);
+        tx.setFailureReason(providerMessageOr(result.getMessage(), p.providerCode() + " declined the payment."));
+        tx.setFailureDetails(result.getRawResponse());
+        tx.setPaymentProviderStatus("REJECTED");
         transactionRepository.save(tx);
+        checkStore.close(p.reference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "rejected at submit", now);
+        return tx;
+    }
 
-        PaymentProviderAdaptor.PaymentSubmitResult result = adaptor.submitPayment(paymentReq);
+    /** The provider's own wording when there is one (owner decision: never replace it with ours). */
+    static String providerMessageOr(String providerMessage, String fallback) {
+        if (providerMessage == null || providerMessage.isBlank()) return fallback;
+        return truncate(providerMessage.trim(), 500);
+    }
 
-        if (!result.isSubmitted()) {
-            transitionStatus(tx, TransactionStatus.PAYMENT_FAILED,
-                    paymentMethod.getCode() + "_API",
-                    "Provider rejected: " + result.getMessage(),
-                    result.getRawResponse());
-            tx.setFailedAt(LocalDateTime.now());
-            String customerMessage = customerMessageTranslator.forPaymentFailure(result.getMessage());
-            tx.setFailureReason(customerMessage);
-            tx.setFailureDetails(result.getRawResponse());
-            transactionRepository.save(tx);
-            smsNotificationService.sendPaymentFailed(tx, customerMessage);
-        } else {
-            tx.setProviderReference(result.getProviderReference());
-            tx.setPaymentCorrelator(result.getProviderReference());
-            tx.setPaymentProviderCode(dto.getPaymentMethodCode());
-            tx.setPaymentProviderStatus("SUBMITTED");
-            if (result.getMessage() != null && !result.getMessage().isBlank()) {
-                tx.setPaymentProviderMessage(result.getMessage());
-            }
-            if (result.getRawResponse() != null) {
-                String raw = result.getRawResponse();
-                tx.setPaymentProviderRawResponse(raw.length() > 4000 ? raw.substring(0, 4000) : raw);
-            }
-            transactionRepository.save(tx);
-            smsNotificationService.sendPaymentPending(tx, dto.getPaymentMethodCode());
-        }
+    /** Outcome shown to the customer when the payment window closes without a definite provider answer. */
+    public enum ExpiryOutcome { TIMED_OUT, NO_RESPONSE }
 
-        log.info("[ORCHESTRATOR] Payment submitted: {} status={}", tx.getReference(), tx.getStatus());
+    /**
+     * Closes the payment window: PAYMENT_PENDING -> PAYMENT_TIMEOUT with the outcome the
+     * customer is told (TIMED_OUT or NO_RESPONSE), under the row lock and only if the payment
+     * is still pending on the same attempt (a confirmation that just landed is never
+     * overwritten). Background checks continue for late-payment detection; a late success is
+     * then handled by the late-payment policy, never silently.
+     */
+    @Transactional
+    public boolean expirePayment(String reference, String attemptReference, ExpiryOutcome outcome, String providerMessage) {
+        Transaction tx = lockTransactionOrNull(reference);
+        if (tx == null || tx.getStatus() != TransactionStatus.PAYMENT_PENDING) return false;
+        if (attemptReference != null && !attemptReference.equals(tx.getPaymentAttemptReference())) return false;
+        transitionStatus(tx, TransactionStatus.PAYMENT_TIMEOUT, "EXPIRY",
+                outcome == ExpiryOutcome.NO_RESPONSE ? "No response from " + tx.getPaymentProviderCode() + " within the payment window"
+                        : "Payment not completed within the payment window", providerMessage);
+        tx.setPaymentOutcome(outcome.name());
+        tx.setFailureReason(outcome == ExpiryOutcome.NO_RESPONSE
+                ? "No response from " + providerName(tx) + ". The transaction timed out."
+                : providerMessageOr(providerMessage, "The transaction timed out."));
+        tx.setFailureDetails(providerMessage);
+        transactionRepository.save(tx);
+        return true;
+    }
 
-        TransactionResponse response = TransactionResponse.from(tx);
-        // TransactionResponse.from(tx) only pulls from persisted entity
-        // columns, and there's no dedicated "widget URL" column -- for
-        // ZimSwitch specifically, result.getMessage() IS that widget
-        // script URL (see ZimSwitchAdaptor.submitPayment), already saved
-        // as paymentProviderMessage above. Surfacing it here is what lets
-        // the frontend actually load the card form; without this, the
-        // field exists on the DTO but was never being filled in.
-        if (result.isSubmitted() && "ZIMSWITCH".equalsIgnoreCase(dto.getPaymentMethodCode())) {
-            response.setWidgetJsUrl(tx.getPaymentProviderMessage());
-            response.setPaymentCorrelator(tx.getPaymentCorrelator());
-        }
-        return response;
+    private static String providerName(Transaction tx) {
+        return tx.getPaymentMethod() != null && tx.getPaymentMethod().getName() != null ? tx.getPaymentMethod().getName()
+                : String.valueOf(tx.getPaymentProviderCode());
+    }
+
+    private static String truncate(String s, int max) {
+        return s == null || s.length() <= max ? s : s.substring(0, max);
     }
 
     /**
@@ -292,7 +503,7 @@ public class TransactionOrchestratorService {
             throw new IllegalArgumentException("The code is required");
         }
 
-        Transaction tx = loadTransaction(reference);
+        Transaction tx = lockTransaction(reference);
 
         if (!"OMARI".equalsIgnoreCase(tx.getPaymentProviderCode())) {
             throw new IllegalStateException("This transaction isn't an Omari payment");
@@ -334,7 +545,7 @@ public class TransactionOrchestratorService {
         }
 
         PaymentProviderAdaptor.CallbackEvent event = PaymentProviderAdaptor.CallbackEvent.builder()
-                .payportReference(tx.getReference())
+                .payportReference(PaymentStatusVerifier.attemptReference(tx))
                 .providerReference(omariResponse.getPaymentReference() != null ? omariResponse.getPaymentReference() : tx.getProviderReference())
                 .status(omariResponse.isError() ? "FAILED" : "SUCCESS")
                 .amountCents(toInt(tx.getAmountCents()))
@@ -342,7 +553,7 @@ public class TransactionOrchestratorService {
                 .timestamp(java.time.LocalDateTime.now().toString())
                 .rawPayload(rawPayload)
                 .failureMessage(omariResponse.isError()
-                        ? (outOfAttemptsMessage != null ? outOfAttemptsMessage : customerMessageTranslator.forPaymentFailure(omariResponse.getMessage()))
+                        ? providerMessageOr(omariResponse.getMessage(), outOfAttemptsMessage != null ? outOfAttemptsMessage : "O'mari declined the payment.")
                         : null)
                 .build();
 
@@ -358,305 +569,414 @@ public class TransactionOrchestratorService {
         return m.contains("otp") && (m.contains("invalid") || m.contains("incorrect") || m.contains("wrong"));
     }
 
-    @Transactional
-    public void handlePaymentCallback(PaymentProviderAdaptor.CallbackEvent event) {
-        log.info("[ORCHESTRATOR] Processing payment callback for reference: {}", event.getPayportReference());
+    /** What applying a provider event did. */
+    public enum CallbackOutcome {
+        /** The payment moved to CONFIRMED or FAILED. */
+        APPLIED,
+        /** Nothing to do: already in that state, or the event is not a final answer (PENDING). */
+        NO_CHANGE,
+        /** The event contradicts what is recorded (success for a failed/timed-out payment, failure for a paid one, wrong amount, a superseded attempt). Recorded as a reconciliation exception for a person. */
+        CONFLICT,
+        /** No such payment. */
+        UNKNOWN_REF
+    }
 
-        Transaction tx = transactionRepository.findByReference(event.getPayportReference()).orElse(null);
+    /**
+     * Applies a definite provider answer. Idempotent and safe under concurrency: the row is
+     * locked, so of several identical or racing events exactly one changes the payment, and
+     * a contradicting event is recorded as a reconciliation exception instead of applied or
+     * silently ignored.
+     *
+     * The event's payportReference may carry an attempt suffix (reference-N); it must match
+     * the current attempt. Only the provider's own wording is shown to the customer.
+     */
+    @Transactional
+    public CallbackOutcome handlePaymentCallback(PaymentProviderAdaptor.CallbackEvent event) {
+        String sentReference = event.getPayportReference();
+        String reference = zw.co.payport.gateway.payments.PaymentAttemptStore.intentReference(sentReference);
+        log.info("[ORCHESTRATOR] Processing payment callback for reference: {}", sentReference);
+
+        Transaction tx = lockTransactionOrNull(reference);
         if (tx == null) {
-            log.warn("[ORCHESTRATOR] Callback received for unknown reference: {}", event.getPayportReference());
-            return;
+            log.warn("[ORCHESTRATOR] Callback received for unknown reference: {}", sentReference);
+            return CallbackOutcome.UNKNOWN_REF;
         }
 
-        if (tx.getStatus() != TransactionStatus.PAYMENT_PENDING && tx.getStatus() != TransactionStatus.PAYMENT_TIMEOUT) {
-            log.info("[ORCHESTRATOR] Duplicate callback for {} - current status: {} - ignoring",
-                    tx.getReference(), tx.getStatus());
-            return;
+        boolean success = "SUCCESS".equals(event.getStatus());
+        boolean failed = "FAILED".equals(event.getStatus());
+        TransactionStatus current = tx.getStatus();
+        String provider = tx.getPaymentProviderCode();
+
+        // A provider reference that carries an attempt suffix must belong to the current attempt.
+        boolean suffixed = sentReference != null && !sentReference.equals(reference);
+        String currentAttempt = tx.getPaymentAttemptReference() != null ? tx.getPaymentAttemptReference() : tx.getReference();
+        if (sentReference != null && (suffixed || tx.getPaymentAttemptCount() != null && tx.getPaymentAttemptCount() > 1)
+                && !sentReference.equals(currentAttempt)) {
+            if (success) {
+                reconExceptions.raise("PAID_ON_SUPERSEDED_ATTEMPT", provider, tx.getReference(), event.getProviderReference(),
+                        tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        "Provider confirmed attempt " + sentReference + " but the current attempt is " + currentAttempt, "LIFECYCLE");
+                log.error("[ORCHESTRATOR] CONFLICT for {}: success for superseded attempt {} (current {})", reference, sentReference, currentAttempt);
+                return CallbackOutcome.CONFLICT;
+            }
+            return CallbackOutcome.NO_CHANGE;
+        }
+
+        if (!success && !failed) {
+            return CallbackOutcome.NO_CHANGE;
+        }
+
+        if (current != TransactionStatus.PAYMENT_PENDING && current != TransactionStatus.PAYMENT_TIMEOUT) {
+            boolean paid = !(current == TransactionStatus.INITIATED || current == TransactionStatus.PAYMENT_FAILED
+                    || current == TransactionStatus.CANCELLED);
+            if ((success && !paid && current != TransactionStatus.INITIATED) || (failed && paid)) {
+                reconExceptions.raise(success ? "PAID_AFTER_FAILURE" : "FAILED_AFTER_PAID", provider, tx.getReference(),
+                        event.getProviderReference(), tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        "Provider says " + event.getStatus() + " but the payment is " + current, "LIFECYCLE");
+                log.error("[ORCHESTRATOR] CONFLICT for {}: provider says {} but the payment is {} -- not changed; needs review",
+                        tx.getReference(), event.getStatus(), current);
+                return CallbackOutcome.CONFLICT;
+            }
+            log.info("[ORCHESTRATOR] Duplicate callback for {} - current status: {} - ignoring", tx.getReference(), current);
+            return CallbackOutcome.NO_CHANGE;
+        }
+
+        if (event.getAmountCents() > 0 && event.getAmountCents() != toInt(tx.getAmountCents())) {
+            reconExceptions.raise("AMOUNT_MISMATCH", provider, tx.getReference(), event.getProviderReference(),
+                    tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                    "Provider reported " + event.getAmountCents() + " for a payment of " + tx.getAmountCents(), "LIFECYCLE");
+            log.error("[ORCHESTRATOR] AMOUNT MISMATCH for {} - expected {} cents got {} cents - rejecting callback",
+                    tx.getReference(), tx.getAmountCents(), event.getAmountCents());
+            return CallbackOutcome.CONFLICT;
+        }
+
+        if (success && current == TransactionStatus.PAYMENT_TIMEOUT) {
+            // Owner rule: once the customer has been told the transaction timed out, it is NEVER fulfilled -- not
+            // automatically and not by a person. The money the provider took must be refunded.
+            reconExceptions.raise("PAID_AFTER_TIMEOUT", provider, tx.getReference(), event.getProviderReference(),
+                    tx.getAmountCents(), event.getAmountCents() > 0 ? event.getAmountCents() : tx.getAmountCents(), tx.getCurrency(),
+                    "Provider confirmed payment after the customer was told " + tx.getPaymentOutcome() + ": refund required", "LIFECYCLE");
+            log.error("[ORCHESTRATOR] LATE PAYMENT for {}: provider confirmed after the customer was told {} -- not fulfilled; refund required",
+                    tx.getReference(), tx.getPaymentOutcome());
+            return CallbackOutcome.CONFLICT;
         }
 
         if (event.getProviderReference() != null && !event.getProviderReference().isBlank()) {
             tx.setProviderReference(event.getProviderReference());
         }
-
         if (tx.getPaymentProviderCode() == null) {
             tx.setPaymentProviderCode(tx.getPaymentMethod() != null ? tx.getPaymentMethod().getCode() : "UNKNOWN");
         }
 
-        if (event.getAmountCents() > 0 && event.getAmountCents() != toInt(tx.getAmountCents())) {
-            log.error("[ORCHESTRATOR] AMOUNT MISMATCH for {} - expected {} cents got {} cents - rejecting callback",
-                    tx.getReference(), tx.getAmountCents(), event.getAmountCents());
-            return;
-        }
-
-        if ("SUCCESS".equals(event.getStatus())) {
-            transitionStatus(tx, TransactionStatus.PAYMENT_CONFIRMED,
-                    "PAYMENT_CALLBACK", "Payment confirmed by provider", event.getRawPayload());
-
-            tx.setPaymentConfirmedAt(LocalDateTime.now());
-            tx.setPaymentCorrelator(event.getPayportReference());
-            tx.setPaymentProviderStatus("CONFIRMED");
-            tx.setPaymentConfirmedAmountCents(event.getAmountCents());
-            tx.setPaymentConfirmedCurrency(event.getCurrency());
-            if (event.getRawPayload() != null) {
-                String raw = event.getRawPayload();
-                tx.setPaymentProviderRawResponse(raw.length() > 4000 ? raw.substring(0, 4000) : raw);
-            }
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendPaymentConfirmed(tx);
-            fulfilmentQueueService.enqueue(tx.getReference());
-
-            log.info("[ORCHESTRATOR] Payment confirmed and fulfilment enqueued for: {}", tx.getReference());
-
-        } else if ("FAILED".equals(event.getStatus())) {
+        if (success) {
+            confirmPayment(tx, "PAYMENT_CALLBACK", "Payment confirmed by provider", event);
+        } else {
             transitionStatus(tx, TransactionStatus.PAYMENT_FAILED,
                     "PAYMENT_CALLBACK", "Payment failed by provider", event.getRawPayload());
-
             tx.setFailedAt(LocalDateTime.now());
-            tx.setFailureReason(
-                    event.getFailureMessage() != null && !event.getFailureMessage().isBlank()
-                            ? event.getFailureMessage()
-                            : "Your payment was declined by the provider." +
-                                (event.getProviderReference() != null ? " Reference: " + event.getProviderReference() : "")
-            );
+            tx.setPaymentOutcome(null);
+            tx.setFailureReason(providerMessageOr(event.getFailureMessage(), providerName(tx) + " declined the payment."));
             tx.setFailureDetails(event.getRawPayload());
             tx.setPaymentProviderStatus("FAILED");
-
             if (event.getRawPayload() != null) {
-                String raw = event.getRawPayload();
-                tx.setPaymentProviderRawResponse(raw.length() > 4000 ? raw.substring(0, 4000) : raw);
+                tx.setPaymentProviderRawResponse(truncate(event.getRawPayload(), 4000));
             }
             transactionRepository.save(tx);
-
-            smsNotificationService.sendPaymentFailed(tx, "Payment was not approved");
+            checkStore.close(tx.getReference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "FAILED", LocalDateTime.now());
             log.info("[ORCHESTRATOR] Payment failed for: {}", tx.getReference());
+        }
+        return CallbackOutcome.APPLIED;
+    }
+
+    private void confirmPayment(Transaction tx, String actor, String notes, PaymentProviderAdaptor.CallbackEvent event) {
+        transitionStatus(tx, TransactionStatus.PAYMENT_CONFIRMED, actor, notes, event.getRawPayload());
+        tx.setPaymentConfirmedAt(LocalDateTime.now());
+        tx.setPaymentCorrelator(tx.getReference());
+        tx.setPaymentProviderStatus("CONFIRMED");
+        tx.setPaymentOutcome(null);
+        tx.setFailureReason(null);
+        tx.setPaymentConfirmedAmountCents(event.getAmountCents());
+        tx.setPaymentConfirmedCurrency(event.getCurrency());
+        if (event.getRawPayload() != null) {
+            tx.setPaymentProviderRawResponse(truncate(event.getRawPayload(), 4000));
+        }
+        transactionRepository.save(tx);
+        checkStore.close(tx.getReference(), zw.co.payport.gateway.payments.PaymentCheckStore.Status.RESOLVED, "SUCCESS", LocalDateTime.now());
+        // No SMS here: the customer gets one SMS, when the transaction completes (owner decision).
+        fulfilmentQueueService.enqueue(tx.getReference());
+        log.info("[ORCHESTRATOR] Payment confirmed and fulfilment enqueued for: {}", tx.getReference());
+    }
+
+    /** What a delivery run did. retryAt is set when a definite failure has an automatic retry scheduled. */
+    public record FulfilmentOutcome(Kind kind, LocalDateTime retryAt, String detail) {
+        /** NOT_STARTED: the payment is still PAYMENT_CONFIRMED, so no delivery was ever sent; safe to queue again. */
+        public enum Kind { DELIVERED, FAILED, UNKNOWN, SKIPPED, NOT_STARTED }
+        static FulfilmentOutcome of(Kind k, String detail) { return new FulfilmentOutcome(k, null, detail); }
+    }
+
+    /**
+     * Automatic retry of delivery failures whose provider code the specification marks as
+     * temporary (DeliveryOutcomeRules). Providers without a code table are never retried.
+     */
+    @org.springframework.beans.factory.annotation.Value("${payport.fulfilment.auto-retry:true}")
+    private boolean autoRetryDefiniteFailures = true;
+
+    private static final int MAX_DELIVERY_ATTEMPTS = 4;
+    /** Error code for a delivery request that provably never left PayPort (connection refused, unknown host). */
+    private static final String NOT_SENT = "NOT_SENT";
+    private static final int[] RETRY_DELAYS_SECONDS = {30, 120, 300, 600};
+
+    private record PreparedDelivery(String reference, String providerCode, String label,
+                                    FulfilmentProviderAdaptor.FulfilmentRequest request, String notSupported) {}
+
+    /**
+     * Delivers the service for a confirmed payment (Phase 2, same pattern as submitPayment):
+     * FULFILMENT_PENDING is committed before the provider is called; the provider call runs
+     * outside any database transaction; the outcome is recorded afterwards.
+     *
+     * A delivery whose outcome is unknown (timeout, broken connection, crash) is NEVER
+     * delivered again automatically: the payment stays in FULFILMENT_PENDING and
+     * resolveUnknownFulfilment() asks the provider (queryDelivery) or hands it to a person.
+     * Called by FulfilmentWorker for a claimed job.
+     */
+    public FulfilmentOutcome executeFulfilment(String reference) throws Exception {
+        log.info("[ORCHESTRATOR] Executing fulfilment for: {}", reference);
+
+        PreparedDelivery p = requiresNew().execute(s -> prepareDelivery(reference));
+        if (p == null) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "not in a deliverable state");
+        }
+
+        FulfilmentProviderAdaptor.FulfilmentResult result;
+        if (p.notSupported() != null) {
+            result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).message(p.notSupported()).build();
+        } else {
+            log.info("[ORCHESTRATOR] Calling {} adaptor.deliver for {} ({})", p.providerCode(), reference, p.label());
+            long started = System.currentTimeMillis();
+            try {
+                if (providerHealth != null) providerHealth.acquire(p.providerCode(), p.providerCode());
+                result = adaptorRegistry.getFulfilmentAdaptor(p.providerCode()).deliver(p.request());
+                if (result == null) {
+                    result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(true)
+                            .message("Provider adaptor returned no result").build();
+                }
+                if (providerHealth != null) {
+                    if (result.isOutcomeUnknown()) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, "delivery outcome unknown");
+                    else providerHealth.success(p.providerCode(), System.currentTimeMillis() - started);
+                }
+            } catch (zw.co.payport.gateway.integration.ProviderUnavailableException e) {
+                // Suspended or circuit open: nothing was sent, so this is a definite "not delivered", retried later.
+                log.warn("[ORCHESTRATOR] {} delivery for {} not sent: {}", p.providerCode(), reference, e.getMessage());
+                result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(false)
+                        .errorCode(NOT_SENT).message(p.providerCode() + " is unavailable; the delivery was not sent and will be retried.")
+                        .rawResponse("ProviderUnavailable: " + e.getMessage()).build();
+            } catch (Exception e) {
+                if (providerHealth != null) providerHealth.failure(p.providerCode(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
+                boolean unknown = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e);
+                log.error("[ORCHESTRATOR] {} deliver for {} threw {} -- outcome {}", p.providerCode(), reference,
+                        e.getClass().getSimpleName(), unknown ? "UNKNOWN" : "NOT DELIVERED");
+                result = FulfilmentProviderAdaptor.FulfilmentResult.builder().success(false).outcomeUnknown(unknown)
+                        .errorCode(unknown ? null : NOT_SENT)
+                        .message(unknown ? p.providerCode() + " call failed: " + e.getMessage()
+                                : "Could not reach " + p.providerCode() + "; the service was not delivered.")
+                        .rawResponse(e.getClass().getName() + ": " + e.getMessage()).build();
+            }
+        }
+
+        final FulfilmentProviderAdaptor.FulfilmentResult outcome = result;
+        try {
+            return requiresNew().execute(s -> recordDeliveryOutcome(p, outcome));
+        } catch (RuntimeException e) {
+            // The provider answered but we could not record it: treat as unknown, never deliver again.
+            log.error("[ORCHESTRATOR] Could not record delivery outcome for {} (provider said success={}): {}",
+                    reference, outcome.isSuccess(), e.getMessage(), e);
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "outcome not recorded: " + e.getMessage());
         }
     }
 
-    @Transactional
-    public void executeFulfilment(String reference) throws Exception {
-        log.info("[ORCHESTRATOR] Executing fulfilment for: {}", reference);
-
-        Transaction tx = loadTransaction(reference);
-
-        if (tx.getStatus() != TransactionStatus.PAYMENT_CONFIRMED
-                && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
-            log.warn("[ORCHESTRATOR] Fulfilment attempted on transaction in status {}: {}",
-                    tx.getStatus(), reference);
-            return;
+    private PreparedDelivery prepareDelivery(String reference) {
+        Transaction tx = lockTransactionOrNull(reference);
+        if (tx == null) return null;
+        if (tx.getStatus() != TransactionStatus.PAYMENT_CONFIRMED && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            log.warn("[ORCHESTRATOR] Fulfilment attempted on transaction in status {}: {}", tx.getStatus(), reference);
+            return null;
         }
-
-        // Was unconditional -- correct for the first attempt
-        // (PAYMENT_CONFIRMED -> FULFILMENT_PENDING is valid), but
-        // FULFILMENT_RETRY has no path to FULFILMENT_PENDING at all (it
-        // only allows COMPLETED or FULFILMENT_FAILED directly), so every
-        // single manual retry threw InvalidStateTransitionException here
-        // before the fulfilment attempt itself ever ran -- the provider
-        // was never actually contacted. FULFILMENT_RETRY already
-        // correctly represents "actively attempting again"; it doesn't
-        // need to pass through FULFILMENT_PENDING a second time.
+        // FULFILMENT_RETRY is already "actively attempting again"; only a first attempt passes through FULFILMENT_PENDING.
         if (tx.getStatus() == TransactionStatus.PAYMENT_CONFIRMED) {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_PENDING,
-                    "SYSTEM", "Fulfilment started", null);
+            transitionStatus(tx, TransactionStatus.FULFILMENT_PENDING, "SYSTEM", "Fulfilment started", null);
         }
         tx.setFulfilmentStartedAt(LocalDateTime.now());
         transactionRepository.save(tx);
 
         String productCode = tx.getProductType().getCode();
-
-        if (productCode.startsWith("DATA_")) {
-            log.info("[ORCHESTRATOR] Processing DATA product: {}", productCode);
-            executeDataBundleFulfilment(tx);
-        } else if (productCode.contains("AIRTIME")) {
-            log.info("[ORCHESTRATOR] Processing AIRTIME product: {}", productCode);
-            executeAirtimeFulfilment(tx);
-        } else {
-            executeRegularFulfilment(tx);
+        String providerCode = deliveryProvider(tx);
+        String label = productCode.startsWith("DATA_") ? "data bundle" : productCode.contains("AIRTIME") ? "airtime" : "service";
+        String notSupported = null;
+        if (productCode.startsWith("DATA_") && !"ECONET".equals(providerCode)) {
+            notSupported = "Data bundles not supported for provider: " + tx.getProductType().getProviderCode();
+        } else if (!adaptorRegistry.hasFulfilmentAdaptor(providerCode)) {
+            notSupported = "No fulfilment adaptor for provider: " + providerCode;
         }
-    }
 
-    private void executeDataBundleFulfilment(Transaction tx) throws Exception {
-        String reference = tx.getReference();
-        String providerCode = tx.getProductType().getProviderCode();
-
-        log.info("[ORCHESTRATOR] Executing data bundle fulfilment for: {} provider: {}", reference, providerCode);
-
-        String productConfigJson = tx.getFulfilmentData();
-
-        log.info("[ORCHESTRATOR] Data bundle - Amount: {} cents, Currency: {}, ProductConfig: {}",
-                tx.getAmountCents(), tx.getCurrency(), productConfigJson);
-
-        if ("ECONET".equals(providerCode)) {
-            // Use the standard deliver method which now handles bundles
-            FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor("ECONET");
-
-            FulfilmentProviderAdaptor.FulfilmentRequest request = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
-                    .payportReference(tx.getReference())
-                    .recipientIdentifier(tx.getRecipientIdentifier())
-                    .amountCents(toInt(tx.getAmountCents()))
-                    .currency(tx.getCurrency())
-                    .productTypeCode(tx.getProductType().getCode())
-                    .productConfig(productConfigJson)
-                    .build();
-
-            log.info("[ORCHESTRATOR] Calling adaptor.deliver for data bundle: {}", tx.getReference());
-
-            FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(request);
-
-            if (result.isSuccess()) {
-                transitionStatus(tx, TransactionStatus.COMPLETED,
-                        providerCode + "_API",
-                        "Data bundle delivered successfully",
-                        result.getRawResponse());
-
-                tx.setFulfilmentReference(result.getFulfilmentReference());
-                tx.setFulfilmentData(result.getFulfilmentData());
-                tx.setCompletedAt(LocalDateTime.now());
-                transactionRepository.save(tx);
-
-                smsNotificationService.sendDeliverySuccess(tx);
-                log.info("[ORCHESTRATOR] COMPLETED: {} → Data bundle delivered to {}",
-                        tx.getReference(), maskPhone(tx.getRecipientIdentifier()));
-            } else {
-            handleFulfilmentFailure(tx, "Data bundle delivery failed: " + result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-            }
-        } else {
-            handleFulfilmentFailure(tx, "Data bundles not supported for provider: " + providerCode, null);
+        // Providers that identify a delivery by our reference (eSolutions) get one per attempt,
+        // recorded here, in the same transaction that marks the delivery as started, BEFORE anything
+        // is sent: an unknown outcome is then looked up by the reference the provider actually received.
+        String deliveryReference = null;
+        if (notSupported == null && adaptorRegistry.getFulfilmentAdaptor(providerCode).usesDeliveryReference()) {
+            int attempt = (tx.getRetryCount() == null ? 0 : tx.getRetryCount()) + 1;
+            deliveryReference = zw.co.payport.gateway.service.adaptor.esolutions.VendorReferences.forDelivery(tx.getReference(), attempt);
+            tx.setFulfilmentReference(deliveryReference);
+            transactionRepository.save(tx);
         }
-    }
-
-    private void executeAirtimeFulfilment(Transaction tx) throws Exception {
-        String providerCode = tx.getProductType().getProviderCode();
-        FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor(providerCode);
 
         FulfilmentProviderAdaptor.FulfilmentRequest req = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
                 .payportReference(tx.getReference())
                 .recipientIdentifier(tx.getRecipientIdentifier())
                 .amountCents(toInt(tx.getAmountCents()))
                 .currency(tx.getCurrency())
-                .productTypeCode(tx.getProductType().getCode())
+                .productTypeCode(productCode)
                 .productConfig(tx.getFulfilmentData())
+                .deliveryReference(deliveryReference)
                 .build();
-
-        log.info("[ORCHESTRATOR] Calling airtime adaptor.deliver for {}", tx.getReference());
-
-        FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(req);
-
-        if (result.isSuccess()) {
-            transitionStatus(tx, TransactionStatus.COMPLETED,
-                    providerCode + "_API",
-                    "Airtime delivered successfully",
-                    result.getRawResponse());
-
-            tx.setFulfilmentReference(result.getFulfilmentReference());
-            tx.setFulfilmentData(result.getFulfilmentData());
-            tx.setCompletedAt(LocalDateTime.now());
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendDeliverySuccess(tx);
-            log.info("[ORCHESTRATOR] COMPLETED: {} → Airtime delivered to {}",
-                    tx.getReference(), maskPhone(tx.getRecipientIdentifier()));
-        } else {
-            handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-        }
+        return new PreparedDelivery(tx.getReference(), providerCode, label, req, notSupported);
     }
 
-    private void executeRegularFulfilment(Transaction tx) throws Exception {
+    private String deliveryProvider(Transaction tx) {
         String providerCode = tx.getProductType().getProviderCode();
-        FulfilmentProviderAdaptor adaptor = adaptorRegistry.getFulfilmentAdaptor(providerCode);
-
-        FulfilmentProviderAdaptor.FulfilmentRequest req = FulfilmentProviderAdaptor.FulfilmentRequest.builder()
-                .payportReference(tx.getReference())
-                .recipientIdentifier(tx.getRecipientIdentifier())
-                .amountCents(toInt(tx.getAmountCents()))
-                .currency(tx.getCurrency())
-                .productTypeCode(tx.getProductType().getCode())
-                .productConfig(tx.getFulfilmentData())
-                .build();
-
-        log.info("[ORCHESTRATOR] Calling adaptor.deliver for {}", tx.getReference());
-
-        FulfilmentProviderAdaptor.FulfilmentResult result = adaptor.deliver(req);
-
-        if (result.isSuccess()) {
-            transitionStatus(tx, TransactionStatus.COMPLETED,
-                    providerCode + "_API",
-                    "Service delivered successfully",
-                    result.getRawResponse());
-
-            tx.setFulfilmentReference(result.getFulfilmentReference());
-            tx.setFulfilmentData(result.getFulfilmentData());
-            tx.setCompletedAt(LocalDateTime.now());
-            transactionRepository.save(tx);
-
-            smsNotificationService.sendDeliverySuccess(tx);
-            log.info("[ORCHESTRATOR] COMPLETED: {} → {} delivered to {}",
-                    tx.getReference(), tx.getProductType().getName(),
-                    maskPhone(tx.getRecipientIdentifier()));
-        } else {
-            handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), result.getCustomerMessage());
-        }
+        return providerCode == null ? "" : providerCode;
     }
 
-    private void handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse) {
-        handleFulfilmentFailure(tx, failureMessage, rawResponse, null);
+    private FulfilmentOutcome recordDeliveryOutcome(PreparedDelivery p, FulfilmentProviderAdaptor.FulfilmentResult result) {
+        Transaction tx = lockTransaction(p.reference());
+        if (tx.getStatus() != TransactionStatus.FULFILMENT_PENDING && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            log.error("[ORCHESTRATOR] Delivery outcome for {} (success={}) arrived but the payment is {} -- not changed; review",
+                    p.reference(), result.isSuccess(), tx.getStatus());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + tx.getStatus());
+        }
+        if (result.isSuccess()) {
+            completeDelivery(tx, p.providerCode(), capitalise(p.label()) + " delivered successfully",
+                    result.getFulfilmentReference(), result.getFulfilmentData(), result.getRawResponse());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, result.getFulfilmentReference());
+        }
+        String code = zw.co.payport.gateway.payments.DeliveryOutcomeRules.code(p.providerCode(), result.getErrorCode(), result.getRawResponse());
+        zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict verdict =
+                zw.co.payport.gateway.payments.DeliveryOutcomeRules.classify(p.providerCode(), code);
+        if (result.isOutcomeUnknown() || verdict == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.UNKNOWN) {
+            tx.setFailureDetails(truncate(result.getRawResponse(), 4000));
+            transactionRepository.save(tx);
+            auditLogService.log(tx.getReference(), tx.getStatus(), tx.getStatus(), p.providerCode() + "_API",
+                    "Delivery outcome UNKNOWN (" + result.getMessage() + "); confirming with the provider, will not re-deliver",
+                    result.getRawResponse());
+            log.warn("[ORCHESTRATOR] Delivery outcome UNKNOWN for {} -- not retried; resolving by query", p.reference());
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, result.getMessage());
+        }
+        LocalDateTime retryAt = handleFulfilmentFailure(tx, result.getMessage(), result.getRawResponse(), code,
+                verdict == zw.co.payport.gateway.payments.DeliveryOutcomeRules.Verdict.RETRYABLE || NOT_SENT.equals(code));
+        return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, (code != null ? "[" + code + "] " : "") + result.getMessage());
+    }
+
+    private void completeDelivery(Transaction tx, String providerCode, String notes, String fulfilmentReference,
+                                  String fulfilmentData, String raw) {
+        transitionStatus(tx, TransactionStatus.COMPLETED, providerCode + "_API", notes, raw);
+        if (fulfilmentReference != null) tx.setFulfilmentReference(fulfilmentReference);
+        if (fulfilmentData != null) tx.setFulfilmentData(fulfilmentData);
+        tx.setCompletedAt(LocalDateTime.now());
+        transactionRepository.save(tx);
+        smsNotificationService.sendDeliverySuccess(tx);
+        log.info("[ORCHESTRATOR] COMPLETED: {} -> {} delivered to {}", tx.getReference(),
+                tx.getProductType().getName(), maskPhone(tx.getRecipientIdentifier()));
     }
 
     /**
-     * customerMessage is the already-translated, code-specific text an
-     * adaptor may supply (e.g. EconetAirtimeAdaptor.translateEconetStatusCode,
-     * built directly from Econet's own published status code table) --
-     * when present, it's used as-is rather than being re-run through the
-     * generic text-pattern CustomerMessageTranslator, which doesn't know
-     * about provider-specific numeric codes and would either mismatch it
-     * against an unrelated generic pattern or fail to match at all and
-     * fall back to the fully generic message, discarding a genuinely
-     * more specific translation that already existed. Null for callers
-     * that don't have one, which still fall back to the generic
-     * translator exactly as before.
+     * Resolves a delivery whose outcome is unknown by asking the provider. Never delivers.
+     * Returns DELIVERED/FAILED when the provider gives a definite answer, UNKNOWN otherwise.
      */
-    private void handleFulfilmentFailure(Transaction tx, String failureMessage, String rawResponse, String customerMessage) {
+    public FulfilmentOutcome resolveUnknownFulfilment(String reference) {
+        Transaction snapshot = transactionRepository.findByReference(reference).orElse(null);
+        if (snapshot == null) return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "no such payment");
+        if (snapshot.getStatus() == TransactionStatus.PAYMENT_CONFIRMED) {
+            // FULFILMENT_PENDING is committed before any delivery is sent, so nothing went out.
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.NOT_STARTED, "delivery was never sent");
+        }
+        if (snapshot.getStatus() != TransactionStatus.FULFILMENT_PENDING && snapshot.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + snapshot.getStatus());
+        }
+        String providerCode = deliveryProvider(snapshot);
+        FulfilmentProviderAdaptor.FulfilmentStatusResult q;
+        try {
+            if (!adaptorRegistry.hasFulfilmentAdaptor(providerCode)) {
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "no adaptor to query for " + providerCode);
+            }
+            String queryRef = snapshot.getFulfilmentReference() != null ? snapshot.getFulfilmentReference() : reference;
+            q = adaptorRegistry.getFulfilmentAdaptor(providerCode).queryDelivery(queryRef, snapshot.getCurrency());
+        } catch (Exception e) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, "delivery query failed: " + e.getMessage());
+        }
+        String status = q == null || q.getStatus() == null ? "UNKNOWN" : q.getStatus().toUpperCase();
+        String detail = providerCode + " delivery query: " + status + (q != null && q.getMessage() != null ? " (" + q.getMessage() + ")" : "");
+        if (!"DELIVERED".equals(status) && !"FAILED".equals(status) && !"NOT_FOUND".equals(status)) {
+            return FulfilmentOutcome.of(FulfilmentOutcome.Kind.UNKNOWN, detail);
+        }
+        final FulfilmentProviderAdaptor.FulfilmentStatusResult answer = q;
+        return requiresNew().execute(s -> {
+            Transaction tx = lockTransaction(reference);
+            if (tx.getStatus() != TransactionStatus.FULFILMENT_PENDING && tx.getStatus() != TransactionStatus.FULFILMENT_RETRY) {
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.SKIPPED, "payment is " + tx.getStatus());
+            }
+            if ("DELIVERED".equals(status)) {
+                completeDelivery(tx, providerCode, "Delivery confirmed by provider query", answer.getFulfilmentReference(), null, detail);
+                return FulfilmentOutcome.of(FulfilmentOutcome.Kind.DELIVERED, detail);
+            }
+            // NOT_FOUND: the provider never received the request, so sending it is safe. FAILED: the original
+            // request failed; the spec (e.g. e-Solutions 4.2.2) says conclude, so no automatic retry.
+            LocalDateTime retryAt = handleFulfilmentFailure(tx, answer.getMessage(), detail, null, "NOT_FOUND".equals(status));
+            return new FulfilmentOutcome(FulfilmentOutcome.Kind.FAILED, retryAt, detail);
+        });
+    }
+
+    private static String capitalise(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /**
+     * Records a DEFINITE delivery failure (the provider said no). Returns when to retry, or
+     * null if no automatic retry is scheduled (ops decide: retry or refund).
+     *
+     * Retried automatically only when the provider's code is temporary per its specification
+     * (DeliveryOutcomeRules.RETRYABLE) or the provider says it never received the request,
+     * with back-off and at most MAX_DELIVERY_ATTEMPTS deliveries. The customer sees the
+     * provider's own message; no SMS is sent for failures (owner decision).
+     */
+    private LocalDateTime handleFulfilmentFailure(Transaction tx, String providerMessage, String rawResponse, String code, boolean retryable) {
         String reference = tx.getReference();
-        tx.setRetryCount(tx.getRetryCount() + 1);
-        // failureReason is what the customer actually sees (in the app and in SMS) —
-        // the raw provider text (e.g. Econet's "(8030) IN failure") stays available
-        // to ops in failureDetails and every log line below, unchanged.
-        tx.setFailureReason(customerMessage != null && !customerMessage.isBlank()
-                ? customerMessage
-                : customerMessageTranslator.forFulfilmentFailure(failureMessage));
+        tx.setRetryCount((tx.getRetryCount() == null ? 0 : tx.getRetryCount()) + 1);
+        tx.setFailureReason(providerMessageOr(providerMessage, "The service could not be delivered."));
         tx.setFailureDetails(rawResponse);
 
-        int maxRetries = 4;
-        if (tx.getRetryCount() < maxRetries) {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED,
-                    "SYSTEM",
-                    "Delivery attempt " + tx.getRetryCount() + " failed: " + failureMessage,
-                    rawResponse);
-            transactionRepository.save(tx);
+        transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED, "SYSTEM",
+                "Delivery attempt " + tx.getRetryCount() + " failed" + (code != null ? " [" + code + "]" : "") + ": " + providerMessage, rawResponse);
 
-            int[] delaysSeconds = {30, 120, 300, 600};
-            int delaySeconds = delaysSeconds[Math.min(tx.getRetryCount() - 1, delaysSeconds.length - 1)];
-            fulfilmentQueueService.enqueueWithDelay(reference, delaySeconds);
-            log.warn("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}), retry in {}s - Reason: {}",
-                    reference, tx.getRetryCount(), delaySeconds, failureMessage);
-        } else {
-            transitionStatus(tx, TransactionStatus.FULFILMENT_FAILED,
-                    "SYSTEM",
-                    "All " + maxRetries + " delivery attempts exhausted. Last error: " + failureMessage,
-                    rawResponse);
+        if (autoRetryDefiniteFailures && retryable && tx.getRetryCount() < MAX_DELIVERY_ATTEMPTS) {
+            int delaySeconds = RETRY_DELAYS_SECONDS[Math.min(tx.getRetryCount() - 1, RETRY_DELAYS_SECONDS.length - 1)];
+            transitionStatus(tx, TransactionStatus.FULFILMENT_RETRY, "SYSTEM",
+                    "Automatic retry in " + delaySeconds + "s (provider code " + code + " is temporary per its specification)", null);
             transactionRepository.save(tx);
-
-            smsNotificationService.sendFulfilmentDelayed(tx);
-            log.error("[ORCHESTRATOR] MAX RETRIES EXHAUSTED for {}. Reason: {}. Manual intervention required.",
-                    reference, failureMessage);
+            log.warn("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}, code {}), retry in {}s",
+                    reference, tx.getRetryCount(), code, delaySeconds);
+            return LocalDateTime.now().plusSeconds(delaySeconds);
         }
+
+        transactionRepository.save(tx);
+        log.error("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}, code {}); no automatic retry. Reason: {}. Ops: retry or refund.",
+                reference, tx.getRetryCount(), code, providerMessage);
+        return null;
     }
 
     @Transactional
     public TransactionResponse manualRetryFulfilment(String reference, String operatorUsername) {
         log.info("[ORCHESTRATOR] Manual retry requested for {} by {}", reference, operatorUsername);
 
-        Transaction tx = loadTransaction(reference);
+        Transaction tx = lockTransaction(reference);
 
         if (tx.getStatus() != TransactionStatus.FULFILMENT_FAILED
                 && tx.getStatus() != TransactionStatus.MANUAL_FULFILMENT) {
@@ -691,8 +1011,6 @@ public class TransactionOrchestratorService {
         transitionStatus(tx, TransactionStatus.REFUND_PENDING,
                 "OPS:" + operatorUsername, "Refund initiated: " + reason, null);
         transactionRepository.save(tx);
-
-        smsNotificationService.sendRefundInitiated(tx);
 
         return TransactionResponse.from(tx);
     }
@@ -756,6 +1074,24 @@ public class TransactionOrchestratorService {
     private Transaction loadTransaction(String reference) {
         return transactionRepository.findByReference(reference)
                 .orElseThrow(() -> new TransactionNotFoundException(reference));
+    }
+
+    private Transaction lockTransaction(String reference) {
+        Transaction tx = lockTransactionOrNull(reference);
+        if (tx == null) throw new TransactionNotFoundException(reference);
+        return tx;
+    }
+
+    /**
+     * SELECT ... FOR UPDATE, then refresh: if the entity was already in this persistence
+     * context, the lock query alone would hand back its possibly stale in-memory state.
+     * (The lock query auto-flushes pending changes first, so refresh loses nothing.)
+     */
+    private Transaction lockTransactionOrNull(String reference) {
+        if (reference == null) return null;
+        Transaction tx = transactionRepository.lockByReference(reference).orElse(null);
+        if (tx != null) entityManager.refresh(tx);
+        return tx;
     }
 
     private void assertTransition(Transaction tx, TransactionStatus newStatus) {

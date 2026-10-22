@@ -10,7 +10,7 @@ import java.util.Set;
  *
  * Failure paths:
  * PAYMENT_PENDING    → PAYMENT_FAILED | PAYMENT_TIMEOUT
- * PAYMENT_TIMEOUT    → PAYMENT_CONFIRMED | PAYMENT_FAILED (after reconciliation)
+ * PAYMENT_TIMEOUT    → PAYMENT_FAILED only (never confirmed: the customer was told it timed out)
  * FULFILMENT_PENDING → FULFILMENT_FAILED
  * FULFILMENT_FAILED  → FULFILMENT_RETRY → COMPLETED | FULFILMENT_FAILED
  * FULFILMENT_FAILED  → MANUAL_FULFILMENT → COMPLETED | REFUND_PENDING
@@ -18,7 +18,8 @@ import java.util.Set;
  * INITIATED          → CANCELLED
  *
  * CRITICAL RULE: FULFILMENT_PENDING can ONLY be entered from PAYMENT_CONFIRMED.
- * CRITICAL RULE: Terminal states (COMPLETED, REFUNDED, CANCELLED, PAYMENT_FAILED) cannot be left.
+ * CRITICAL RULE: Terminal states (REFUNDED, CANCELLED) cannot be left. PAYMENT_FAILED can only start a new
+ * payment attempt on the same intent (PAYMENT_FAILED -> PAYMENT_PENDING), never anything else.
  */
 public enum TransactionStatus {
 
@@ -45,7 +46,9 @@ public enum TransactionStatus {
             case INITIATED         -> EnumSet.of(PAYMENT_PENDING, CANCELLED);
             case PAYMENT_PENDING   -> EnumSet.of(PAYMENT_CONFIRMED, PAYMENT_FAILED, PAYMENT_TIMEOUT);
             case PAYMENT_CONFIRMED -> EnumSet.of(FULFILMENT_PENDING);
-            case PAYMENT_TIMEOUT   -> EnumSet.of(PAYMENT_CONFIRMED, PAYMENT_FAILED);
+            // The customer has been told the payment timed out: it can never be confirmed for fulfilment (owner rule).
+            // A provider's definite failure may still be recorded; a late success is refunded.
+            case PAYMENT_TIMEOUT   -> EnumSet.of(PAYMENT_FAILED);
             case FULFILMENT_PENDING-> EnumSet.of(COMPLETED, FULFILMENT_FAILED);
             case FULFILMENT_FAILED -> EnumSet.of(FULFILMENT_RETRY, MANUAL_FULFILMENT, REFUND_PENDING);
             case FULFILMENT_RETRY  -> EnumSet.of(COMPLETED, FULFILMENT_FAILED);
@@ -53,7 +56,9 @@ public enum TransactionStatus {
             case COMPLETED         -> EnumSet.of(REFUND_PENDING);
             case REFUND_PENDING    -> EnumSet.of(REFUNDED);
             // Terminal states - no transitions allowed
-            case PAYMENT_FAILED, REFUNDED, CANCELLED -> EnumSet.noneOf(TransactionStatus.class);
+            // A definitely failed payment may be attempted again on the same intent (new attempt, new provider reference).
+            case PAYMENT_FAILED    -> EnumSet.of(PAYMENT_PENDING);
+            case REFUNDED, CANCELLED -> EnumSet.noneOf(TransactionStatus.class);
         };
     }
 

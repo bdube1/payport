@@ -29,3 +29,10 @@ nano.*.save
 
 # Backup directory
 backups/
+
+# Phase 11 staging: secrets, evidence (may contain customer data), runtime files
+.env.staging
+staging-evidence/
+staging.log
+staging.pid
+payport-staging.jar

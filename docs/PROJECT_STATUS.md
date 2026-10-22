@@ -1,0 +1,202 @@
+# PayPort PSP: project status
+
+_Last updated: 2026-10-22 (Phase 11 started: staging integration and acceptance). Living document._
+
+## Readiness at a glance
+
+| Level | Status |
+|---|---|
+| **Automated tests** (CI, real MySQL 8, stubbed providers) | **Pass**: backend run [39801097989](https://github.com/bdube1/payport/actions/runs/39801097989) on `020695747fdb9ed2226bfd3b10d67b6993eac410`, all jobs green; all frontends green on their final commits |
+| **Integration acceptance** (provider sandboxes and certification) | **Not started**: 0 of 14 external adapters sandbox-verified; all `SPEC_ONLY` |
+| **Production readiness** | **Not met**: external penetration test, staging load test, provider sandbox tests and a real-backup restore drill are outstanding, as are the R76/R79/R80 conditions. **Not production-ready.** |
+
+Nothing has been deployed to production. No live payout, settlement automation or LIVE settlement mode has
+been enabled. No licence decision has been recorded by code.
+
+## Phase 11 (approved 2026-10-22, in progress): staging integration and acceptance
+
+Runbook and tracker: [`docs/phase11/STAGING_RUNBOOK.md`](phase11/STAGING_RUNBOOK.md). Tooling in `scripts/staging/`:
+- isolated staging database from a real backup, and post-migration verification of data and ledger
+  invariants (rehearsed locally on MySQL 8.0.46: PASS, and it detects a 1-cent change);
+- a start guard that refuses production settings;
+- provider sandbox runner with evidence recording;
+- load test with connection-pool watch;
+- settlement parallel-run comparison.
+
+`main` of every repository now carries this code for staging. **It is not a production release**: the
+production gateway must not be restarted on it without approval (runbook §0).
+
+Status: tooling ready. Every Phase 11 activity runs on the owner's staging host (VPNs to Econet and
+OneMoney, the real backup, k6) and none has been run yet. The penetration test needs a contract with an
+external tester.
+
+## Phase 10
+
+Report: [`docs/phase10/PHASE10_REPORT.md`](phase10/PHASE10_REPORT.md).
+
+**Exact commits and CI runs** (checked through the GitHub API; each run's head equals the final pushed commit):
+
+| Repository | PR | Head commit | CI run |
+|---|---|---|---|
+| payport (backend) | branch `phase2-payment-lifecycle` | `020695747fdb9ed2226bfd3b10d67b6993eac410` (code); later commits docs only | [39801097989](https://github.com/bdube1/payport/actions/runs/39801097989) success |
+| payport (backend, Phase 8/9 baseline) | — | `29f628e048a414e6dd7040d8823c501a5671dca9` (`a791e8d` docs only) | [39791437666](https://github.com/bdube1/payport/actions/runs/39791437666) success |
+| payport-consumer | [#1](https://github.com/bdube1/payport-consumer/pull/1) | `6fed635c903b943d4be6d5d5388609b1fded8ee0` | [38948708902](https://github.com/bdube1/payport-consumer/actions/runs/38948708902) success |
+| payport-mobile | [#1](https://github.com/bdube1/payport-mobile/pull/1) | `3bbb2e02de54c76b5513f6fb513616aef61deff4` | [38949084460](https://github.com/bdube1/payport-mobile/actions/runs/38949084460) success |
+| payport-ops | [#1](https://github.com/bdube1/payport-ops/pull/1) | `b9a3ae2a52a81f4b341f912e087d417786b431ec` | [38949527528](https://github.com/bdube1/payport-ops/actions/runs/38949527528) success |
+| payport-merchant | [#1](https://github.com/bdube1/payport-merchant/pull/1) | `4611209bcef1a782c91bf54b84f1d09fd196d724` | no workflow on that branch; an ancestor of #2, so covered by the #2 run; built and contract-checked locally |
+| payport-merchant | [#2](https://github.com/bdube1/payport-merchant/pull/2) | `8c6361f5e50ed7f7d039dddbd560cc135a3eefd3` | [38949253490](https://github.com/bdube1/payport-merchant/actions/runs/38949253490) success |
+
+**Automated results (run 39801097989):**
+- build-and-test: 341 tests, **235 passed, 0 failed**, 106 skipped (they run in `ledger-db`);
+- ledger-db: **106 / 106**;
+- DR drill (test data): **PASS**, restore 2 s;
+- migrations-production-like: pass;
+- OSV: 1 advisory listed (see R76/R82 for what it misses);
+- CI-runner latency: p95 64 ms.
+
+**Phase 10 findings:**
+
+| ID | Finding | Status |
+|---|---|---|
+| D10-6 | Pool exhaustion under concurrent wallet operations (a balance read on a second connection under locks) | Fixed |
+| D10-2 | Wallet refund not serialised with the payment status | Fixed |
+| D10-4 | Provider settlement could double-book a bank line seen on two statements | Fixed |
+| D10-3 | Ledger accounts opened under locks | Fixed |
+| R76 | XML-RPC: CVE-2019-17570 (9.8) and CVE-2016-5004 (6.5) | Re-assessed and mitigated by a response guard; TLS/VPN and library replacement required before Econet production traffic; owner acceptance pending |
+| R79 | `ddl-auto=update` in production config | Open; `validate` proven to boot; change awaits owner approval |
+| R80 | Plain-HTTP provider endpoints | Open |
+| R81 | Transaction access token not yet enforced | Open by design |
+| R82 | Scanner blind spot | Open |
+
+**Outstanding external activities (tracked until done):**
+
+| Activity | Status |
+|---|---|
+| External penetration test | not started |
+| Staging load test | not started: no staging environment |
+| Provider sandbox tests (14 adapters) | not started: no credentials |
+| Restore drill from a real backup | not started |
+
+**Owner decisions pending:**
+- sign the R76 residual-risk acceptance;
+- approve `ddl-auto=validate` for production;
+- approve starting Phase 11 (staging integration and acceptance).
+
+## Phase 8 and 9 (previous)
+
+**Phase 8 completed and Phase 9 (security, scale, resilience) done**, on `phase2-payment-lifecycle`. Everything
+new ships **off** and fails closed; the owner records licence answers, configures credentials and switches
+each product on in the portal after internal checks: [`docs/runbooks/SWITCH_ON.md`](runbooks/SWITCH_ON.md).
+- `docs/phase8/PHASE8_REPORT.md`: wallets, agents, FX conversions, POS, WhatsApp, MTN MoMo / Airtel Money, provider settlements;
+- `docs/phase9/PHASE9_REPORT.md`, `SLO.md`, `PEN_TEST_SCOPE.md`;
+- `docs/platform/PLATFORM_CONTROLS.md`: markets, currencies, channels, product lines from the portal;
+- API contract: `docs/api/api-contract.json` (367 routes since Phase 10, equal to the running application).
+
+**Combined test run (backend run 39791437666, all jobs green; frontends green at their latest commits):**
+- `build-and-test`: **214 passed, 0 failed** (106 database tests run in `ledger-db`), including `Phase8CompletionScenarioTest`, `Phase8UnitTest`, `SecurityResilienceScenarioTest` and every earlier suite.
+- `ledger-db`: **106 / 106**; DR drill: **PASS** (backup → restore → identical rows, procedures, balances, integrity; restore 3 s).
+- `migrations-production-like` (V1–V52, binlog, non-SUPER user): pass. `dependency-scan`: 1 advisory listed (R76; see Phase 10 for the corrected assessment).
+- Latency on CI (400 wallet reads, 8 clients): p50 38 ms, p95 59 ms, p99 71 ms.
+- Consumer, mobile, ops and merchant (#2) CI green with the API contract check (366 routes); merchant #1 re-checked locally against the same contract.
+
+| Item | Status |
+|---|---|
+| Wallets | **Built**: ledger-authoritative balances, top-up, PIN-confirmed pay / transfer / convert, refunds to wallet, tier limits, freeze. Off until licence answer + switch. |
+| Agents | **Built**: compliance approval, four-eyes float, cash-in, single-use cash-out codes, commission. Off. |
+| FX conversions | **Built**: between a customer's own wallets at an approved rate, one journal through FX_CLEARING. Off. |
+| POS | **Built**: signed terminals, sales as checkout sessions (QR / wallet / mobile money); cards fail closed until an acquirer is configured. Off. |
+| WhatsApp | **Built**: signed Cloud API webhook, USSD menus, de-duplication. Off; needs Meta credentials. |
+| New-market rails | **Built**: MTN MoMo and Airtel Money adapters, status-query confirmed, currencies configurable. Fail closed until credentials. |
+| Provider settlements | **Built**: four-eyes rules book rail settlements found on camt.053 statements. |
+| Frontends | Consumer and mobile wallet; merchant agent and POS; ops wallets, agents, POS/WhatsApp, settlement rules, ledger. All green in CI with the contract check. |
+| Phase 9 security | Authorization matrix over every admin/merchant route (found and fixed 3 unguarded admin controllers, R75); URL-level role rules; CSP and other headers; CORS by environment (R36 closed); token-protected Prometheus; dependency scan with fixes (R77). |
+| Phase 9 scale | Wallet double-spend and one-payment-many-confirmations tests (they found a connection-pool starvation in wallet postings, fixed: the journal now posts on the operation's own transaction); latency p95 59 ms on CI; k6 staging script with SLO thresholds. |
+| Phase 9 resilience | DR drill (backup → restore → verify rows, procedures, balances, integrity) in CI: PASS; graceful shutdown; probes. |
+
+**Owner inputs (configuration, not code)**
+- Licence answers recorded in the portal by two compliance officers per line (the code never sets them).
+- Credentials in the deployment environment: WhatsApp, MTN MoMo, Airtel Money, USSD secret, `PAYPORT_DATA_KEY`, `PAYPORT_METRICS_TOKEN`, `EAS_PROJECT_ID`.
+- Bank accounts (settlement / safeguarding) entered in Markets & Currencies; the placeholders stay until then and block going LIVE.
+- Confirm PROVISIONAL parameters (wallet limits, agent commission, expiries) in Compliance → Rules & Parameters.
+- Commission the external penetration test; run the k6 test and a restore drill on production-like infrastructure.
+
+## CI evidence (GitHub Actions, bdube1/payport, 2026-10-15)
+
+Real Maven build with real dependencies, on GitHub-hosted runners.
+
+| Branch | Job | Result |
+|---|---|---|
+| `phase0.5-containment` | build-and-test (`mvn verify`) | **57 / 57 passed**, including the Testcontainers migration test (real Flyway + MySQL 8) and the full-application smoke test |
+| `phase0.5-containment` | migrations-production-like (binlog, non-SUPER user) | **Pass** |
+| `phase1-financial-foundation` | build-and-test (`mvn verify`) | **68 passed, 0 failed**; the 106 database tests are skipped here by design and run in `ledger-db` |
+| `phase1-financial-foundation` | ledger-db (real MySQL 8, migration user + least-privilege app user) | **106 / 106 passed** |
+| `phase1-financial-foundation` | migrations-production-like | **Pass** |
+
+This closes **B1** (no real build) and verifies Spring wiring, application start-up and the security chain: `ApplicationSmokeTest` boots the whole application on MySQL 8.
+
+**Found by CI and fixed:**
+- **Scripts not executable.** The repository has `core.fileMode=false`, so the scripts were recorded without the executable bit.
+- **Payment API reported unhealthy over email.** `/actuator/health` returned **503 DOWN** whenever SMTP was unavailable, although the database and disk were up. A container or load-balancer health check would restart the payment API, or take it out of service, over an email problem. Mail is now excluded from the health status (`management.health.mail.enabled=false`).
+
+**Still open:**
+- E5: shadow ledger vs legacy on a production data copy;
+- E6: Spring Boot upgrade, now unblocked because CI exists;
+- B2: consumer-app token change;
+- B3: schema drift check;
+- B4: restore drill.
+
+## Branches
+| Branch | Content | Deployable? |
+|---|---|---|
+| `main` | Gateway as uploaded | In production (per you) |
+| `phase0.5-containment` | R1–R4 and R6 fixes, V32, CI workflow, scripts, docs | **Yes**, after CI passes and the steps in `docs/phase0.5/PHASE0.5_CONTAINMENT_RELEASE.md` |
+| `phase2-payment-lifecycle` | Phase 1 + Boot 4.1.1 + Phase 2 lifecycle (V37–V38) | **Yes**, after a staging soak with provider sandboxes (timeouts forced) and the decisions in the Phase 2 report |
+| `phase1-spring-boot-upgrade` | Phase 1 + Spring Boot 4.1.1 (3.x is out of support) | **Yes**, after a staging soak with the real frontends |
+| `phase1-financial-foundation` | Ledger (V33–V36), shadow posting, jobs, approvals, tax rates, admin API, `ledger-db` CI job | **Yes**, after CI passes. Shadow posting is off by default (`LEDGER_SHADOW_ENABLED`). |
+| `phase0-discovery` | Phase 0 documents (on top of `psp-foundation`) | Documents only |
+| `psp-foundation` | Earlier PSP build; harvested phase by phase (ADR-0002) | **No** |
+
+## Verified (with evidence)
+| Item | Evidence |
+|---|---|
+| Gateway migrations V1–V31 apply on MySQL 8.0.46 | Phase 0 report 05 |
+| **V32** applies after V1–V31 (binlog on, non-SUPER user); backfill correct for all six historical cases; NOT NULL rejects sessions without a mode; rollback and re-backfill scripts work | Phase 0.5 release doc §4 [Tested] |
+| 16 changed files compile with real Lombok (Spring/JPA/Jackson from API stubs) | [Tested, partial] |
+| 31 unit tests for the containment rules pass on **real JUnit 5.10.1** | [Tested] |
+| Migration, schema-drift and restore-drill scripts work against local MySQL | [Tested] |
+
+## Not verified
+- Provider sandboxes (EcoCash, OneMoney, ZimSwitch, Omari, MTN MoMo, Airtel Money, WhatsApp Cloud API): adapters are built from the published specs and fail closed; the integration register stays SPEC_ONLY until sandbox evidence is recorded in the ops console.
+- Production backup restore and staging load test (scripts ready: `restore-drill.sh`, `dr-drill.sh`, `k6-staging.js`).
+- External penetration test (scope: `docs/phase9/PEN_TEST_SCOPE.md`).
+
+## Defects and blockers
+| ID | Item | Severity | Status |
+|---|---|---|---|
+| R1 | Payment links / dashboard checkouts simulated as paid | Critical | **Fixed on branch**, not deployed. Exposure report ready. Your production check is still outstanding. |
+| R2 | Public onboarding tracking endpoints enumerable and writable | Critical | **Fixed on branch** (status-only + 410) |
+| R3 | Public transaction lookup exposed PII and **ZESA tokens** | Critical | **Fixed on branch** (token + public view). Full closure needs the consumer app to send the token, then `TRANSACTION_TOKEN_ENFORCE=true`. |
+| R4 | Unauthenticated EcoCash/OneMoney callbacks | Critical | **Fixed on branch** (verify by provider query) |
+| R6 | Timeout → FAILED after 30 min | High | **Fixed on branch** (no time-based failure; back-off; 72 h manual) |
+| R35 | `/my-history` logged all request headers (cookies, keys) at INFO | High | **Fixed on branch** |
+| R36 | CORS allows `http://localhost:*` origins with credentials in the production config | Low | **Fixed (Phase 9)** |
+| B1 | No real build possible here (Maven Central blocked) | Blocker | **Resolved**: GitHub Actions CI is the build gate |
+| B2 | Frontend repositories not available | Blocker for full R3 closure | **Resolved**: all four frontends integrated and contract-checked |
+| B3 | Production schema dump (structure only) | Blocker for D1 | Requested |
+| B4 | Real backup for the restore drill | Blocker for D8 | DR drill automated in CI; a run against a real backup is the owner's (no production data on this platform) |
+| B5 | Licence / operating model | Blocker for Phases 3 and 8 | Owner confirms all licensed; answers are recorded in the portal per line |
+
+## Integration status
+Unchanged from Phase 0 (doc 04). EcoCash and OneMoney callbacks now trigger status queries; their behaviour against real provider responses is unverified until deployed or sandbox-tested.
+
+## Migration status
+- `main` lineage: V1–V31 in production (assumed); **V32 ready** (tested locally).
+- `psp-foundation` migrations will be renumbered from V33 when harvested.
+
+## Automation status
+The uncertain-payment reconciler (EcoCash, OneMoney) is the first containment automation. It is single-instance and keeps its back-off clock in memory.
+
+## Next actions
+1. **Owner:** record the licence answers, enter the bank accounts and credentials, confirm the provisional parameters, then switch each line on (runbook `docs/runbooks/SWITCH_ON.md`).
+2. **Owner:** provider sandbox runs and record the evidence; external penetration test; staging k6 run; restore drill on a real backup.
+3. **Next phase (recommended):** Phase 11, staging integration and acceptance (see the Phase 10 report §13); open engineering items: replace the XML-RPC client in the Econet adapter (R76), card acquirer adapter when contracted, national QR scheme parameters.

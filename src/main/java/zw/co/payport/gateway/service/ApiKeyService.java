@@ -59,6 +59,42 @@ public class ApiKeyService {
         return new GeneratedKeyPair(publicKey, secretKeyRaw);
     }
 
+    /** Phase 4: a key with scopes and an optional expiry. The raw secret is returned once. */
+    public GeneratedKeyPair create(Long merchantId, String environment, String label, String scopes, LocalDateTime expiresAt) {
+        GeneratedKeyPair pair = generateKeyPair(merchantId, environment, label);
+        ApiKey key = apiKeyRepository.findBySecretKeyHash(sha256(pair.secretKey())).orElseThrow();
+        key.setScopes(scopes == null ? "*" : scopes);
+        key.setExpiresAt(expiresAt);
+        apiKeyRepository.save(key);
+        return pair;
+    }
+
+    /**
+     * Rotation: a new key with the same environment and scopes; the old key keeps working for
+     * overlapHours (0 = stops now) so the merchant can deploy the new one without downtime.
+     */
+    public GeneratedKeyPair rotate(Long merchantId, Long keyId, int overlapHours) {
+        ApiKey old = apiKeyRepository.findById(keyId).filter(k -> k.getMerchantId().equals(merchantId))
+                .orElseThrow(() -> new RuntimeException("API key not found: " + keyId));
+        if (old.getRevokedAt() != null) throw new RuntimeException("A revoked key cannot be rotated");
+        GeneratedKeyPair pair = create(merchantId, old.getEnvironment(), old.getLabel() + " (rotated)", old.getScopes(), null);
+        ApiKey fresh = apiKeyRepository.findBySecretKeyHash(sha256(pair.secretKey())).orElseThrow();
+        fresh.setRotatedFromId(old.getId());
+        apiKeyRepository.save(fresh);
+        LocalDateTime until = LocalDateTime.now().plusHours(Math.max(0, Math.min(overlapHours, 168)));
+        if (old.getExpiresAt() == null || old.getExpiresAt().isAfter(until)) old.setExpiresAt(until);
+        apiKeyRepository.save(old);
+        log.info("[APIKEY] Rotated {} for merchant {}; old key valid until {}", old.getPublicKey(), merchantId, until);
+        return pair;
+    }
+
+    /** Revoke a merchant's own key (ownership checked). */
+    public void revokeOwn(Long merchantId, Long keyId) {
+        ApiKey key = apiKeyRepository.findById(keyId).filter(k -> k.getMerchantId().equals(merchantId))
+                .orElseThrow(() -> new RuntimeException("API key not found: " + keyId));
+        revoke(key.getId());
+    }
+
     public List<ApiKey> listForMerchant(Long merchantId) {
         return apiKeyRepository.findByMerchantId(merchantId);
     }

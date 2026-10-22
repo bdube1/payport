@@ -64,11 +64,11 @@ public class TelecelStatementParser implements StatementParser {
                 String destMobile = cellString(row, 1);
                 String agentId = cellString(row, 2);
                 String airwideTid = cellString(row, 3);
-                Double amount = cellDouble(row, 4);
+                Long signedCents = StatementCells.cents(cellString(row, 4));
                 LocalDateTime requestTime = cellDateTime(row, 8);
 
-                if (amount == null) continue;
-                long amountCents = Math.round(Math.abs(amount) * 100);
+                if (signedCents == null) continue;
+                long amountCents = Math.abs(signedCents); // the export shows the agent wallet debit as a negative amount
 
                 List<String> candidates = new ArrayList<>();
                 if (agentId != null && !agentId.isBlank()) candidates.add(agentId);
@@ -103,17 +103,7 @@ public class TelecelStatementParser implements StatementParser {
     }
 
     private String cellString(Row row, int col) {
-        Cell cell = row.getCell(col);
-        if (cell == null) return null;
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> {
-                double d = cell.getNumericCellValue();
-                yield (d == Math.floor(d)) ? String.valueOf((long) d) : String.valueOf(d);
-            }
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            default -> null;
-        };
+        return StatementCells.text(row, col);
     }
 
     private Integer cellInt(Row row, int col) {

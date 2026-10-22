@@ -59,6 +59,17 @@ public class CheckoutSession {
 
     private Long apiKeyId;
 
+    /**
+     * True = real money (a real provider is called and the session can be settled);
+     * false = test mode (payment is simulated and the session can never be settled).
+     * Decided once, when the session is created, from the creating credential
+     * (see CheckoutSessionService.resolveLivemode) and never changed afterwards.
+     * Deliberately a nullable wrapper with no default: a code path that forgets
+     * to set it fails at insert (NOT NULL column) instead of silently picking a mode.
+     */
+    @Column(nullable = false, updatable = false)
+    private Boolean livemode;
+
     private String paymentMethodCode;
 
     /** The rate actually applied, frozen at payment time -- a later change to the merchant's rate must never retroactively alter a past collection. */

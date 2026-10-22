@@ -53,8 +53,10 @@ public class GlobalExceptionHandler {
             String field = ((FieldError) error).getField();
             errors.put(field, error.getDefaultMessage());
         });
+        String first = errors.values().stream().filter(java.util.Objects::nonNull).findFirst().orElse("Request validation failed");
         ApiResponse<?> response = ApiResponse.builder()
                 .success(false)
+                .message(first)
                 .error(ApiResponse.ErrorDetail.builder()
                         .code("VALIDATION_ERROR")
                         .message("Request validation failed")
@@ -81,6 +83,42 @@ public class GlobalExceptionHandler {
      * RuntimeExceptions with a clear message -- they still fall through
      * to the generic handler below untouched.
      */
+    /**
+     * @PreAuthorize denials. Without this the RuntimeException handler below turned every
+     * "you may not do this" into a 400, across the whole API.
+     */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<?>> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex, HttpServletRequest req) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean anonymous = auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal());
+        return ResponseEntity.status(anonymous ? HttpStatus.UNAUTHORIZED : HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(anonymous ? "UNAUTHORIZED" : "FORBIDDEN",
+                        anonymous ? "Please log in" : "You do not have permission to do this", requestId(req)));
+    }
+
+    /** Refused by an enforced risk rule. Neutral wording (no tipping off); 403. */
+    @ExceptionHandler(zw.co.payport.gateway.risk.RiskDeclinedException.class)
+    public ResponseEntity<ApiResponse<?>> handleRiskDeclined(zw.co.payport.gateway.risk.RiskDeclinedException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] Risk-declined on {} {}", req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error("PAYMENT_NOT_ALLOWED", ex.getMessage(), requestId(req)));
+    }
+
+    /** A provider is suspended or not responding: nothing was sent. 503 with a code channels can act on (offer another method). */
+    @ExceptionHandler(zw.co.payport.gateway.integration.ProviderUnavailableException.class)
+    public ResponseEntity<ApiResponse<?>> handleProviderUnavailable(zw.co.payport.gateway.integration.ProviderUnavailableException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] {} unavailable on {} {}", ex.getProviderCode(), req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "60")
+                .body(ApiResponse.error("PROVIDER_UNAVAILABLE", ex.getMessage(), requestId(req)));
+    }
+
+    /** A channel switched off from the portal: nothing was sent. 503 CHANNEL_UNAVAILABLE. */
+    @ExceptionHandler(zw.co.payport.gateway.channels.ChannelUnavailableException.class)
+    public ResponseEntity<ApiResponse<?>> handleChannelUnavailable(zw.co.payport.gateway.channels.ChannelUnavailableException ex, HttpServletRequest req) {
+        log.warn("[GATEWAY] channel {} switched off: {} {}", ex.getChannel(), req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "300")
+                .body(ApiResponse.error("CHANNEL_UNAVAILABLE", ex.getMessage(), requestId(req)));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<?>> handleRuntimeException(RuntimeException ex, HttpServletRequest req) {
         log.warn("[GATEWAY] {} on {} {}: {}",

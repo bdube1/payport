@@ -1,0 +1,57 @@
+{
+  "title": "Suspicious Transaction Report",
+  "reportType": "STR",
+  "outputFormat": "GOAML_XML",
+  "goaml": { "reportCode": "STR", "submissionCode": "E" },
+  "basis": [
+    "MLPC Act [Chapter 9:24] s30(1): report suspicion of money laundering, terrorist or proliferation financing (attempted transactions included)",
+    "RBZ AML/CFT/CPF Guideline 01-2025 s3.105-3.107: within three working days of forming the suspicion, via goAML",
+    "MLPC Act s31(2): no tipping off - this report and its existence must not be disclosed to the subject",
+    "Structure: goAML report (UNODC) - reporting entity, reporting person, reason, action, transactions, indicators; narrative guidance: FATF/Egmont (who, what, when, where, why, how)"
+  ],
+  "sections": [
+    { "id": "A", "label": "Reporting institution", "fields": [
+      { "name": "rentity_id", "label": "goAML reporting entity ID", "source": "param:FIU.REPORTING_ENTITY_ID", "required": true },
+      { "name": "rentity_name", "label": "Institution name", "source": "param:FIU.REPORTING_ENTITY_NAME", "required": true },
+      { "name": "rentity_branch", "label": "Branch / office", "source": "param:FIU.REPORTING_ENTITY_BRANCH", "required": false },
+      { "name": "entity_reference", "label": "Internal report reference", "source": "report.ref", "required": true },
+      { "name": "case_reference", "label": "Internal case reference", "source": "case.case_ref", "required": true }
+    ]},
+    { "id": "B", "label": "Reporting officer", "fields": [
+      { "name": "officer_name", "label": "Compliance officer (preparer)", "source": "officer.full_name", "required": true },
+      { "name": "officer_email", "label": "Email", "source": "officer.email", "required": true },
+      { "name": "officer_phone", "label": "Phone", "source": "officer.phone", "required": false },
+      { "name": "officer_position", "label": "Position", "source": "manual", "required": true }
+    ]},
+    { "id": "C", "label": "Subject", "fields": [
+      { "name": "subject_type", "label": "Person or entity", "source": "case.subject_type", "required": true },
+      { "name": "subject_name", "label": "Full name / registered name", "source": "case.subject_name", "required": true, "overridable": true },
+      { "name": "subject_phone", "label": "Phone / wallet number", "source": "subject.phone", "required": false, "overridable": true },
+      { "name": "subject_id_number", "label": "National ID / passport / company registration number", "source": "manual", "required": true },
+      { "name": "subject_date_of_birth", "label": "Date of birth / incorporation", "source": "manual", "required": false },
+      { "name": "subject_nationality", "label": "Nationality / country of incorporation", "source": "manual", "required": false },
+      { "name": "subject_address", "label": "Physical address", "source": "manual", "required": false },
+      { "name": "subject_occupation", "label": "Occupation / business activity", "source": "manual", "required": false },
+      { "name": "relationship", "label": "Relationship with PayPort (customer since, products used)", "source": "manual", "required": true }
+    ]},
+    { "id": "D", "label": "Transactions", "fields": [
+      { "name": "transactions", "label": "Transactions linked to the suspicion", "source": "case.transactions", "required": true },
+      { "name": "total_amount", "label": "Total value by currency", "source": "case.transaction_totals", "required": true },
+      { "name": "attempted_only", "label": "Were any transactions only attempted (refused or not completed)?", "source": "manual", "required": true }
+    ]},
+    { "id": "E", "label": "Grounds for suspicion", "fields": [
+      { "name": "indicators", "label": "Indicators and alerts", "source": "case.alerts", "required": true },
+      { "name": "red_flags", "label": "Red flags observed (Guideline 01-2025 Annexure B)", "source": "manual", "required": true },
+      { "name": "narrative", "label": "Narrative: who, what, when, where, why and how; why the activity is unusual for this customer", "source": "manual", "required": true, "minLength": 200 },
+      { "name": "case_rationale", "label": "Compliance conclusion", "source": "case.proposal_note", "required": true }
+    ]},
+    { "id": "F", "label": "Action taken", "fields": [
+      { "name": "action_taken", "label": "Action taken (e.g. transaction refused, relationship restricted or exited, funds frozen)", "source": "manual", "required": true },
+      { "name": "funds_frozen", "label": "Funds frozen under targeted financial sanctions?", "source": "manual", "required": false }
+    ]},
+    { "id": "G", "label": "Related information", "fields": [
+      { "name": "related_reports", "label": "Previous reports on this subject", "source": "case.related_reports", "required": false },
+      { "name": "attachments", "label": "Supporting documents held (not attached here)", "source": "manual", "required": false }
+    ]}
+  ]
+}

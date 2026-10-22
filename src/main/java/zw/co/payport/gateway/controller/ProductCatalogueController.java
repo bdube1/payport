@@ -43,6 +43,14 @@ public class ProductCatalogueController {
     private final ProductCurrencyRepository  productCurrencyRepository;
     private final NetOneDataBundleService    netOneDataBundleService;
 
+    /** Currencies switched off (or not live) in the portal are not offered to customers. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.markets.MarketRegistry marketRegistry;
+
+    private boolean offered(ProductCurrency pc) {
+        return marketRegistry == null || marketRegistry.liveCurrency(pc.getCurrency());
+    }
+
     /**
      * Full product catalogue.
      * Each product includes an enabledCurrencies[] array — only the currencies
@@ -71,7 +79,7 @@ public class ProductCatalogueController {
             dto.put("logoUrl",       p.getLogoUrl()); // Add logo URL to response
 
             // Enabled currencies for this product
-            List<ProductCurrency> pcs = currenciesByProduct.getOrDefault(p.getId(), List.of());
+            List<ProductCurrency> pcs = currenciesByProduct.getOrDefault(p.getId(), List.of()).stream().filter(this::offered).toList();
             dto.put("enabledCurrencies", pcs.stream().map(pc -> {
                 Map<String, Object> c = new LinkedHashMap<>();
                 c.put("currency",      pc.getCurrency());
@@ -107,7 +115,7 @@ public class ProductCatalogueController {
         }
 
         ProductType p = productOpt.get();
-        List<ProductCurrency> pcs = productCurrencyRepository.findActiveByProductId(p.getId());
+        List<ProductCurrency> pcs = productCurrencyRepository.findActiveByProductId(p.getId()).stream().filter(this::offered).toList();
 
         List<Map<String, Object>> result = pcs.stream().map(pc -> {
             Map<String, Object> c = new LinkedHashMap<>();

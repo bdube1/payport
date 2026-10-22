@@ -1,14 +1,12 @@
 package zw.co.payport.gateway.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
-import zw.co.payport.gateway.service.AdaptorRegistry;
-import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
+import zw.co.payport.gateway.payments.CallbackInbox;
+import zw.co.payport.gateway.service.PaymentStatusVerifier;
 
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -23,8 +21,8 @@ import java.util.Map;
  * SECURITY MODEL:
  * 1. IP whitelist enforced by Cloudflare/firewall (not in app code for performance)
  * 2. Each provider's signature/auth is validated before any processing
- * 3. All processing is async - we return 200 OK immediately to prevent provider timeouts
- * 4. Idempotency: duplicate callbacks are safely ignored
+ * 3. Every callback is stored in the inbox (payment_callbacks) before processing
+ * 4. Idempotency: duplicates and racing callbacks have exactly one effect
  *
  * URLs (register these with each provider):
  * EcoCash:  POST https://api.payport.africa/api/v1/callbacks/ecocash
@@ -36,9 +34,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CallbackController {
 
-    private final AdaptorRegistry              adaptorRegistry;
-    private final TransactionOrchestratorService orchestratorService;
-    private final ObjectMapper                 objectMapper;
+    private final CallbackInbox                inbox;
+    private final PaymentStatusVerifier        verifier;
 
     /**
      * EcoCash Callback
@@ -75,54 +72,35 @@ public class CallbackController {
         return handleCallback("TELECASH", rawBody, request);
     }
 
+    /** MTN MoMo (RequestToPay callback; MTN may use PUT). Trigger only: confirmed by status query. */
+    @RequestMapping(value = "/mtn-momo", method = {org.springframework.web.bind.annotation.RequestMethod.POST, org.springframework.web.bind.annotation.RequestMethod.PUT})
+    public ResponseEntity<String> mtnMomoCallback(@RequestBody String rawBody, HttpServletRequest request) {
+        return handleCallback("MTN_MOMO", rawBody, request);
+    }
+
+    /** Airtel Money collection callback. Trigger only: confirmed by status query. */
+    @PostMapping("/airtel-money")
+    public ResponseEntity<String> airtelMoneyCallback(@RequestBody String rawBody, HttpServletRequest request) {
+        return handleCallback("AIRTEL_MONEY", rawBody, request);
+    }
+
     // ─── Core callback handler ────────────────────────────────────────────────
 
+    /**
+     * Every callback goes through the inbox (stored first, then processed; see CallbackInbox).
+     * EcoCash and OneMoney callbacks are never trusted on their content: the provider is
+     * asked through our authenticated status query, and only its definite answer applies.
+     * The provider always gets a 2xx unless signature validation failed.
+     */
     private ResponseEntity<String> handleCallback(String provider, String rawBody, HttpServletRequest request) {
         log.info("[CALLBACK] Received {} callback from IP: {}", provider, request.getRemoteAddr());
-        log.debug("[CALLBACK] {} body: {}", provider, rawBody);
-
-        try {
-            // 1. Get headers
-            Map<String, String> headers = extractHeaders(request);
-
-            // 2. Validate callback (signature, structure)
-            if (!adaptorRegistry.hasPaymentAdaptor(provider)) {
-                log.warn("[CALLBACK] No adaptor for provider: {}", provider);
-                return ResponseEntity.ok("ACK");
-            }
-
-            PaymentProviderAdaptor adaptor = adaptorRegistry.getPaymentAdaptor(provider);
-            PaymentProviderAdaptor.CallbackValidationResult validation =
-                    adaptor.validateCallback(headers, rawBody);
-
-            if (!validation.isValid()) {
-                log.error("[CALLBACK] {} callback validation FAILED: {}", provider, validation.getFailureReason());
-                // Return 403 to tell provider this callback was rejected
-                return ResponseEntity.status(403).body("INVALID_SIGNATURE");
-            }
-
-            // 3. Parse callback
-            PaymentProviderAdaptor.CallbackEvent event = adaptor.parseCallback(rawBody);
-            log.info("[CALLBACK] {} parsed - reference: {} status: {} providerRef: {}",
-                    provider, event.getPayportReference(), event.getStatus(), event.getProviderReference());
-
-            // 4. Process asynchronously (return 200 immediately to provider)
-            // Processing happens in orchestratorService which updates transaction state
-            if (event.getPayportReference() != null && !event.getPayportReference().isBlank()) {
-                orchestratorService.handlePaymentCallback(event);
-            } else {
-                log.warn("[CALLBACK] {} callback missing payportReference - cannot process", provider);
-            }
-
-            // 5. Return 200 immediately - OneMoney specifically requires "SUCCESS"
-            String ackBody = "ONEMONEY".equals(provider) ? "SUCCESS" : "OK";
-            return ResponseEntity.ok(ackBody);
-
-        } catch (Exception e) {
-            log.error("[CALLBACK] {} callback processing error: {}", provider, e.getMessage(), e);
-            // Always return 200 to provider - never let them know our internal errors
-            return ResponseEntity.ok("ACK");
+        CallbackInbox.Result r = inbox.receive(provider, rawBody, extractHeaders(request), request.getRemoteAddr());
+        if (r.status() == CallbackInbox.Status.INVALID && !verifier.requiresVerification(provider)
+                && r.detail() != null && r.detail().startsWith("validation failed")) {
+            return ResponseEntity.status(403).body("INVALID_SIGNATURE");
         }
+        // OneMoney specifically requires "SUCCESS"
+        return ResponseEntity.ok("ONEMONEY".equals(provider) ? "SUCCESS" : "OK");
     }
 
     private Map<String, String> extractHeaders(HttpServletRequest request) {

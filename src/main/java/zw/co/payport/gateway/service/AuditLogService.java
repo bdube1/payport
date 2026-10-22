@@ -31,8 +31,14 @@ public class AuditLogService {
      * Write an audit log entry.
      * Called on EVERY transaction state change.
      * actor: "SYSTEM", "ECOCASH_CALLBACK", "ONEMONEY_CALLBACK", "OPS:username"
+     *
+     * Joins the caller's transaction (was REQUIRES_NEW): the audit row now commits or rolls
+     * back together with the status change it describes, and writing it no longer needs a
+     * second pooled connection while the caller holds the payment's row lock (with
+     * REQUIRES_NEW, enough requests waiting on one payment could exhaust the pool and stall
+     * the lock holder).
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public void log(String transactionReference,
                     TransactionStatus fromStatus,
                     TransactionStatus toStatus,

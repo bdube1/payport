@@ -14,7 +14,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -22,18 +22,35 @@
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <lombok.version>1.18.30</lombok.version>
         <jjwt.version>0.11.5</jjwt.version>
-        <poi.version>5.2.5</poi.version>
+        <poi.version>5.4.1</poi.version>
         <pdfbox.version>2.0.31</pdfbox.version>
+        <!-- Phase 9 dependency scan (docs/phase9/PHASE9_REPORT.md): versions above Spring Boot's defaults that
+             fix published advisories. Remove an override once Spring Boot manages that version or newer. -->
+        <tomcat.version>11.0.26</tomcat.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
     </properties>
+
+    <!-- Phase 9 dependency scan: Jackson 2 (used alongside Spring's Jackson 3) on the line that fixes
+         GHSA-p6pp-m3f8-5c89 and GHSA-7hhh-6rmp-j9qf (jackson-core). See docs/phase9/PHASE9_REPORT.md. -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.22.3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
 
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
         <!-- Explicit JSR310 module for consistent LocalDateTime serialization -->
@@ -52,6 +69,12 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
+        <!-- JdbcTemplate for the payment lifecycle tables (attempts, callback inbox, checks) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
@@ -66,12 +89,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Phase 9: Prometheus scrape endpoint (token-protected, MetricsTokenFilter) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
         <!-- Database -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
-            <version>8.2.0</version>
             <scope>runtime</scope>
         </dependency>
 
@@ -79,7 +106,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -143,13 +169,13 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.78</version>
+            <version>1.86</version>
         </dependency>
 
         <!-- Flyway for database migrations -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
 
         <dependency>
@@ -167,6 +193,37 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Boot 4: TestRestTemplate lives in its own module -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-resttestclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-restclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Real-MySQL migration tests (versions managed by the Spring Boot parent). Skipped automatically when Docker is unavailable. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers 2 needs commons-lang3 at runtime; Boot 4 no longer brings it in transitively
+             (without it Testcontainers silently reports "no Docker" and the suites skip). -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -197,6 +254,17 @@
                 </configuration>
             </plugin>
 
+            <!-- Tests run as a non-production deployment (PAYPORT_ENV defaults to production, which
+                 requires PAYPORT_DATA_KEY and forbids local-testing switches). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <environmentVariables>
+                        <PAYPORT_ENV>test</PAYPORT_ENV>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

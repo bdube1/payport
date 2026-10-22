@@ -65,13 +65,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 || path.equals("/api/v1/auth/register")
                 || path.equals("/api/v1/auth/ops/login");
         boolean isAssistantPath = path.equals("/api/v1/assistant/chat");
+        // Phase 5: public bill-account lookups return a customer's name, so they are limited per IP
+        // against enumeration; merchant portal login/signup likewise.
+        boolean isLookupPath = path.equals("/api/v1/bills/customer-info") || path.matches("/api/v1/billers/[^/]+/lookup");
+        if (path.equals("/api/v1/merchant-portal/login") || path.equals("/api/v1/merchant-portal/signup")) isAuthPath = true;
 
-        if (!isAuthPath && !isAssistantPath) {
+        if (!isAuthPath && !isAssistantPath && !isLookupPath) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        int maxRequests = isAssistantPath ? ASSISTANT_MAX_REQUESTS_PER_WINDOW : DEFAULT_MAX_REQUESTS_PER_WINDOW;
+        int maxRequests = isAssistantPath || isLookupPath ? ASSISTANT_MAX_REQUESTS_PER_WINDOW : DEFAULT_MAX_REQUESTS_PER_WINDOW;
         String key = clientIp(request) + ":" + path;
         long now = Instant.now().toEpochMilli();
 

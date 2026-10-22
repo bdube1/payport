@@ -36,9 +36,12 @@ public class PaymentLinkService {
 
     public PaymentLink create(Merchant merchant, CreateLinkRequest req) {
         String currency = (req.currency() == null || req.currency().isBlank()) ? merchant.getDefaultCurrency() : req.currency().toUpperCase();
-        if (!"USD".equals(currency) && !"ZWG".equals(currency)) {
-            throw new RuntimeException("currency must be USD or ZWG");
+        // Links always take live money: unknown currencies and sandbox-market currencies are refused here.
+        if (!checkoutSessionService.isSupportedCurrency(currency)) {
+            throw new RuntimeException("Unsupported currency " + currency);
         }
+        // Links always take live money, so the currency must be enabled for the merchant.
+        checkoutSessionService.requireLiveCurrency(merchant.getId(), currency);
         PaymentLink link = PaymentLink.builder()
                 .merchantId(merchant.getId())
                 .slug(randomSlug())
@@ -74,7 +77,11 @@ public class PaymentLinkService {
     }
 
     /** Public -- called when a customer visits the link. Creates a fresh CheckoutSession and returns its id. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.channels.ChannelService channels;
+
     public Long startCheckoutFromLink(String slug, Long customAmountCents) {
+        if (channels != null) channels.require("PAYMENT_LINK");
         PaymentLink link = getBySlug(slug);
         if (!"ACTIVE".equals(link.getStatus())) {
             throw new RuntimeException("This payment link is no longer active");

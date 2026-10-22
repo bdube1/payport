@@ -58,6 +58,13 @@ public class OneMoneyStatementParser implements StatementParser {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
 
+                // Status 30 = success (OneMoney DPS spec: 10 init, 20 in progress, 30 success, 40 failure, 50 closed);
+                // the last column is the direction ("+" received, "-" refund/reversal out).
+                String status = cellString(row, 8);
+                if (status != null && !"30".equals(status)) continue;
+                String direction = cellString(row, 11);
+                if (direction != null && !"+".equals(direction)) continue;
+
                 String tradingNo = cellString(row, 0);
                 String merchantOrderNo = cellString(row, 2);
                 String tradingTime = cellString(row, 3);
@@ -104,23 +111,11 @@ public class OneMoneyStatementParser implements StatementParser {
     }
 
     private String cellString(Row row, int col) {
-        Cell cell = row.getCell(col);
-        if (cell == null) return null;
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> String.valueOf(cell.getNumericCellValue());
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            default -> null;
-        };
+        return StatementCells.text(row, col);
     }
 
     private Long parseAmountToCents(String value) {
-        try {
-            double d = Double.parseDouble(value.replace(",", "").trim());
-            return Math.round(d * 100);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return StatementCells.cents(value);
     }
 
     private LocalDateTime parseDate(String raw) {

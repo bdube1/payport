@@ -1,0 +1,735 @@
+package zw.co.payport.gateway.payments;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mysql.MySQLContainer;
+import zw.co.payport.gateway.entity.Transaction;
+import zw.co.payport.gateway.enums.TransactionStatus;
+import zw.co.payport.gateway.exception.InvalidStateTransitionException;
+import zw.co.payport.gateway.model.request.InitiateTransactionRequest;
+import zw.co.payport.gateway.model.request.PayTransactionRequest;
+import zw.co.payport.gateway.model.response.TransactionResponse;
+import zw.co.payport.gateway.payments.SimulatorPaymentAdaptor.Query;
+import zw.co.payport.gateway.payments.SimulatorPaymentAdaptor.Submit;
+import zw.co.payport.gateway.repository.TransactionRepository;
+import zw.co.payport.gateway.scheduler.PaymentReconciliationScheduler;
+import zw.co.payport.gateway.scheduler.PaymentTimeoutWatchdog;
+import zw.co.payport.gateway.service.FulfilmentQueueService;
+import zw.co.payport.gateway.service.SmsNotificationService;
+import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+/**
+ * Phase 2 acceptance: the payment lifecycle under failure. Whole application, real MySQL 8,
+ * real Flyway migrations; the provider is a scriptable simulator.
+ *
+ * For every scenario the bar is: exactly one financial effect (one confirmation, one
+ * fulfilment enqueue, one confirmed SMS), the correct final state, and no blind retry
+ * (the provider receives exactly one payment request).
+ *
+ * SIM is signature-trusted (callbacks need x-sim-signature: valid). SIMQ is listed in
+ * payport.payments.query-providers, so its callbacks are confirmed by status query.
+ */
+@Testcontainers(disabledWithoutDocker = true)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate
+@org.springframework.context.annotation.Import(PaymentLifecycleScenarioTest.Providers.class)
+class PaymentLifecycleScenarioTest {
+
+    @Container
+    static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.0");
+
+    @DynamicPropertySource
+    static void props(DynamicPropertyRegistry r) {
+        r.add("DB_URL", MYSQL::getJdbcUrl);
+        r.add("DB_USERNAME", MYSQL::getUsername);
+        r.add("DB_PASSWORD", MYSQL::getPassword);
+        r.add("JWT_SECRET", () -> "scenario-test-secret-scenario-test-secret-scenario-0123456789");
+        r.add("payport.payments.query-providers", () -> "ECOCASH,ONEMONEY,ZIMSWITCH,SIMQ");
+        r.add("payport.payments.resolver.enabled", () -> "false");
+        r.add("payport.integrations.breaker.enabled", () -> "false"); // scenarios script many provider failures on purpose // driven explicitly with runOnce
+        r.add("payport.payments.watchdog.enabled", () -> "false");
+        r.add("payport.fulfilment.worker.enabled", () -> "false");
+    }
+
+    @TestConfiguration
+    static class Providers {
+        @Bean SimulatorPaymentAdaptor simAdaptor() { return new SimulatorPaymentAdaptor("SIM"); }
+        @Bean SimulatorPaymentAdaptor simqAdaptor() { return new SimulatorPaymentAdaptor("SIMQ"); }
+    }
+
+    @MockitoBean SmsNotificationService sms;
+    @MockitoBean FulfilmentQueueService fulfilment;
+
+    @Autowired TransactionOrchestratorService orchestrator;
+    @Autowired CallbackInbox inbox;
+    @Autowired PaymentReconciliationScheduler resolver;
+    @Autowired PaymentTimeoutWatchdog watchdog;
+    @Autowired TransactionRepository transactions;
+    @Autowired PaymentAttemptStore attempts;
+    @Autowired PaymentCheckStore checks;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired TransactionOutcomeService outcomes;
+    @Autowired zw.co.payport.gateway.recon.ReconExceptionStore reconExceptions;
+    @Autowired org.springframework.boot.resttestclient.TestRestTemplate http;
+
+    private static final AtomicInteger SEQ = new AtomicInteger((int) (System.nanoTime() % 400_000));
+    private static final Map<String, String> SIGNED = Map.of("x-sim-signature", "valid");
+
+    @BeforeEach
+    void providersExist() {
+        jdbc.update("INSERT IGNORE INTO payment_methods (code, name, is_active, display_order) VALUES ('SIM', 'Simulator', TRUE, 90), ('SIMQ', 'Simulator (query-verified)', TRUE, 91)");
+    }
+
+    // ─── helpers ───────────────────────────────────────────────────────────────
+
+    private String newPayment(long cents) {
+        String ref = String.format("PP-API-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
+        InitiateTransactionRequest req = new InitiateTransactionRequest();
+        req.setReference(ref);
+        req.setProductTypeCode("MERCHANT_CHECKOUT");
+        req.setRecipientIdentifier("+263771234567");
+        req.setAmountCents(cents);
+        req.setCurrency("USD");
+        req.setCustomerPhone("+263771234567");
+        req.setChannel("API");
+        orchestrator.initiateTransaction(req, "127.0.0.1");
+        return ref;
+    }
+
+    private TransactionResponse pay(String ref, String provider) throws Exception {
+        PayTransactionRequest p = new PayTransactionRequest();
+        p.setReference(ref);
+        p.setPaymentMethodCode(provider);
+        p.setCustomerPhone("+263771234567");
+        return orchestrator.submitPayment(p);
+    }
+
+    private Transaction tx(String ref) {
+        return transactions.findByReference(ref).orElseThrow();
+    }
+
+    private CallbackInbox.Result callback(String provider, String ref, String status, long cents) {
+        return inbox.receive(provider, SimulatorPaymentAdaptor.callbackBody(ref, status, cents, "SIMTX-" + ref), SIGNED, "10.0.0.1");
+    }
+
+    private int auditRowsTo(String ref, TransactionStatus to) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM transaction_audit_log WHERE transaction_reference = ? AND to_status = ?",
+                Integer.class, ref, to.name());
+    }
+
+    /** The money-relevant effects of a confirmation, each of which must happen exactly once (or never). */
+    private void assertConfirmedExactlyOnce(String ref) {
+        assertEquals(TransactionStatus.PAYMENT_CONFIRMED, tx(ref).getStatus());
+        assertEquals(1, auditRowsTo(ref, TransactionStatus.PAYMENT_CONFIRMED), "one confirmation in the audit trail");
+        verify(fulfilment, times(1)).enqueue(ref);
+        verifyNoInteractions(sms); // SMS only when a transaction completes (owner decision)
+    }
+
+    private void assertNeverConfirmed(String ref) {
+        assertEquals(0, auditRowsTo(ref, TransactionStatus.PAYMENT_CONFIRMED));
+        verify(fulfilment, never()).enqueue(ref);
+        verifyNoInteractions(sms);
+    }
+
+    private int openExceptions(String ref, String category) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM recon_exceptions WHERE transaction_reference = ? AND category = ? AND status = 'OPEN'",
+                Integer.class, ref, category);
+    }
+
+    /** A resolver pass as if {@code ahead} of real time, so the grace period has passed. */
+    private PaymentReconciliationScheduler.Summary resolveAt(LocalDateTime when) {
+        return resolver.runOnce(when);
+    }
+
+    private static <T> List<Future<T>> race(int threads, Callable<T> task) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<T>> futures = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            futures.add(pool.submit(() -> { start.await(); return task.call(); }));
+        }
+        start.countDown();
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(60, TimeUnit.SECONDS), "racing threads finished");
+        return futures;
+    }
+
+    // ─── scenarios ─────────────────────────────────────────────────────────────
+
+    @Test
+    void happyPath_acceptedThenConfirmedByCallback() throws Exception {
+        String ref = newPayment(500);
+        pay(ref, "SIM");
+
+        Transaction t = tx(ref);
+        assertEquals(TransactionStatus.PAYMENT_PENDING, t.getStatus());
+        assertEquals("SIM-" + ref, t.getProviderReference());
+        assertEquals(PaymentAttemptStore.Status.ACCEPTED, attempts.forTransaction(ref).get(0).status());
+        assertEquals(PaymentCheckStore.Status.OPEN, checks.find(ref).orElseThrow().status());
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+
+        assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", ref, "SUCCESS", 500).status());
+        assertConfirmedExactlyOnce(ref);
+        assertEquals(PaymentCheckStore.Status.RESOLVED, checks.find(ref).orElseThrow().status());
+        assertEquals(1, SimulatorPaymentAdaptor.script(ref).submits.get());
+    }
+
+    @Test
+    void duplicateCallbacks_sequentialAndConcurrent_haveOneEffect() throws Exception {
+        String ref = newPayment(700);
+        pay(ref, "SIM");
+
+        List<Future<CallbackInbox.Result>> results = race(10, () -> callback("SIM", ref, "SUCCESS", 700));
+        for (int i = 0; i < 5; i++) callback("SIM", ref, "SUCCESS", 700);
+
+        long applied = 0;
+        // A delivery that arrives after the first one finished is answered from the inbox ("duplicate of an already
+        // APPLIED callback") without being processed; only processed deliveries count. (`duplicate` is not the
+        // test: it means "not the first copy received", and the copy that wins the row lock may not be the first.)
+        for (Future<CallbackInbox.Result> f : results) {
+            CallbackInbox.Result r = f.get();
+            boolean processed = r.detail() == null || !r.detail().startsWith("duplicate of an already");
+            if (r.status() == CallbackInbox.Status.APPLIED && processed) applied++;
+        }
+        assertEquals(1, applied, "exactly one of the racing deliveries applied");
+        assertConfirmedExactlyOnce(ref);
+
+        Map<String, Object> row = jdbc.queryForMap("SELECT COUNT(*) AS n, MAX(received_count) AS received, MAX(status) AS status "
+                + "FROM payment_callbacks WHERE payport_reference = ?", ref);
+        assertEquals(1L, ((Number) row.get("n")).longValue(), "one inbox row for an identical body");
+        assertEquals(15, ((Number) row.get("received")).intValue());
+        assertEquals("APPLIED", row.get("status"));
+    }
+
+    @Test
+    void outOfOrder_failureAfterSuccess_isAConflictAndNeverUndoesTheConfirmation() throws Exception {
+        String ref = newPayment(800);
+        pay(ref, "SIM");
+        assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", ref, "SUCCESS", 800).status());
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "FAILED", 800).status());
+        assertConfirmedExactlyOnce(ref);
+    }
+
+    @Test
+    void outOfOrder_successAfterFailure_isFlaggedNotSilentlyDropped() throws Exception {
+        String ref = newPayment(900);
+        pay(ref, "SIM");
+        assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", ref, "FAILED", 900).status());
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 900).status(),
+                "the customer may have paid for a payment we recorded as failed: a person must see it");
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM payment_callbacks WHERE payport_reference = ? AND status = 'CONFLICT'",
+                Integer.class, ref));
+    }
+
+    @Test
+    void amountMismatchInCallback_isAConflict() throws Exception {
+        String ref = newPayment(1000);
+        pay(ref, "SIM");
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 10).status());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void badSignature_changesNothing() throws Exception {
+        String ref = newPayment(1100);
+        pay(ref, "SIM");
+        CallbackInbox.Result r = inbox.receive("SIM", SimulatorPaymentAdaptor.callbackBody(ref, "SUCCESS", 1100, "x"), Map.of(), "6.6.6.6");
+        assertEquals(CallbackInbox.Status.INVALID, r.status());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void callbackBeforeSubmitResponse_confirmsOnceAndTheLateResponseChangesNothing() throws Exception {
+        String ref = newPayment(1200);
+        SimulatorPaymentAdaptor.script(ref).duringSubmit = r -> assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", r, "SUCCESS", 1200).status());
+
+        pay(ref, "SIM");
+
+        assertConfirmedExactlyOnce(ref);
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+        assertEquals(PaymentAttemptStore.Status.ACCEPTED, attempts.forTransaction(ref).get(0).status());
+        assertNotNull(tx(ref).getProviderReference());
+    }
+
+    @Test
+    void callbackBeforeSubmitResponse_thenTimeout_staysConfirmed() throws Exception {
+        String ref = newPayment(1250);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+        s.duringSubmit = r -> callback("SIM", r, "SUCCESS", 1250);
+
+        pay(ref, "SIM");
+
+        assertConfirmedExactlyOnce(ref);
+        assertEquals(PaymentAttemptStore.Status.UNKNOWN, attempts.forTransaction(ref).get(0).status());
+    }
+
+    @Test
+    void readTimeout_thenLateSuccess_byResolverQuery() throws Exception {
+        String ref = newPayment(1300);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+
+        pay(ref, "SIM");
+
+        Transaction t = tx(ref);
+        assertEquals(TransactionStatus.PAYMENT_PENDING, t.getStatus(), "a timeout is not a failure");
+        assertEquals("UNKNOWN", t.getPaymentProviderStatus());
+        assertEquals(PaymentAttemptStore.Status.UNKNOWN, attempts.forTransaction(ref).get(0).status());
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+
+        s.query = Query.PENDING;
+        resolveAt(LocalDateTime.now().plusMinutes(1));
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+
+        s.query = Query.SUCCESS;
+        resolveAt(LocalDateTime.now().plusMinutes(2));
+        assertConfirmedExactlyOnce(ref);
+        assertEquals(PaymentCheckStore.Status.RESOLVED, checks.find(ref).orElseThrow().status());
+        assertEquals(1, s.submits.get(), "resolved by query, never re-sent");
+    }
+
+    @Test
+    void readTimeout_thenLateSuccess_byCallback() throws Exception {
+        String ref = newPayment(1350);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.READ_TIMEOUT;
+        pay(ref, "SIM");
+        assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", ref, "SUCCESS", 1350).status());
+        assertConfirmedExactlyOnce(ref);
+    }
+
+    @Test
+    void serverError_isUnknown_thenDefiniteFailureByQuery() throws Exception {
+        String ref = newPayment(1400);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.SERVER_ERROR;
+
+        pay(ref, "SIM");
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+
+        s.query = Query.FAILED;
+        resolveAt(LocalDateTime.now().plusMinutes(1));
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+        assertEquals(1, s.submits.get());
+    }
+
+    @Test
+    void connectionRefused_isADefiniteFailureImmediately() throws Exception {
+        String ref = newPayment(1500);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.CONNECT_REFUSED;
+
+        pay(ref, "SIM");
+
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        assertEquals(PaymentAttemptStore.Status.REJECTED, attempts.forTransaction(ref).get(0).status());
+        assertEquals(PaymentCheckStore.Status.RESOLVED, checks.find(ref).orElseThrow().status());
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+    }
+
+    @Test
+    void providerRejection_isADefiniteFailure() throws Exception {
+        String ref = newPayment(1550);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.REJECT_4XX;
+        pay(ref, "SIM");
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void providerDownForQueries_paymentStaysOpen_thenGoesToManualAfter72hWithoutFailing() throws Exception {
+        String ref = newPayment(1600);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+        s.query = Query.DOWN;
+        pay(ref, "SIM");
+
+        resolveAt(LocalDateTime.now().plusMinutes(1));
+        resolveAt(LocalDateTime.now().plusMinutes(2));
+        PaymentCheckStore.Check c = checks.find(ref).orElseThrow();
+        assertEquals(PaymentCheckStore.Status.OPEN, c.status());
+        assertEquals(2, c.checkCount());
+        assertTrue(c.lastResult().contains("UNKNOWN"), c.lastResult());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+
+        resolveAt(LocalDateTime.now().plusHours(73));
+        assertEquals(PaymentCheckStore.Status.MANUAL, checks.find(ref).orElseThrow().status());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus(), "time never fails a payment");
+        verifyNoInteractions(sms); // no SMS for pending, failed or timed-out payments
+        assertEquals(1, s.submits.get());
+    }
+
+    @Test
+    void resolverAmountMismatch_goesToManualAndIsNotApplied() throws Exception {
+        String ref = newPayment(1700);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+        s.query = Query.SUCCESS;
+        s.queryAmountCents = 17L;
+        pay(ref, "SIM");
+
+        resolveAt(LocalDateTime.now().plusMinutes(1));
+        assertEquals(PaymentCheckStore.Status.MANUAL, checks.find(ref).orElseThrow().status());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void concurrentIdenticalPayRequests_sendExactlyOnePush() throws Exception {
+        String ref = newPayment(1800);
+        AtomicInteger refused = new AtomicInteger();
+        List<Future<Boolean>> results = race(10, () -> {
+            try {
+                pay(ref, "SIM");
+                return true;
+            } catch (InvalidStateTransitionException e) {
+                refused.incrementAndGet();
+                return false;
+            }
+        });
+        int ok = 0;
+        for (Future<Boolean> f : results) if (f.get()) ok++;
+
+        assertEquals(1, ok);
+        assertEquals(9, refused.get());
+        assertEquals(1, SimulatorPaymentAdaptor.script(ref).submits.get(), "one push to the customer's phone");
+        assertEquals(1, attempts.forTransaction(ref).size());
+        assertEquals(1, auditRowsTo(ref, TransactionStatus.PAYMENT_PENDING));
+    }
+
+    @Test
+    void retryAfterUnknownOutcome_isRefused() throws Exception {
+        String ref = newPayment(1900);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.READ_TIMEOUT;
+        pay(ref, "SIM");
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.ACCEPT;
+        assertThrows(InvalidStateTransitionException.class, () -> pay(ref, "SIM"));
+        assertEquals(1, SimulatorPaymentAdaptor.script(ref).submits.get(), "no blind retry");
+    }
+
+    @Test
+    void windowClose_toldTimedOut_thenLatePaymentIsNeverFulfilled_onlyRefunded() throws Exception {
+        String ref = newPayment(2000);
+        pay(ref, "SIM");
+        assertTrue(watchdog.runOnce(LocalDateTime.now().plusMinutes(5)) >= 1);
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+        assertEquals(TransactionOutcomeService.Outcome.TIMED_OUT, outcomes.current(ref).orElseThrow().outcome());
+        assertEquals("The transaction timed out.", outcomes.current(ref).orElseThrow().message());
+
+        // The provider confirms after the customer was told "timed out": never fulfilled, refund required.
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 2000).status());
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+        assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+        callback("SIM", ref, "SUCCESS", 2000); // a repeat does not add a second exception
+        assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+
+        // No path to fulfilment exists: the state machine refuses it, and the resolver cannot do it either.
+        assertFalse(TransactionStatus.PAYMENT_TIMEOUT.canTransitionTo(TransactionStatus.PAYMENT_CONFIRMED));
+        SimulatorPaymentAdaptor.script(ref).query = Query.SUCCESS;
+        resolveAt(LocalDateTime.now().plusMinutes(10));
+        assertNeverConfirmed(ref);
+
+        // The only way to close it is a refund decision.
+        long id = ((Number) reconExceptions.forTransaction(ref).get(0).get("id")).longValue();
+        assertThrows(IllegalArgumentException.class, () -> reconExceptions.resolveById(id, "WRITTEN_OFF", "fin.bob", "no"));
+        assertEquals(1, reconExceptions.resolveById(id, "REFUNDED", "fin.bob", "EcoCash refund TC260101.0001.A1"));
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void ussdWaitEnds_customerToldTimedOut_paymentClosedNotFailed_andLateSuccessIsNeverFulfilled() {
+        String ref = String.format("PP-USD-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
+        String body = "{\"reference\":\"" + ref + "\",\"productTypeCode\":\"MERCHANT_CHECKOUT\",\"recipientIdentifier\":\"+263771234567\","
+                + "\"amountCents\":2100,\"currency\":\"USD\",\"customerPhone\":\"+263771234567\",\"channel\":\"USSD\"}";
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        var init = http.exchange("/api/v1/transactions/initiate", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+        assertEquals(201, init.getStatusCode().value(), init.getBody());
+        String token = init.getBody().replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
+        h.set("X-Transaction-Token", token);
+
+        // The customer never approves; the provider keeps saying PENDING. The USSD session waits 2 s.
+        long t0 = System.currentTimeMillis();
+        var pay = http.exchange("/api/v1/transactions/pay?waitSeconds=2", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>("{\"reference\":\"" + ref + "\",\"paymentMethodCode\":\"SIM\",\"customerPhone\":\"+263771234567\"}", h),
+                String.class);
+        assertEquals(200, pay.getStatusCode().value(), pay.getBody());
+        assertTrue(pay.getBody().contains("\"outcome\":\"TIMED_OUT\""), pay.getBody());
+        assertTrue(System.currentTimeMillis() - t0 < 15_000);
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus(), "closed for the customer, not failed");
+        assertNull(tx(ref).getFailedAt());
+
+        // The customer approves on the phone afterwards: refunded, never fulfilled.
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 2100).status());
+        assertNeverConfirmed(ref);
+        assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+    }
+
+    @Test
+    void windowClose_noAnswerAtAll_isNoResponse() throws Exception {
+        String ref = newPayment(2050);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+        s.query = Query.DOWN;
+        pay(ref, "SIM");
+        watchdog.runOnce(LocalDateTime.now().plusMinutes(5));
+        TransactionOutcomeService.Result o = outcomes.current(ref).orElseThrow();
+        assertEquals(TransactionOutcomeService.Outcome.NO_RESPONSE, o.outcome());
+        assertTrue(o.message().startsWith("No response from"), o.message());
+        verifyNoInteractions(sms);
+    }
+
+    @Test
+    void windowClose_finalStatusQueryWins() throws Exception {
+        String ref = newPayment(2060);
+        pay(ref, "SIM");
+        SimulatorPaymentAdaptor.script(ref).query = Query.SUCCESS;
+        watchdog.runOnce(LocalDateTime.now().plusMinutes(5));
+        assertConfirmedExactlyOnce(ref);
+    }
+
+    @Test
+    void windowNotYetClosed_staysProcessing() throws Exception {
+        String ref = newPayment(2070);
+        pay(ref, "SIM");
+        watchdog.runOnce(LocalDateTime.now().plusSeconds(30)); // window is 180 s
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        assertEquals(TransactionOutcomeService.Outcome.PROCESSING, outcomes.current(ref).orElseThrow().outcome());
+    }
+
+    @Test
+    void watchdogRacingConfirmations_neverOverwritesAConfirmation() throws Exception {
+        List<String> refs = new ArrayList<>();
+        for (int i = 0; i < 15; i++) {
+            String ref = newPayment(2100 + i);
+            pay(ref, "SIM");
+            refs.add(ref);
+        }
+        LocalDateTime later = LocalDateTime.now().plusMinutes(5);
+        List<Callable<Object>> tasks = new ArrayList<>();
+        for (String ref : refs) tasks.add(() -> callback("SIM", ref, "SUCCESS", tx(ref).getAmountCents()));
+        for (int i = 0; i < 5; i++) tasks.add(() -> watchdog.runOnce(later));
+
+        ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
+        for (Future<Object> f : pool.invokeAll(tasks)) f.get();
+        pool.shutdown();
+
+        // Either the confirmation won (confirmed exactly once), or the window closed first and the success is a
+        // late payment held for review. Never both, never neither, never twice.
+        for (String ref : refs) {
+            int confirmations = auditRowsTo(ref, TransactionStatus.PAYMENT_CONFIRMED);
+            if (confirmations == 1) {
+                assertEquals(TransactionStatus.PAYMENT_CONFIRMED, tx(ref).getStatus());
+                assertEquals(0, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+                verify(fulfilment, times(1)).enqueue(ref);
+            } else {
+                assertEquals(0, confirmations);
+                assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+                assertEquals(1, openExceptions(ref, "PAID_AFTER_TIMEOUT"));
+                verify(fulfilment, never()).enqueue(ref);
+            }
+        }
+        verifyNoInteractions(sms);
+    }
+
+    @Test
+    void queryVerifiedProvider_forgedSuccessCallbackChangesNothingUntilTheProviderConfirms() throws Exception {
+        String ref = newPayment(2200);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        pay(ref, "SIMQ");
+
+        s.query = Query.PENDING;
+        CallbackInbox.Result forged = inbox.receive("SIMQ", SimulatorPaymentAdaptor.callbackBody(ref, "SUCCESS", 2200, "x"), Map.of(), "6.6.6.6");
+        assertEquals(CallbackInbox.Status.NO_CHANGE, forged.status());
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+
+        s.query = Query.SUCCESS;
+        assertEquals(CallbackInbox.Status.APPLIED,
+                inbox.receive("SIMQ", SimulatorPaymentAdaptor.callbackBody(ref, "SUCCESS", 2200, "y"), Map.of(), "10.0.0.1").status());
+        assertConfirmedExactlyOnce(ref);
+    }
+
+    @Test
+    void queryVerifiedProvider_callbackClaimingSuccessIsOverruledByTheProvidersFailure() throws Exception {
+        String ref = newPayment(2300);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        pay(ref, "SIMQ");
+        s.query = Query.FAILED;
+        assertEquals(CallbackInbox.Status.APPLIED,
+                inbox.receive("SIMQ", SimulatorPaymentAdaptor.callbackBody(ref, "SUCCESS", 2300, "x"), Map.of(), "10.0.0.1").status());
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        assertNeverConfirmed(ref);
+    }
+
+    @Test
+    void resolverPicksUpPendingPaymentsThatHaveNoCheck() throws Exception {
+        String ref = newPayment(2400);
+        SimulatorPaymentAdaptor.Script s = SimulatorPaymentAdaptor.script(ref);
+        s.submit = Submit.READ_TIMEOUT;
+        pay(ref, "SIM");
+        jdbc.update("DELETE FROM payment_checks WHERE transaction_reference = ?", ref); // as if submitted before this release
+
+        s.query = Query.SUCCESS;
+        resolveAt(LocalDateTime.now().plusMinutes(1)); // backfills the check (due now) and resolves it
+        resolveAt(LocalDateTime.now().plusMinutes(1));
+        assertConfirmedExactlyOnce(ref);
+    }
+
+    @Test
+    void callbackForUnknownPayment_isRecordedAndIgnored() {
+        CallbackInbox.Result r = callback("SIM", "PP-API-20261016-999999", "SUCCESS", 100);
+        assertEquals(CallbackInbox.Status.UNKNOWN_REF, r.status());
+        assertTrue(r.id() > 0, "stored in the inbox for investigation");
+    }
+
+    // ─── payment intents, provider wording, one-session channels, idempotency ──────────────
+
+    @Test
+    void providersOwnWordingIsWhatTheCustomerSees() throws Exception {
+        String ref = newPayment(2500);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.REJECT_4XX;
+        pay(ref, "SIM");
+        assertEquals("Insufficient funds in your wallet", tx(ref).getFailureReason());
+        TransactionOutcomeService.Result o = outcomes.current(ref).orElseThrow();
+        assertEquals(TransactionOutcomeService.Outcome.FAILED, o.outcome());
+        assertEquals("Insufficient funds in your wallet", o.message());
+
+        String ref2 = newPayment(2510);
+        pay(ref2, "SIM");
+        inbox.receive("SIM", SimulatorPaymentAdaptor.callbackBody(ref2, "FAILED", 2510, "x", "Wallet PIN locked after 3 attempts"), SIGNED, "10.0.0.1");
+        assertEquals("Wallet PIN locked after 3 attempts", tx(ref2).getFailureReason());
+        verifyNoInteractions(sms);
+    }
+
+    @Test
+    void newAttemptOnTheSameIntentAfterADefiniteFailure_withItsOwnProviderReference() throws Exception {
+        String ref = newPayment(2600);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.REJECT_4XX;
+        pay(ref, "SIM");
+        assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+
+        pay(ref, "SIM"); // attempt 2 is sent as ref-2 (providers reject a reused reference)
+        assertEquals(ref + "-2", tx(ref).getPaymentAttemptReference());
+        assertEquals(1, SimulatorPaymentAdaptor.script(ref + "-2").submits.get());
+        assertEquals(List.of(ref, ref + "-2"), attempts.forTransaction(ref).stream().map(PaymentAttemptStore.Attempt::attemptReference).toList());
+
+        // A late success for the superseded attempt 1 is never applied to attempt 2: it is flagged.
+        assertEquals(CallbackInbox.Status.CONFLICT, callback("SIM", ref, "SUCCESS", 2600).status());
+        assertEquals(1, openExceptions(ref, "PAID_ON_SUPERSEDED_ATTEMPT"));
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+
+        assertEquals(CallbackInbox.Status.APPLIED, callback("SIM", ref + "-2", "SUCCESS", 2600).status());
+        assertConfirmedExactlyOnce(ref);
+        assertEquals(2, outcomes.current(ref).orElseThrow().attempts());
+    }
+
+    @Test
+    void attemptsAreCapped() throws Exception {
+        String ref = newPayment(2700);
+        for (int i = 1; i <= 3; i++) {
+            SimulatorPaymentAdaptor.script(PaymentAttemptStore.attemptReference(ref, i)).submit = Submit.REJECT_4XX;
+            pay(ref, "SIM");
+            assertEquals(TransactionStatus.PAYMENT_FAILED, tx(ref).getStatus());
+        }
+        assertThrows(InvalidStateTransitionException.class, () -> pay(ref, "SIM"));
+        assertEquals(3, attempts.forTransaction(ref).size());
+    }
+
+    @Test
+    void noNewAttemptWhileTheOutcomeIsUnknownOrTimedOut() throws Exception {
+        String ref = newPayment(2800);
+        SimulatorPaymentAdaptor.script(ref).submit = Submit.READ_TIMEOUT;
+        pay(ref, "SIM");
+        watchdog.runOnce(LocalDateTime.now().plusMinutes(5));
+        assertEquals(TransactionStatus.PAYMENT_TIMEOUT, tx(ref).getStatus());
+        assertThrows(InvalidStateTransitionException.class, () -> pay(ref, "SIM"));
+        assertEquals(1, attempts.forTransaction(ref).size());
+    }
+
+    @Test
+    void oneSessionChannelGetsTheFinalOutcomeOnTheSpot() throws Exception {
+        String ref = newPayment(2900);
+        pay(ref, "SIM");
+        new Thread(() -> {
+            try { Thread.sleep(800); } catch (InterruptedException ignored) { }
+            inbox.receive("SIM", SimulatorPaymentAdaptor.callbackBody(ref, "FAILED", 2900, "x", "Transaction declined by subscriber"), SIGNED, "10.0.0.1");
+        }).start();
+        long t0 = System.currentTimeMillis();
+        TransactionOutcomeService.Result r = outcomes.waitForFinal(ref, 20).orElseThrow();
+        assertEquals(TransactionOutcomeService.Outcome.FAILED, r.outcome());
+        assertEquals("Transaction declined by subscriber", r.message());
+        assertTrue(System.currentTimeMillis() - t0 < 10_000, "answered as soon as the provider did");
+    }
+
+    @Test
+    void idempotencyKey_replaysTheOriginalResponse_andRefusesADifferentRequest() {
+        String ref = String.format("PP-API-20261016-%06d", SEQ.incrementAndGet() % 1_000_000);
+        String body = "{\"reference\":\"" + ref + "\",\"productTypeCode\":\"MERCHANT_CHECKOUT\",\"recipientIdentifier\":\"+263771234567\","
+                + "\"amountCents\":3000,\"currency\":\"USD\",\"customerPhone\":\"+263771234567\",\"channel\":\"API\"}";
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        h.set("Idempotency-Key", "idem-" + ref);
+
+        var first = http.exchange("/api/v1/transactions/initiate", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+        var second = http.exchange("/api/v1/transactions/initiate", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+        assertEquals(201, first.getStatusCode().value(), first.getBody());
+        assertEquals(201, second.getStatusCode().value(), "replayed, not a duplicate-reference error: " + second.getBody());
+        assertEquals(first.getBody(), second.getBody());
+        assertEquals("true", second.getHeaders().getFirst("Idempotent-Replayed"));
+
+        var different = http.exchange("/api/v1/transactions/initiate", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body.replace("3000", "3001"), h), String.class);
+        assertEquals(422, different.getStatusCode().value(), different.getBody());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM transactions WHERE reference = ?", Integer.class, ref));
+
+        // The outcome endpoint (one-session channels) with the transaction's access token.
+        String token = first.getBody().replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
+        org.springframework.http.HttpHeaders th = new org.springframework.http.HttpHeaders();
+        th.set("X-Transaction-Token", token);
+        var outcome = http.exchange("/api/v1/transactions/" + ref + "/outcome?waitSeconds=1", org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(th), String.class);
+        assertEquals(200, outcome.getStatusCode().value(), outcome.getBody());
+        assertTrue(outcome.getBody().contains("\"outcome\":\"REQUIRES_PAYMENT\""), outcome.getBody());
+    }
+}

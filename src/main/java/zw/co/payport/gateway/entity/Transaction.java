@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
  */
 @Data
 @Entity
+// Only changed columns are written: an UPDATE never rewrites status (or anything else) from stale in-memory state.
+@org.hibernate.annotations.DynamicUpdate
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -185,11 +187,32 @@ public class Transaction {
      */
     private Integer omariOtpAttempts;
 
+    /**
+     * SHA-256 (hex) of the per-transaction access token returned once from
+     * POST /initiate. Holding the token is what entitles an unauthenticated
+     * caller (the paying browser/app) to the full transaction view. The raw
+     * token is never stored. Null for transactions created before this column existed.
+     */
+    @Column(length = 64)
+    private String accessTokenHash;
+
     // ── Timestamps ────────────────────────────────────────────────
     @Column(nullable = false)
     private LocalDateTime initiatedAt;
 
     private LocalDateTime paymentSubmittedAt;
+
+    /** TIMED_OUT or NO_RESPONSE when the payment window closed without a provider answer; null otherwise. */
+    @Column(name = "payment_outcome", length = 20)
+    private String paymentOutcome;
+
+    /** Reference sent to the provider for the current attempt (reference, or reference-N for attempt N). */
+    @Column(name = "payment_attempt_reference", length = 40)
+    private String paymentAttemptReference;
+
+    /** Attempts sent so far (null on rows created before V39 is treated as 0). */
+    @Column(name = "payment_attempt_count")
+    private Integer paymentAttemptCount;
     private LocalDateTime paymentConfirmedAt;
     private LocalDateTime fulfilmentStartedAt;
     private LocalDateTime completedAt;

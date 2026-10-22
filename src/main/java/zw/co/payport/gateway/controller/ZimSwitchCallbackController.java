@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import zw.co.payport.gateway.payments.CallbackInbox;
 import zw.co.payport.gateway.repository.CheckoutSessionRepository;
 import zw.co.payport.gateway.repository.TransactionRepository;
 import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
@@ -38,6 +39,7 @@ import java.util.Map;
 public class ZimSwitchCallbackController {
 
     private final ZimSwitchAdaptor zimSwitchAdaptor;
+    private final CallbackInbox inbox;
     private final TransactionOrchestratorService orchestrator;
     private final TransactionRepository transactionRepository;
     private final CheckoutSessionRepository checkoutSessionRepository;
@@ -59,33 +61,56 @@ public class ZimSwitchCallbackController {
         log.info("[ZIMSWITCH] Webhook received | length={}", rawBody != null ? rawBody.length() : 0);
         log.debug("[ZIMSWITCH] Webhook body: {}", rawBody);
 
-        try {
-            // Step 1: Validate structure
-            PaymentProviderAdaptor.CallbackValidationResult validation =
-                    zimSwitchAdaptor.validateCallback(headers, rawBody);
-
-            if (!validation.isValid()) {
-                log.warn("[ZIMSWITCH] Webhook validation failed: {}", validation.getFailureReason());
-                return ResponseEntity.badRequest()
-                        .body(Map.of("status", "rejected", "reason", validation.getFailureReason()));
+        // Stored in the callback inbox, validated (signature/structure), then applied idempotently.
+        Map<String, String> lower = new HashMap<>();
+        headers.forEach((k, v) -> lower.put(k.toLowerCase(), v));
+        String body = rawBody;
+        if (lower.containsKey("x-initialization-vector") && lower.containsKey("x-authentication-tag")) {
+            // OPPWA webhooks are AES-256-GCM encrypted (zimswitch.docs.oppwa.com/tutorials/webhooks).
+            try {
+                body = decryptWebhook(rawBody, lower.get("x-initialization-vector"), lower.get("x-authentication-tag"));
+            } catch (Exception e) {
+                log.warn("[ZIMSWITCH] Webhook could not be decrypted ({}) -- rejected", e.getMessage());
+                return ResponseEntity.badRequest().body(Map.of("status", "rejected", "reason", "decryption failed"));
             }
-
-            // Step 2: Parse into normalised CallbackEvent
-            PaymentProviderAdaptor.CallbackEvent event = zimSwitchAdaptor.parseCallback(rawBody);
-
-            log.info("[ZIMSWITCH] Webhook parsed | ref={} oppwaId={} status={}",
-                    event.getPayportReference(), event.getProviderReference(), event.getStatus());
-
-            // Step 3: Hand to orchestrator using the correct CallbackEvent signature
-            orchestrator.handlePaymentCallback(event);
-
-            return ResponseEntity.ok(Map.of("status", "received"));
-
-        } catch (Exception e) {
-            log.error("[ZIMSWITCH] Webhook processing error: {}", e.getMessage(), e);
-            // Always return 200 — OPPWa retries on non-2xx which would cause duplicate processing
-            return ResponseEntity.ok(Map.of("status", "error", "message", e.getMessage()));
         }
+        CallbackInbox.Result r = inbox.receive("ZIMSWITCH", body, lower, req.getRemoteAddr());
+        if (r.status() == CallbackInbox.Status.INVALID && r.detail() != null && r.detail().startsWith("validation failed")) {
+            log.warn("[ZIMSWITCH] Webhook validation failed: {}", r.detail());
+            return ResponseEntity.badRequest().body(Map.of("status", "rejected", "reason", r.detail()));
+        }
+        // Always 200 otherwise -- OPPWa retries on non-2xx; the inbox absorbs duplicates anyway.
+        return ResponseEntity.ok(Map.of("status", r.status() == CallbackInbox.Status.ERROR ? "error" : "received"));
+    }
+
+    @Value("${payport.zimswitch.webhook-secret:}")
+    private String webhookSecretHex;
+
+    /**
+     * Decrypts an OPPWA webhook: body is hex (or {"encryptedBody":"hex"}), IV and GCM tag come in
+     * headers, key is the 64-hex-character secret configured for the webhook. Returns the
+     * notification's payload object as JSON (the payment, with merchantTransactionId).
+     */
+    String decryptWebhook(String rawBody, String ivHex, String tagHex) throws Exception {
+        if (webhookSecretHex == null || webhookSecretHex.isBlank()) throw new IllegalStateException("ZIMSWITCH_WEBHOOK_SECRET not configured");
+        String hex = rawBody.trim();
+        if (hex.startsWith("{")) {
+            hex = (String) new com.fasterxml.jackson.databind.ObjectMapper().readValue(hex, Map.class).get("encryptedBody");
+        }
+        java.util.HexFormat h = java.util.HexFormat.of();
+        byte[] cipher = h.parseHex(hex.trim());
+        byte[] tag = h.parseHex(tagHex.trim());
+        byte[] input = new byte[cipher.length + tag.length];
+        System.arraycopy(cipher, 0, input, 0, cipher.length);
+        System.arraycopy(tag, 0, input, cipher.length, tag.length);
+        javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        c.init(javax.crypto.Cipher.DECRYPT_MODE, new javax.crypto.spec.SecretKeySpec(h.parseHex(webhookSecretHex.trim()), "AES"),
+                new javax.crypto.spec.GCMParameterSpec(tag.length * 8, h.parseHex(ivHex.trim())));
+        String plain = new String(c.doFinal(input), java.nio.charset.StandardCharsets.UTF_8);
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        Map<?, ?> m = om.readValue(plain, Map.class);
+        Object payload = m.get("payload");
+        return payload != null ? om.writeValueAsString(payload) : plain;
     }
 
     /**
@@ -135,10 +160,10 @@ public class ZimSwitchCallbackController {
             final String resolvedCheckoutId = checkoutId;
 
             // Step 2: Look up our transaction by the checkoutId (stored as paymentCorrelator)
-            String payportReference = transactionRepository
-                    .findByPaymentCorrelator(resolvedCheckoutId)
-                    .map(tx -> tx.getReference())
-                    .orElse(null);
+            var matched = transactionRepository.findByPaymentCorrelator(resolvedCheckoutId);
+            String payportReference = matched.map(tx -> tx.getReference()).orElse(null);
+            // The event must name the attempt the checkout belongs to (reference-N after a retried payment).
+            String attemptReference = matched.map(zw.co.payport.gateway.service.PaymentStatusVerifier::attemptReference).orElse(null);
 
             if (payportReference == null) {
                 log.warn("[ZIMSWITCH] No transaction found for checkoutId={}", resolvedCheckoutId);
@@ -156,7 +181,7 @@ public class ZimSwitchCallbackController {
 
             // Step 4: Build a CallbackEvent and pass to orchestrator (idempotent)
             PaymentProviderAdaptor.CallbackEvent event = PaymentProviderAdaptor.CallbackEvent.builder()
-                    .payportReference(payportReference)
+                    .payportReference(attemptReference)
                     .providerReference(statusResult.getProviderReference())
                     .status(statusResult.getStatus())   // SUCCESS | FAILED | PENDING | UNKNOWN
                     .amountCents(statusResult.getAmountCents())

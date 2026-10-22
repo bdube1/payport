@@ -151,6 +151,7 @@ public class ZimSwitchAdaptor implements PaymentProviderAdaptor {
             log.error("[ZIMSWITCH] submitPayment failed for ref={}: {}", request.getPayportReference(), e.getMessage());
             return PaymentSubmitResult.builder()
                     .submitted(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("ZimSwitch error: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();
@@ -262,15 +263,14 @@ public class ZimSwitchAdaptor implements PaymentProviderAdaptor {
             log.info("[ZIMSWITCH] Status | checkoutId={} oppwaId={} code={} success={}",
                     providerReference, oppwaId, resultCode, success);
 
-            String status = success ? "SUCCESS"
-                    : isPendingCode(resultCode) ? "PENDING"
-                    : "FAILED";
+            String status = classifyResultCode(resultCode);
 
             return PaymentStatusResult.builder()
                     .status(status)
                     .amountCents(amountCents)
                     .providerReference(oppwaId != null ? oppwaId : providerReference)
-                    .message(resultCode + " — " + extractResultDescription(result))
+                    // The customer sees OPPWA's own description (owner decision); the code is in the logs.
+                    .message(extractResultDescription(result))
                     .build();
 
         } catch (org.springframework.web.client.HttpClientErrorException e) {
@@ -313,6 +313,26 @@ public class ZimSwitchAdaptor implements PaymentProviderAdaptor {
             return desc != null ? desc.toString() : "";
         }
         return "";
+    }
+
+    /**
+     * Result code groups from https://zimswitch.docs.oppwa.com/reference/resultCodes:
+     * SUCCESS (1.1 and 1.2 "successful, review"), PENDING (1.3, 1.4, and 200.300.404 for a checkout
+     * not paid yet), UNKNOWN for "uncertain" timeouts (900.100.300/400/500, 100.396.104, 999.*), and
+     * FAILED only for the documented rejection groups. Anything else is UNKNOWN, never FAILED.
+     */
+    static String classifyResultCode(String code) {
+        if (code == null || "UNKNOWN".equals(code)) return "UNKNOWN";
+        if (code.matches("^(000\\.000\\.|000\\.100\\.1|000\\.[36]|000\\.400\\.[1][12]0|000\\.500\\.).*")) return "SUCCESS";
+        if (code.matches("^(000\\.400\\.0[^3]|000\\.400\\.100).*")) return "SUCCESS";
+        if (code.matches("^(000\\.200|800\\.400\\.5|100\\.400\\.500).*") || code.equals("200.300.404")) return "PENDING";
+        if (code.matches("^(900\\.100\\.300|900\\.100\\.400|900\\.100\\.500|100\\.396\\.104|999\\.).*")) return "UNKNOWN";
+        String rejected = "^(000\\.400\\.[1][0-9][1-9]|000\\.400\\.2|800\\.[17]00|800\\.800\\.[123]|900\\.[1234]00|000\\.400\\.030"
+                + "|800\\.[56]|600\\.1|800\\.800\\.[84]|100\\.39[765]|300\\.100\\.100|100\\.400\\.[0-3]|100\\.380\\.100|100\\.380\\.11"
+                + "|100\\.380\\.4|100\\.380\\.5|800\\.400\\.1|800\\.400\\.2|100\\.390|800\\.[32]|800\\.1[123456]0|600\\.[23]|500\\.[12]"
+                + "|800\\.121|100\\.[13]50|100\\.250|100\\.360|700\\.[1345][05]0|700\\.600|700\\.601|200\\.[123]|100\\.[53][07]|800\\.900"
+                + "|100\\.[69]00\\.500|100\\.310\\.40[12]).*";
+        return code.matches(rejected) ? "FAILED" : "UNKNOWN";
     }
 
     /**

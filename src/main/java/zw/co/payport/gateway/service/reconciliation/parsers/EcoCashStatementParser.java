@@ -110,23 +110,11 @@ public class EcoCashStatementParser implements StatementParser {
     }
 
     private String cellString(Row row, int col) {
-        Cell cell = row.getCell(col);
-        if (cell == null) return null;
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> String.valueOf(cell.getNumericCellValue());
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            default -> null;
-        };
+        return StatementCells.text(row, col);
     }
 
     private Long parseAmountToCents(String value) {
-        try {
-            double d = Double.parseDouble(value.replace(",", "").trim());
-            return Math.round(d * 100);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return StatementCells.cents(value);
     }
 
     private LocalDateTime parseDate(String dateStr) {

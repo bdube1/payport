@@ -81,6 +81,14 @@ public class OpsProductConfigController {
     private final AuthService               authService;
     private final zw.co.payport.gateway.service.SmsNotificationService smsNotificationService;
 
+    /** Product, currency and payment-method switches go to the hash-chained audit log. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.ComplianceAudit configAudit;
+
+    private void auditConfig(HttpServletRequest req, String action, String subject, String details) {
+        if (configAudit != null) configAudit.record("staff:" + principal(req), action, subject, details);
+    }
+
     @Value("${payport.upload.logo-directory:./uploads/logos}")
     private String logoUploadDirectory;
 
@@ -149,6 +157,7 @@ public class OpsProductConfigController {
 
         p = productTypeRepository.save(p);
         log.info("[CONFIG] Product {} updated by {}: active={}", p.getCode(), principal(req), p.getIsActive());
+        auditConfig(req, "PRODUCT_UPDATED", "product:" + p.getCode(), "active=" + p.getIsActive() + " changes=" + body.keySet());
 
         List<ProductCurrency> currencies = productCurrencyRepository.findAllByProductId(p.getId());
         return ResponseEntity.ok(ApiResponse.success(buildProductDto(p, currencies, false), rid(req)));
@@ -239,6 +248,7 @@ public class OpsProductConfigController {
 
         log.info("[CONFIG] Currency {} for product {} set active={} by {}",
                 ccy, p.getCode(), pc.getIsActive(), principal(req));
+        auditConfig(req, "PRODUCT_CURRENCY_UPDATED", "product:" + p.getCode() + ":" + ccy, "active=" + pc.getIsActive());
 
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id",            pc.getId());
@@ -327,6 +337,7 @@ public class OpsProductConfigController {
 
         pm = paymentMethodRepository.save(pm);
         log.info("[CONFIG] PaymentMethod {} set active={} by {}", pm.getCode(), pm.getIsActive(), principal(req));
+        auditConfig(req, "PAYMENT_METHOD_UPDATED", "payment_method:" + pm.getCode(), "active=" + pm.getIsActive());
         return ResponseEntity.ok(ApiResponse.success(pm, rid(req)));
     }
 

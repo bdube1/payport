@@ -111,6 +111,7 @@ public class OmariPaymentAdaptor implements PaymentProviderAdaptor {
             log.error("[OMARI] ❌ Payment submission failed: {}", e.getMessage(), e);
             return PaymentSubmitResult.builder()
                     .submitted(false)
+                    .outcomeUnknown(zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e))
                     .message("Omari payment failed: " + e.getMessage())
                     .rawResponse(e.getMessage())
                     .build();

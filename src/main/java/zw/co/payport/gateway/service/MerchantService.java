@@ -34,6 +34,9 @@ public class MerchantService {
     private final MerchantUserRepository merchantUserRepository;
     private final ApiKeyService apiKeyService;
     private final MerchantRiskScoringService riskScoringService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.risk.RiskEngine riskEngine;
     private final MerchantReviewNoteRepository reviewNoteRepository;
     private final EmailService emailService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -82,6 +85,9 @@ public class MerchantService {
                 .passwordSetAt(LocalDateTime.now())
                 .build();
         merchantUserRepository.save(owner);
+
+        // Phase 6: screen the business and its owner against the screening lists (a hit opens a compliance case).
+        if (riskEngine != null) riskEngine.screenMerchant(merchant.getId(), merchant.getBusinessName(), owner.getFullName(), registrationNumber);
 
         emailService.sendMerchantApplicationReceived(email, merchant.getBusinessName(), merchant.getApplicationReference());
 

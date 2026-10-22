@@ -110,6 +110,8 @@ public class TelecelAirtimeAdaptor implements FulfilmentProviderAdaptor {
 
             return FulfilmentResult.builder()
                 .success(false)
+                // "ERROR" = the SOAP call itself failed (TelecelSoapClient catch): the top-up may have gone through.
+                .outcomeUnknown("ERROR".equals(result.getResultCode()))
                 .fulfilmentReference(request.getPayportReference())
                 .message(result.getResultDescription())
                 .rawResponse(result.getRawResponse())
@@ -128,7 +130,8 @@ public class TelecelAirtimeAdaptor implements FulfilmentProviderAdaptor {
         TelecelSoapClient.TelecelTopupResult result = soapClient.queryTransaction(
             agentCode, mpin, agentTransId);
 
-        String status = result.isSuccess() ? "DELIVERED" : "FAILED";
+        // "ERROR" means the query call itself failed: that says nothing about the top-up.
+        String status = result.isSuccess() ? "DELIVERED" : "ERROR".equals(result.getResultCode()) ? "UNKNOWN" : "FAILED";
 
         return FulfilmentStatusResult.builder()
             .status(status)

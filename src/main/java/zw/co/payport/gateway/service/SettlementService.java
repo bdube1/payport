@@ -41,7 +41,7 @@ public class SettlementService {
     public Settlement runForMerchant(Long merchantId, String currency, LocalDateTime periodStart, LocalDateTime periodEnd) {
         List<CheckoutSession> eligible = checkoutSessionRepository.findByMerchantIdAndSettlementIdIsNull(merchantId).stream()
                 .filter(s -> currency.equals(s.getCurrency()))
-                .filter(s -> isSettleableStatus(s.getStatus()))
+                .filter(SettlementService::isSettleable)
                 .filter(s -> !s.getCreatedAt().isBefore(periodStart) && s.getCreatedAt().isBefore(periodEnd))
                 .toList();
 
@@ -127,12 +127,19 @@ public class SettlementService {
     private Set<String> currenciesWithUnsettledActivity(Long merchantId) {
         Set<String> currencies = new HashSet<>();
         for (CheckoutSession s : checkoutSessionRepository.findByMerchantIdAndSettlementIdIsNull(merchantId)) {
-            if (isSettleableStatus(s.getStatus())) currencies.add(s.getCurrency());
+            if (isSettleable(s)) currencies.add(s.getCurrency());
         }
         return currencies;
     }
 
-    private boolean isSettleableStatus(String status) {
+    /**
+     * The single rule for what may be paid out to a merchant. A test-mode session is
+     * never settleable, whatever its status: its payment was simulated and no money
+     * was collected (R1).
+     */
+    static boolean isSettleable(CheckoutSession s) {
+        if (!Boolean.TRUE.equals(s.getLivemode())) return false;
+        String status = s.getStatus();
         return "PAID".equals(status) || "PARTIALLY_REFUNDED".equals(status) || "REFUNDED".equals(status);
     }
 

@@ -17,6 +17,8 @@ import zw.co.payport.gateway.entity.Transaction;
 import zw.co.payport.gateway.model.request.*;
 import zw.co.payport.gateway.model.response.*;
 import zw.co.payport.gateway.repository.TransactionRepository;
+import zw.co.payport.gateway.service.TransactionAccessService;
+import zw.co.payport.gateway.service.TransactionAccessService.Access;
 import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
 
 import java.util.Map;
@@ -26,9 +28,16 @@ import java.util.Map;
  *
  * POST /api/v1/transactions/initiate   - Create new transaction
  * POST /api/v1/transactions/pay        - Submit payment
- * GET  /api/v1/transactions/{ref}      - Get status (public)
- * GET  /api/v1/transactions/{ref}/timeline - Get full audit log (public)
+ * GET  /api/v1/transactions/{ref}      - Get status
+ * GET  /api/v1/transactions/{ref}/timeline - Get full audit log
+ * GET  /api/v1/transactions/{ref}/outcome?waitSeconds=N - Final outcome for one-session channels (USSD)
  * GET  /api/v1/transactions/my-history     - Get logged-in user's transaction history
+ *
+ * Access (R3): /initiate returns a one-time accessToken. Send it back as the
+ * X-Transaction-Token header on every later call for this reference to get the full
+ * view. Without it (and without being the logged-in owner or staff) callers get the
+ * redacted public view, or 404 once payport.security.transaction-token.enforce=true.
+ * See TransactionAccessService.
  */
 @Slf4j
 @RestController
@@ -38,6 +47,22 @@ public class TransactionController {
 
     private final TransactionOrchestratorService orchestratorService;
     private final TransactionRepository transactionRepository;
+    private final TransactionAccessService accessService;
+    private final zw.co.payport.gateway.payments.TransactionOutcomeService outcomes;
+    private final zw.co.payport.gateway.scheduler.PaymentTimeoutWatchdog paymentWindows;
+
+    /**
+     * One-session channels: wait for the final outcome; if the customer-facing wait ends while the
+     * payment is still open, close it now (final provider query, else TIMED_OUT / NO_RESPONSE --
+     * never FAILED), so what the customer is told and what PayPort does can never differ: a payment
+     * the customer was told timed out is never fulfilled.
+     */
+    private void answerOnTheSpot(String reference, int waitSeconds) throws InterruptedException {
+        var r = outcomes.waitForFinal(reference, waitSeconds);
+        if (r.isPresent() && r.get().status() == zw.co.payport.gateway.enums.TransactionStatus.PAYMENT_PENDING) {
+            paymentWindows.closeForCustomer(reference);
+        }
+    }
 
     /**
      * Step 1: Initiate a transaction
@@ -57,6 +82,7 @@ public class TransactionController {
 
         TransactionResponse tx = orchestratorService.initiateTransaction(
                 request, httpRequest.getRemoteAddr());
+        tx.setAccessToken(accessService.issueToken(tx.getReference()));
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -69,15 +95,27 @@ public class TransactionController {
     @PostMapping("/pay")
     public ResponseEntity<ApiResponse<TransactionResponse>> pay(
             @Valid @RequestBody PayTransactionRequest request,
+            @RequestParam(defaultValue = "0") int waitSeconds,
             HttpServletRequest httpRequest) throws Exception {
 
         String requestId = getRequestId(httpRequest);
         httpRequest.setAttribute("txReference", request.getReference());
         log.info("[API] POST /pay ref={} method={}", request.getReference(), request.getPaymentMethodCode());
 
-        TransactionResponse tx = orchestratorService.submitPayment(request);
+        Access access = accessService.accessFor(request.getReference(), httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
+        if (access == Access.NONE) return notFound(request.getReference(), requestId);
 
-        return ResponseEntity.ok(ApiResponse.success(tx, requestId));
+        TransactionResponse tx = orchestratorService.submitPayment(request);
+        if (waitSeconds > 0) {
+            // One-session channels (USSD) can ask for the final outcome in the same call.
+            answerOnTheSpot(request.getReference(), waitSeconds);
+            TransactionResponse latest = orchestratorService.getTransaction(request.getReference());
+            latest.setWidgetJsUrl(tx.getWidgetJsUrl());
+            latest.setPaymentCorrelator(tx.getPaymentCorrelator());
+            tx = latest;
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(view(tx, access), requestId));
     }
 
     public record ConfirmOmariOtpRequest(String otp) {}
@@ -97,14 +135,17 @@ public class TransactionController {
         httpRequest.setAttribute("txReference", reference);
         log.info("[API] POST /transactions/{}/confirm-omari-otp", reference);
 
+        Access access = accessService.accessFor(reference, httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
+        if (access == Access.NONE) return notFound(reference, requestId);
+
         TransactionResponse tx = orchestratorService.confirmOmariOtp(reference, request.otp());
 
-        return ResponseEntity.ok(ApiResponse.success(tx, requestId));
+        return ResponseEntity.ok(ApiResponse.success(view(tx, access), requestId));
     }
 
     /**
-     * Public status lookup - no auth required.
-     * Used by customer to check their transaction status.
+     * Status lookup used by the paying customer's screen. Full view with the access
+     * token (or as owner/staff); otherwise the redacted public view.
      */
     @GetMapping("/{reference}")
     public ResponseEntity<ApiResponse<TransactionResponse>> getStatus(
@@ -113,8 +154,11 @@ public class TransactionController {
 
         httpRequest.setAttribute("txReference", reference);
         log.info("[API] GET /transactions/{}", reference);
+        String requestId = getRequestId(httpRequest);
+        Access access = accessService.accessFor(reference, httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
+        if (access == Access.NONE) return notFound(reference, requestId);
         TransactionResponse tx = orchestratorService.getTransaction(reference);
-        return ResponseEntity.ok(ApiResponse.success(tx, getRequestId(httpRequest)));
+        return ResponseEntity.ok(ApiResponse.success(view(tx, access), requestId));
     }
 
     /**
@@ -127,8 +171,11 @@ public class TransactionController {
             HttpServletRequest httpRequest) {
 
         log.info("[API] GET /transactions/{}/timeline", reference);
+        String requestId = getRequestId(httpRequest);
+        Access access = accessService.accessFor(reference, httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
+        if (access == Access.NONE) return notFound(reference, requestId);
         TransactionResponse tx = orchestratorService.getTransaction(reference);
-        return ResponseEntity.ok(ApiResponse.success(tx, getRequestId(httpRequest)));
+        return ResponseEntity.ok(ApiResponse.success(view(tx, access), requestId));
     }
 
     /**
@@ -143,39 +190,14 @@ public class TransactionController {
 
         String requestId = getRequestId(httpRequest);
 
-        // DEBUG: Log all headers
-        log.info("===== DEBUG: /my-history request =====");
-        log.info("Request ID: {}", requestId);
-        log.info("Remote IP: {}", httpRequest.getRemoteAddr());
-
-        // Log all headers
-        java.util.Enumeration<String> headerNames = httpRequest.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            String headerValue = httpRequest.getHeader(headerName);
-            if (headerName.toLowerCase().contains("authorization")) {
-                log.info("Header: {} = {}", headerName, "Bearer [REDACTED]");
-            } else {
-                log.info("Header: {} = {}", headerName, headerValue);
-            }
-        }
-
         // Get authentication from SecurityContext
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        log.info("Authentication object: {}", auth);
 
         if (auth == null) {
             log.warn("Authentication is NULL");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error("UNAUTHORIZED", "Login required to view history", requestId));
         }
-
-        log.info("Authentication - isAuthenticated: {}", auth.isAuthenticated());
-        log.info("Authentication - principal: {}", auth.getPrincipal());
-        log.info("Authentication - principal class: {}", auth.getPrincipal().getClass().getName());
-        log.info("Authentication - name: {}", auth.getName());
-        log.info("Authentication - authorities: {}", auth.getAuthorities());
-        log.info("Authentication - details: {}", auth.getDetails());
 
         // Check if user is authenticated
         if (!auth.isAuthenticated()) {
@@ -192,20 +214,56 @@ public class TransactionController {
 
         // Get the phone number from the authenticated user
         String phone = auth.getName(); // The username/principal should be the phone number
-        log.info("Successfully authenticated user with phone: {}", phone);
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100), Sort.by("createdAt").descending());
         Page<Transaction> txPage = transactionRepository.findByCustomerPhone(phone, pageable);
 
-        log.info("Found {} transactions for user {}", txPage.getContent().size(), phone);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("content", txPage.getContent().stream().map(TransactionResponse::from).toList());
+        result.put("content", txPage.getContent().stream().map(t -> {
+            TransactionResponse r = TransactionResponse.from(t);
+            var o = outcomes.of(t);
+            r.setOutcome(o.outcome().name());
+            r.setOutcomeMessage(o.message());
+            r.setPaymentAttempts(o.attempts());
+            return r;
+        }).toList());
         result.put("totalElements", txPage.getTotalElements());
         result.put("totalPages", txPage.getTotalPages());
         result.put("page", page);
 
         return ResponseEntity.ok(ApiResponse.success(result, requestId));
+    }
+
+    /** Full view, or the redacted public view (R3), always with the customer-facing outcome. */
+    private TransactionResponse view(TransactionResponse tx, Access access) {
+        outcomes.enrich(tx);
+        return access == Access.FULL ? tx : TransactionResponse.publicView(tx);
+    }
+
+    /**
+     * The final answer for one-session channels (USSD): waits up to waitSeconds (max 180) for
+     * SUCCEEDED, FAILED (with the provider's message), TIMED_OUT or NO_RESPONSE. If the wait ends
+     * while the payment is still open, the payment is closed for the customer (TIMED_OUT or
+     * NO_RESPONSE, never FAILED). PROCESSING is returned only when the payment was received and the
+     * delivery is still running. With waitSeconds=0 nothing is waited for or changed.
+     */
+    @GetMapping("/{reference}/outcome")
+    public ResponseEntity<ApiResponse<TransactionResponse>> outcome(
+            @PathVariable String reference,
+            @RequestParam(defaultValue = "0") int waitSeconds,
+            HttpServletRequest httpRequest) throws InterruptedException {
+        String requestId = getRequestId(httpRequest);
+        Access access = accessService.accessFor(reference, httpRequest.getHeader(TransactionAccessService.TOKEN_HEADER));
+        if (access == Access.NONE) return notFound(reference, requestId);
+        if (waitSeconds > 0) answerOnTheSpot(reference, waitSeconds);
+        return ResponseEntity.ok(ApiResponse.success(view(orchestratorService.getTransaction(reference), access), requestId));
+    }
+
+    /** Same shape as an unknown reference, so a caller cannot tell "exists but forbidden" from "does not exist". */
+    private static <T> ResponseEntity<ApiResponse<T>> notFound(String reference, String requestId) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("TRANSACTION_NOT_FOUND", "Transaction not found: " + reference, requestId));
     }
 
     /**
