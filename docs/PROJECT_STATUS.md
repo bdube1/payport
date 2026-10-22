@@ -1,20 +1,84 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-22 (Phase 8 completed, Phase 9). Living document._
+_Last updated: 2026-10-22 (Phase 10: verification and operational readiness). Living document._
 
-## Current phase
+## Readiness at a glance
+
+| Level | Status |
+|---|---|
+| **Automated tests** (CI, real MySQL 8, stubbed providers) | **Pass**: backend run [39801097989](https://github.com/bdube1/payport/actions/runs/39801097989) on `020695747fdb9ed2226bfd3b10d67b6993eac410`, all jobs green; all frontends green on their final commits |
+| **Integration acceptance** (provider sandboxes and certification) | **Not started**: 0 of 14 external adapters sandbox-verified; all `SPEC_ONLY` |
+| **Production readiness** | **Not met**: external penetration test, staging load test, provider sandbox tests and a real-backup restore drill are outstanding, as are the R76/R79/R80 conditions. **Not production-ready.** |
+
+Nothing has been deployed to production. No live payout, settlement automation or LIVE settlement mode has
+been enabled. No licence decision has been recorded by code.
+
+## Phase 10 (current)
+
+Report: [`docs/phase10/PHASE10_REPORT.md`](phase10/PHASE10_REPORT.md).
+
+**Exact commits and CI runs** (checked through the GitHub API; each run's head equals the final pushed commit):
+
+| Repository | PR | Head commit | CI run |
+|---|---|---|---|
+| payport (backend) | branch `phase2-payment-lifecycle` | `020695747fdb9ed2226bfd3b10d67b6993eac410` (code); later commits docs only | [39801097989](https://github.com/bdube1/payport/actions/runs/39801097989) success |
+| payport (backend, Phase 8/9 baseline) | — | `29f628e048a414e6dd7040d8823c501a5671dca9` (`a791e8d` docs only) | [39791437666](https://github.com/bdube1/payport/actions/runs/39791437666) success |
+| payport-consumer | [#1](https://github.com/bdube1/payport-consumer/pull/1) | `6fed635c903b943d4be6d5d5388609b1fded8ee0` | [38948708902](https://github.com/bdube1/payport-consumer/actions/runs/38948708902) success |
+| payport-mobile | [#1](https://github.com/bdube1/payport-mobile/pull/1) | `3bbb2e02de54c76b5513f6fb513616aef61deff4` | [38949084460](https://github.com/bdube1/payport-mobile/actions/runs/38949084460) success |
+| payport-ops | [#1](https://github.com/bdube1/payport-ops/pull/1) | `b9a3ae2a52a81f4b341f912e087d417786b431ec` | [38949527528](https://github.com/bdube1/payport-ops/actions/runs/38949527528) success |
+| payport-merchant | [#1](https://github.com/bdube1/payport-merchant/pull/1) | `4611209bcef1a782c91bf54b84f1d09fd196d724` | no workflow on that branch; an ancestor of #2, so covered by the #2 run; built and contract-checked locally |
+| payport-merchant | [#2](https://github.com/bdube1/payport-merchant/pull/2) | `8c6361f5e50ed7f7d039dddbd560cc135a3eefd3` | [38949253490](https://github.com/bdube1/payport-merchant/actions/runs/38949253490) success |
+
+**Automated results (run 39801097989):**
+- build-and-test: 341 tests, **235 passed, 0 failed**, 106 skipped (they run in `ledger-db`);
+- ledger-db: **106 / 106**;
+- DR drill (test data): **PASS**, restore 2 s;
+- migrations-production-like: pass;
+- OSV: 1 advisory listed (see R76/R82 for what it misses);
+- CI-runner latency: p95 64 ms.
+
+**Phase 10 findings:**
+
+| ID | Finding | Status |
+|---|---|---|
+| D10-6 | Pool exhaustion under concurrent wallet operations (a balance read on a second connection under locks) | Fixed |
+| D10-2 | Wallet refund not serialised with the payment status | Fixed |
+| D10-4 | Provider settlement could double-book a bank line seen on two statements | Fixed |
+| D10-3 | Ledger accounts opened under locks | Fixed |
+| R76 | XML-RPC: CVE-2019-17570 (9.8) and CVE-2016-5004 (6.5) | Re-assessed and mitigated by a response guard; TLS/VPN and library replacement required before Econet production traffic; owner acceptance pending |
+| R79 | `ddl-auto=update` in production config | Open; `validate` proven to boot; change awaits owner approval |
+| R80 | Plain-HTTP provider endpoints | Open |
+| R81 | Transaction access token not yet enforced | Open by design |
+| R82 | Scanner blind spot | Open |
+
+**Outstanding external activities (tracked until done):**
+
+| Activity | Status |
+|---|---|
+| External penetration test | not started |
+| Staging load test | not started: no staging environment |
+| Provider sandbox tests (14 adapters) | not started: no credentials |
+| Restore drill from a real backup | not started |
+
+**Owner decisions pending:**
+- sign the R76 residual-risk acceptance;
+- approve `ddl-auto=validate` for production;
+- approve starting Phase 11 (staging integration and acceptance).
+
+## Phase 8 and 9 (previous)
+
 **Phase 8 completed and Phase 9 (security, scale, resilience) done**, on `phase2-payment-lifecycle`. Everything
 new ships **off** and fails closed; the owner records licence answers, configures credentials and switches
 each product on in the portal after internal checks: [`docs/runbooks/SWITCH_ON.md`](runbooks/SWITCH_ON.md).
 - `docs/phase8/PHASE8_REPORT.md`: wallets, agents, FX conversions, POS, WhatsApp, MTN MoMo / Airtel Money, provider settlements;
 - `docs/phase9/PHASE9_REPORT.md`, `SLO.md`, `PEN_TEST_SCOPE.md`;
 - `docs/platform/PLATFORM_CONTROLS.md`: markets, currencies, channels, product lines from the portal;
-- API contract: `docs/api/api-contract.json` (366 routes, equal to the running application).
+- API contract: `docs/api/api-contract.json` (367 routes since Phase 10, equal to the running application).
 
 **Combined test run (backend run 39791437666, all jobs green; frontends green at their latest commits):**
 - `build-and-test`: **214 passed, 0 failed** (106 database tests run in `ledger-db`), including `Phase8CompletionScenarioTest`, `Phase8UnitTest`, `SecurityResilienceScenarioTest` and every earlier suite.
 - `ledger-db`: **106 / 106**; DR drill: **PASS** (backup → restore → identical rows, procedures, balances, integrity; restore 3 s).
-- `migrations-production-like` (V1–V52, binlog, non-SUPER user): pass. `dependency-scan`: 1 accepted advisory (R76).
+- `migrations-production-like` (V1–V52, binlog, non-SUPER user): pass. `dependency-scan`: 1 advisory listed (R76; see Phase 10 for the corrected assessment).
 - Latency on CI (400 wallet reads, 8 clients): p50 38 ms, p95 59 ms, p99 71 ms.
 - Consumer, mobile, ops and merchant (#2) CI green with the API contract check (366 routes); merchant #1 re-checked locally against the same contract.
 
@@ -118,4 +182,4 @@ The uncertain-payment reconciler (EcoCash, OneMoney) is the first containment au
 ## Next actions
 1. **Owner:** record the licence answers, enter the bank accounts and credentials, confirm the provisional parameters, then switch each line on (runbook `docs/runbooks/SWITCH_ON.md`).
 2. **Owner:** provider sandbox runs and record the evidence; external penetration test; staging k6 run; restore drill on a real backup.
-3. **Next build phase:** whatever the roadmap sets after Phase 9; open engineering items: replace the XML-RPC client in the Econet adapter (R76), card acquirer adapter when contracted, national QR scheme parameters.
+3. **Next phase (recommended):** Phase 11, staging integration and acceptance (see the Phase 10 report §13); open engineering items: replace the XML-RPC client in the Econet adapter (R76), card acquirer adapter when contracted, national QR scheme parameters.

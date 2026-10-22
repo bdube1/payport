@@ -76,3 +76,10 @@ Backend CI run 39791437666 (all jobs green): `Phase8CompletionScenarioTest` (wal
 - Credentials: WhatsApp (Meta), MTN MoMo, Airtel Money, USSD aggregator secret.
 - Confirm the PROVISIONAL parameters: `WALLET.TIER_LIMITS`, `AGENT.COMMISSION_BPS`, code and quote expiries.
 - Safeguarding (trust) account for wallet balances; card acquirer for POS cards; national QR scheme details.
+
+## 6. Phase 10 verification
+
+These lines were re-verified in Phase 10 under concurrency, failure injection and recovery, together with the
+settlement fixtures and the isolation tests. Two defects were fixed: D10-2 (refund serialisation) and D10-6
+(pool exhaustion). See [`docs/phase10/PHASE10_REPORT.md`](../phase10/PHASE10_REPORT.md). All lines are still
+off by default.

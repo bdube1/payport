@@ -21,10 +21,13 @@ restore drills, SLOs." Everything below runs in CI on every push, so it stays tr
 advisories. Fixed by upgrading: Apache POI 5.2.5 → 5.4.1 (with commons-compress), Jackson 2 → 2.22.3,
 Jackson 3 → 3.1.7, embedded Tomcat → 11.0.26, Bouncy Castle 1.78 → 1.86. Each override is commented in
 `pom.xml` and is removed once Spring Boot manages that version or newer.
-**Accepted, with mitigation:** `org.apache.xmlrpc` 3.1.3 (GHSA-r2pg-w96p-pcpj, deserialisation in the
-XML-RPC client's fault handling; the library is end-of-life with no fixed release). It is used only by the
-Econet airtime adapter, which talks to Econet's own endpoint over the private link; the risk is a
-compromised Econet server. Replacing it with a minimal XML-RPC client is on the backlog (R76).
+**Corrected in Phase 10 (R76):** this paragraph originally described GHSA-r2pg-w96p-pcpj as a
+deserialisation flaw and relied on the private link. That was wrong on both counts. GHSA-r2pg-w96p-pcpj is
+CVE-2016-5004, a decompression denial of service (CVSS 6.5). The deserialisation flaw is CVE-2019-17570
+(CVSS 9.8), which the scanner does not report because it is filed under another artifact name (R82). The
+Econet link is plain HTTP, so the private network is not sufficient evidence. Phase 10 added a response guard
+and the client hardening, and set TLS/VPN plus library replacement as conditions for Econet production traffic.
+See `docs/phase10/PHASE10_REPORT.md` §2.
 
 ## 2. Scale and concurrency
 
