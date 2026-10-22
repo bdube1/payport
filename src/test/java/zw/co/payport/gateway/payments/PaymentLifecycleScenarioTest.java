@@ -213,8 +213,13 @@ class PaymentLifecycleScenarioTest {
 
         long applied = 0;
         // A delivery that arrives after the first one finished is answered from the inbox ("duplicate of an already
-        // APPLIED callback", duplicate = true) without being processed; only a processed delivery counts as applying.
-        for (Future<CallbackInbox.Result> f : results) if (f.get().status() == CallbackInbox.Status.APPLIED && !f.get().duplicate()) applied++;
+        // APPLIED callback") without being processed; only processed deliveries count. (`duplicate` is not the
+        // test: it means "not the first copy received", and the copy that wins the row lock may not be the first.)
+        for (Future<CallbackInbox.Result> f : results) {
+            CallbackInbox.Result r = f.get();
+            boolean processed = r.detail() == null || !r.detail().startsWith("duplicate of an already");
+            if (r.status() == CallbackInbox.Status.APPLIED && processed) applied++;
+        }
         assertEquals(1, applied, "exactly one of the racing deliveries applied");
         assertConfirmedExactlyOnce(ref);
 

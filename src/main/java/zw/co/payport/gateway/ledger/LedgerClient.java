@@ -84,6 +84,35 @@ public class LedgerClient {
         });
     }
 
+    /**
+     * Opens the request's accounts (each in its own short transaction, fixed order). Call before
+     * {@link #postInTransaction} and before taking any business locks.
+     */
+    public void prepareAccounts(JournalRequest request) {
+        ensureAccounts(request.accounts(), request.postedBy());
+    }
+
+    /**
+     * Posts on the caller's connection inside the caller's transaction (no commit, no retry): the
+     * business rows and the journal commit or roll back together, and the caller never needs a second
+     * pooled connection while it holds locks (two connections per operation starved the pool under
+     * load: found by SecurityResilienceScenarioTest). Accounts must exist ({@link #prepareAccounts}).
+     */
+    public PostResult postInTransaction(Connection c, JournalRequest request) {
+        String entryRef = newEntryRef();
+        try (CallableStatement cs = c.prepareCall("{call ledger_post(?, ?, ?)}")) {
+            cs.setString(1, request.toJson(entryRef));
+            cs.registerOutParameter(2, Types.BIGINT);
+            cs.registerOutParameter(3, Types.VARCHAR);
+            cs.execute();
+            long id = cs.getLong(2);
+            Outcome outcome = Outcome.valueOf(cs.getString(3));
+            return new PostResult(id, outcome == Outcome.POSTED ? entryRef : entryRefOf(c, id), outcome);
+        } catch (SQLException e) {
+            throw LedgerException.fromDatabaseMessage(e.getMessage(), e);
+        }
+    }
+
     public PostResult reverse(String originalEntryRef, String idempotencyKey, LocalDate effectiveDate, String postedBy, String reason) {
         return withRetry(() -> {
             try (Connection c = dataSource.getConnection()) {

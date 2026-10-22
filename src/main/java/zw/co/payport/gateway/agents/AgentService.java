@@ -194,7 +194,8 @@ public class AgentService {
                     .source("agent_float_deposit", depositId).postedBy(by)
                     .debit(AccountKey.of(m.legalEntity(), Book.LIVE, LedgerCategory.BANK_CASH, bank.ledgerOwner(), ccy), amount, "agent deposit")
                     .credit(floatAccount(m.legalEntity(), (String) a.get("agent_code"), ccy), amount, "agent float").build();
-            String entry = ledger.post(j).entryRef();
+            ledger.prepareAccounts(j);
+            String entry = jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>) c -> ledger.postInTransaction(c, j).entryRef());
             jdbc.update("UPDATE agent_float_deposits SET status = 'APPROVED', approved_by = ?, approved_at = ?, note = ?, entry_ref = ? WHERE id = ?",
                     by, now(), note, entry, depositId);
             audit.record(by, "AGENT_FLOAT_APPROVED", "agent:" + a.get("agent_code"), d.get("bank_reference") + " " + ccy + " " + amount);

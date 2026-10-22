@@ -173,6 +173,7 @@ public class WalletService {
 
     /** Locks, checks, posts and records. Returns the ledger entry reference. Idempotent per (opRef, first leg's wallet). */
     public String apply(String opRef, JournalRequest journal, List<Leg> legs, String by, String insufficientMessage) {
+        ledger.prepareAccounts(journal);   // before any lock or transaction: short transactions of their own
         return tx.execute(s -> {
             List<Long> ids = legs.stream().map(Leg::walletId).distinct().sorted().toList();
             Map<Long, Wallet> locked = new LinkedHashMap<>();
@@ -200,7 +201,8 @@ public class WalletService {
             }
             String entryRef;
             try {
-                entryRef = ledger.post(journal).entryRef();
+                // Same connection and transaction as the wallet rows: journal and operations commit together.
+                entryRef = jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>) c -> ledger.postInTransaction(c, journal).entryRef());
             } catch (LedgerException e) {
                 if ("LEDGER_INSUFFICIENT_FUNDS".equals(e.code())) throw new Web.InsufficientFundsException(insufficientMessage);
                 throw e;
