@@ -220,12 +220,13 @@ public class AgentService {
                 .debit(floatAccount(w.entity(), code, ccy), amount, "e-value sent")
                 .credit(w.account(), amount, "cash-in");
         if (commission > 0) b.debit(commissionAccount(w.entity(), ccy), commission, "agent commission").credit(floatAccount(w.entity(), code, ccy), commission, "commission");
-        return tx.execute(s -> {
+        Map<String, Object> done = tx.execute(s -> {
             String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_IN", "CR", amount, code, opRef)), by,
                     "Not enough agent float. Buy more float first.");
             record(opRef, a, "CASH_IN", w, amount, ccy, commission, entry, by);
             return result(opRef, a, w, amount, ccy, commission, entry);
         });
+        return withFloat(done, a);
     }
 
     public Map<String, Object> issueCashOutCode(String phone, String pin, String currency, long amount) {
@@ -302,7 +303,7 @@ public class AgentService {
         jdbc.update("INSERT INTO cash_out_attempts (agent_id, success, at) VALUES (?,?,?)", agentId, result != null && !result.containsKey("expired"), now());
         if (result == null) throw new IllegalArgumentException("Wrong code or phone number, or the code was already used");
         if (result.containsKey("expired")) throw new IllegalStateException("This code has expired. Ask the customer for a new one.");
-        return result;
+        return withFloat(result, a);
     }
 
     public List<Map<String, Object>> transactions(long agentId) {
@@ -349,7 +350,13 @@ public class AgentService {
         out.put("currency", ccy);
         out.put("commissionMinor", commission);
         out.put("entryRef", entry);
-        out.put("floatMinor", ledger.balance(floatAccount(w.entity(), (String) a.get("agent_code"), ccy)).balance());
+        return out;
+    }
+
+    /** The agent's float, read after the operation's transaction has committed (another connection sees only committed rows). */
+    private Map<String, Object> withFloat(Map<String, Object> out, Map<String, Object> agent) {
+        String ccy = (String) out.get("currency");
+        out.put("floatMinor", ledger.balance(floatAccount(markets.requireForCurrency(ccy).legalEntity(), (String) agent.get("agent_code"), ccy)).balance());
         return out;
     }
 
