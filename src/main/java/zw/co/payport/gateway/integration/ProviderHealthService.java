@@ -90,7 +90,10 @@ public class ProviderHealthService {
     // ─── manual suspension ────────────────────────────────────────────────────
 
     public void suspend(String providerCode, String reason, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required to suspend a provider");
+        if (reason == null || reason.isBlank()) reason = "Switched off";
+        Integer open = jdbc.queryForObject("SELECT COUNT(*) FROM provider_suspensions WHERE provider_code = ? AND resumed_at IS NULL",
+                Integer.class, providerCode.toUpperCase());
+        if (open != null && open > 0) return;   // already off
         jdbc.update("INSERT INTO provider_suspensions (provider_code, reason, suspended_by, suspended_at) VALUES (?, ?, ?, ?)",
                 providerCode.toUpperCase(), reason.trim(), by, Timestamp.valueOf(LocalDateTime.now()));
         suspensionsLoadedAt = 0;
@@ -100,7 +103,7 @@ public class ProviderHealthService {
     public void resume(String providerCode, String note, String by) {
         int n = jdbc.update("UPDATE provider_suspensions SET resumed_by = ?, resumed_at = ?, resume_note = ? WHERE provider_code = ? AND resumed_at IS NULL",
                 by, Timestamp.valueOf(LocalDateTime.now()), note, providerCode.toUpperCase());
-        if (n == 0) throw new IllegalStateException(providerCode + " is not suspended");
+        if (n == 0) return;   // already on
         suspensionsLoadedAt = 0;
         log.warn("[INTEGRATIONS] {} RESUMED by {}", providerCode, by);
     }

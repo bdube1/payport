@@ -232,9 +232,9 @@ class PlatformControlsScenarioTest {
         assertNotEquals(503, initiate("WEB", "AIRTIME_ECONET", "USD", 500).status());
         assertTrue(List.of(400, 422).contains(initiate("FAX", "AIRTIME_ECONET", "USD", 500).status()), "unknown channels are refused");
 
-        Res qr = call("POST", "/api/v1/admin/channels/QR", adam, Map.of("enabled", true, "reason", "try"));
-        assertEquals(409, qr.status());
-        assertEquals("LICENCE_REQUIRED", qr.code());
+        // Any channel is switched on and off directly by an administrator (no reason needed).
+        assertEquals(200, call("POST", "/api/v1/admin/channels/QR", adam, Map.of("enabled", true)).status());
+        assertEquals(200, call("POST", "/api/v1/admin/channels/QR", adam, Map.of("enabled", false)).status());
 
         // Product and product-currency switches (existing ops screens) are enforced and audited.
         long pid = jdbc.queryForObject("SELECT id FROM product_types WHERE code = 'AIRTIME_ECONET'", Long.class);
@@ -275,22 +275,13 @@ class PlatformControlsScenarioTest {
     // ─── Phase 8 ─────────────────────────────────────────────────────────────
 
     @Test
-    void phase8_licenceGatedLines_qr_fx() throws Exception {
+    void phase8_productLines_switchedDirectly_qr_fx() throws Exception {
         String carol = staff("Carol Lines", "COMPLIANCE"), dave = staff("Dave Lines", "COMPLIANCE"), adam = staff("Adam Lines", "ADMIN"),
                 fiona = staff("Fiona Fx", "FINANCE"), frank = staff("Frank Fx", "FINANCE");
         assertEquals(6, call("GET", "/api/v1/admin/service-lines", adam, null).data().size());
-        assertEquals(409, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS", adam, Map.of("enabled", true, "reason", "go")).status(), "licence first");
-        assertThrows(org.springframework.dao.DataAccessException.class,
-                () -> jdbc.update("UPDATE service_lines SET enabled = TRUE WHERE code = 'QR_PAYMENTS'"), "the database refuses it too");
-
-        // Licence decision: evidence required, two compliance officers.
-        assertEquals(400, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS/licence-requests", carol, Map.of("status", "GRANTED", "reason", "x")).status());
-        Res lic = call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS/licence-requests", carol,
-                Map.of("status", "GRANTED", "reference", "RBZ/NPS/QR/2026/001", "regulator", "RBZ", "reason", "authorisation letter on file"));
-        long lid = lic.data().path("approvalId").asLong();
-        assertEquals(409, call("POST", "/api/v1/admin/service-lines/licence-requests/" + lid + "/decide", carol, Map.of("approve", true)).status());
-        assertEquals(200, call("POST", "/api/v1/admin/service-lines/licence-requests/" + lid + "/decide", dave, Map.of("approve", true)).status());
-        assertEquals(200, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS", adam, Map.of("enabled", true, "reason", "launch QR")).status());
+        // Lines ship off; an administrator switches them on directly. Customers and compliance cannot.
+        assertEquals(403, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS", carol, Map.of("enabled", true)).status());
+        assertEquals(200, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS", adam, Map.of("enabled", true)).status());
         assertEquals(200, call("POST", "/api/v1/admin/channels/QR", adam, Map.of("enabled", true, "reason", "launch QR")).status());
 
         // QR for an open checkout session; resolution checks it matches.
@@ -314,11 +305,10 @@ class PlatformControlsScenarioTest {
         String cheaper = EmvQr.build(new EmvQr.Payload(true, p.merchantRef(), p.mcc(), p.currencyNumeric(), 1L, p.countryCode(), p.merchantName(), p.city(), p.reference()));
         assertEquals("QR_MISMATCH", call("POST", "/api/v1/qr/resolve", null, Map.of("payload", cheaper)).code(), "an altered amount is refused");
 
-        // Licence withdrawn: the line and its channel go off at once.
-        Res refuse = call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS/licence-requests", carol, Map.of("status", "REFUSED", "reason", "scheme not joined"));
-        assertEquals(200, call("POST", "/api/v1/admin/service-lines/licence-requests/" + refuse.data().path("approvalId").asLong() + "/decide", dave,
-                Map.of("approve", true)).status());
+        // Switched off: the line and the channel that depends on it go off at once.
+        assertEquals(200, call("POST", "/api/v1/admin/service-lines/QR_PAYMENTS", adam, Map.of("enabled", false)).status());
         assertEquals(503, call("GET", "/api/v1/checkout/" + sid + "/qr", null, null).status());
+        assertFalse(jdbc.queryForObject("SELECT enabled FROM platform_channels WHERE code = 'QR'", Boolean.class));
 
         // FX: maker-checker rates; quotes only when the line is on.
         Res rate = call("POST", "/api/v1/admin/fx/rates", fiona, Map.of("base", "USD", "quote", "ZWG", "rate", 26.5, "spreadBps", 100, "source", "RBZ interbank 2026-10-16"));
@@ -326,23 +316,18 @@ class PlatformControlsScenarioTest {
         assertEquals(409, call("POST", "/api/v1/admin/fx/rates/" + rid + "/decide", fiona, Map.of("approve", true)).status());
         assertEquals(200, call("POST", "/api/v1/admin/fx/rates/" + rid + "/decide", frank, Map.of("approve", true)).status());
         assertEquals(503, call("GET", "/api/v1/fx/quote?from=USD&to=ZWG&amountMinor=1000", null, null).status(), "FX line is off");
-        Res fxLic = call("POST", "/api/v1/admin/service-lines/FX_CONVERSION/licence-requests", carol,
-                Map.of("status", "NOT_REQUIRED", "regulator", "RBZ Exchange Control", "reason", "indicative quotes only (legal opinion on file)"));
-        call("POST", "/api/v1/admin/service-lines/licence-requests/" + fxLic.data().path("approvalId").asLong() + "/decide", dave, Map.of("approve", true));
         assertEquals(200, call("POST", "/api/v1/admin/service-lines/FX_CONVERSION", adam, Map.of("enabled", true, "reason", "show quotes")).status());
         Res q = call("GET", "/api/v1/fx/quote?from=USD&to=ZWG&amountMinor=1000", null, null);
         assertEquals(26_235, q.data().path("convertedMinor").asLong(), "10.00 USD × 26.5 less 1% = 262.35 ZWG, rounded down");
         Res inv = call("GET", "/api/v1/fx/quote?from=ZWG&to=USD&amountMinor=26500", null, null);
         assertEquals(990, inv.data().path("convertedMinor").asLong(), "inverse rate, spread applied, rounded down");
 
-        // A line whose code is parked cannot be switched on even with a licence answer (all Phase 8 lines are BUILT
-        // since V52; parking one here proves the guard still holds).
+        // A line whose code is not in this version cannot be switched on (all lines are BUILT since V52;
+        // parking one here proves the guard still holds).
         jdbc.update("UPDATE service_lines SET harvest_status = 'PARKED' WHERE code = 'WALLETS'");
-        Res wl = call("POST", "/api/v1/admin/service-lines/WALLETS/licence-requests", carol, Map.of("status", "NOT_REQUIRED", "reason", "test"));
-        call("POST", "/api/v1/admin/service-lines/licence-requests/" + wl.data().path("approvalId").asLong() + "/decide", dave, Map.of("approve", true));
         Res parked = call("POST", "/api/v1/admin/service-lines/WALLETS", adam, Map.of("enabled", true, "reason", "try"));
         assertEquals(409, parked.status());
-        assertTrue(parked.message().contains("parked"));
+        assertTrue(parked.message().contains("not available in this version"));
         jdbc.update("UPDATE service_lines SET harvest_status = 'BUILT' WHERE code = 'WALLETS'");
         assertEquals(200, call("POST", "/api/v1/admin/service-lines/WALLETS", adam, Map.of("enabled", true, "reason", "built")).status());
     }

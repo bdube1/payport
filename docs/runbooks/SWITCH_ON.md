@@ -1,32 +1,27 @@
 # Switching products on (owner's runbook)
 
 _Everything in Phase 8 ships **off** and fails closed. Nothing here needs a code change: credentials go into
-the deployment's environment, decisions are made in the ops console by the right people, and every step is
-audited. Do the steps in order; each one refuses to run until the previous one is done._
+the deployment's environment, switches are in the ops console, and every step is audited._
 
 ## 0. The pattern for every product line
 
-1. **Licence answer** (Channels & Product Lines → line → *Record licence decision*): a COMPLIANCE officer
-   records GRANTED (with the licence or authorisation reference) or NOT_REQUIRED (with the basis); a
-   **second** compliance officer approves. A REFUSED answer later switches the line and its channels off at once.
-2. **Line on**: an ADMIN switches the line on, with a reason. Refused unless the licence answer is GRANTED / NOT_REQUIRED (database CHECK).
-3. **Channel on** (if the line has one): ADMIN/OPS switches the channel on.
-4. **Catalogue**: activate the payment method / product in *Products & Payment Methods*.
-5. **Parameters**: confirm the line's compliance parameters in *Compliance → Rules & Parameters* (two compliance officers). Until then they are PROVISIONAL placeholders.
+1. **Line on**: an ADMIN (or OPS) switches the line on in *Channels & Product Lines*.
+2. **Channel on** (if the line has one): ADMIN/OPS switches the channel on.
+3. **Catalogue**: activate the payment method / product in *Products & Payment Methods*.
+4. **Parameters**: confirm the line's parameters in *Compliance → Rules & Parameters*.
 
-Switching anything **off** is always immediate (one person, reason required).
+Switching anything on or off is immediate, one person, audited. Integrations switch on and off in *Integrations*.
 
 ## 1. Wallets (line `WALLETS`)
 
 | Step | Who / where |
 |---|---|
-| E-money licence answer | Compliance ×2, line `WALLETS` |
 | Trust / safeguarding account | Markets & Currencies → the currency's settlement account must be the safeguarding account (or add it) |
 | Limits per KYC tier | Parameter `WALLET.TIER_LIMITS` (max balance, daily outgoing, per tier and currency), compliance ×2 |
 | Line on | ADMIN |
 | Pay with wallet | Products & Payment Methods → activate `WALLET` |
 | Top-ups | Products & Payment Methods → activate product `WALLET_TOPUP` (and its currencies) |
-| Conversions between a customer's own wallets | Line `FX_CONVERSION` on (licence answer first) + an approved rate (Channels & Product Lines → FX rates, maker ≠ checker) |
+| Conversions between a customer's own wallets | Line `FX_CONVERSION` on + an approved rate (Channels & Product Lines → FX rates, maker ≠ checker) |
 | Optional timings | `WALLET.PAYMENT_AUTH_TTL_MINUTES`, `FX.QUOTE_TTL_SECONDS` |
 
 Balances are the ledger's `CUSTOMER_WALLET` accounts; the ledger refuses any posting that would take one below zero.
@@ -46,7 +41,6 @@ Balances are the ledger's `CUSTOMER_WALLET` accounts; the ledger refuses any pos
 
 | Step | Who / where |
 |---|---|
-| Licence / sponsor-acquirer answer | Compliance ×2, line `POS_ACQUIRING` |
 | Line and channel on | ADMIN |
 | Terminals | Each merchant registers terminals in the merchant portal (secret shown once); ops can disable any terminal in *POS & WhatsApp* |
 | Card acceptance | Not bundled. Needs a card acquirer implementation (`CardAcquirer`) and PCI DSS scope; until then terminals take QR, wallet and mobile money and card requests answer "not available" |
@@ -63,7 +57,7 @@ hex HMAC-SHA256(secret, `METHOD\nPATH\nTIMESTAMP\nNONCE\nhex(SHA-256(body))`).
 | `WHATSAPP_VERIFY_TOKEN` | Any long random string; enter the same in Meta's webhook settings |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN` | WhatsApp Business account (sender). Without them replies are recorded, not sent |
 
-Webhook URL: `https://<api>/api/v1/whatsapp/webhook` (subscribe to `messages`). Then: licence answer → line on → channel on.
+Webhook URL: `https://<api>/api/v1/whatsapp/webhook` (subscribe to `messages`). Then: line on → channel on.
 *POS & WhatsApp* shows whether each setting is present (never the values).
 
 ## 5. MTN MoMo and Airtel Money (new markets)

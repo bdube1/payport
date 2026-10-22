@@ -32,21 +32,7 @@ public class ProductsController {
         return ok(lines.list(), req);
     }
 
-    public record LicenceBody(String status, String reference, String regulator, String reason) {}
-
-    @PostMapping("/api/v1/admin/service-lines/{code}/licence-requests")
-    @PreAuthorize("hasRole('COMPLIANCE')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> licence(@PathVariable String code, @RequestBody LicenceBody b, HttpServletRequest req) {
-        return run(() -> lines.requestLicenceStatus(code, b.status(), b.reference(), b.regulator(), b.reason(), staff()), req);
-    }
-
     public record DecisionBody(boolean approve, String note) {}
-
-    @PostMapping("/api/v1/admin/service-lines/licence-requests/{id}/decide")
-    @PreAuthorize("hasRole('COMPLIANCE')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> decide(@PathVariable long id, @RequestBody DecisionBody b, HttpServletRequest req) {
-        return run(() -> lines.decide(id, b.approve(), b.note(), staff()), req);
-    }
 
     public record SwitchBody(boolean enabled, String reason) {}
 

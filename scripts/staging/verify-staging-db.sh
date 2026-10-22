@@ -22,7 +22,8 @@ check() {  # name, actual, expected
   echo
   echo "== migrations"
   check "no failed migration" "$(m "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0")" 0
-  check "latest migration" "$(m "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1")" 52
+  expected=$(ls "$(cd "$(dirname "$0")/../.." && pwd)/src/main/resources/db/migration" 2>/dev/null | sed -nE 's/^V([0-9]+)__.*/\1/p' | sort -n | tail -1)
+  check "latest migration" "$(m "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1")" "${expected:-53}"
 
   echo
   echo "== nothing lost or changed by the migrations (against $PRE)"
