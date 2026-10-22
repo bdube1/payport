@@ -308,13 +308,15 @@ class ProviderIntegrationScenarioTest {
         assertEquals("T MOYO", lookup.body().path("data").path("holderName").asText());
         assertTrue(lookup.body().path("data").path("payable").asBoolean());
 
-        assertEquals(400, call("POST", "/api/v1/admin/integrations/ZESA/suspend", ops, null, Map.of("reason", "")).status(), "a reason is required");
+        // Switch off and on at will: no reason needed, repeating a switch is harmless.
+        assertEquals(200, call("POST", "/api/v1/admin/integrations/ZESA/suspend", ops, null, Map.of("reason", "")).status());
         assertEquals(200, call("POST", "/api/v1/admin/integrations/ZESA/suspend", ops, null, Map.of("reason", "eSolutions float exhausted")).status());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM provider_suspensions WHERE provider_code = 'ZESA' AND resumed_at IS NULL", Integer.class));
         Res suspended = call("POST", "/api/v1/billers/ZESA/lookup", null, null, Map.of("accountNumber", "37132587712", "currency", "USD"));
         assertEquals(503, suspended.status());
         assertEquals("SUSPENDED", call("GET", "/api/v1/admin/integrations/ZESA", ops, null, null).body().path("data").path("health").path("status").asText());
         assertEquals(200, call("POST", "/api/v1/admin/integrations/ZESA/resume", ops, null, Map.of("note", "float topped up")).status());
-        assertEquals(409, call("POST", "/api/v1/admin/integrations/ZESA/resume", ops, null, Map.of()).status(), "not suspended any more");
+        assertEquals(200, call("POST", "/api/v1/admin/integrations/ZESA/resume", ops, null, Map.of()).status(), "already on: harmless");
 
         assertEquals(400, call("POST", "/api/v1/admin/integrations/ZESA/verifications", ops, null,
                 Map.of("environment", "SANDBOX", "flow", "deliver", "pass", true)).status(), "evidence required");

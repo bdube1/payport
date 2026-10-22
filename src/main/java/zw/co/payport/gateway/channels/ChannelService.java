@@ -63,22 +63,15 @@ public class ChannelService {
     }
 
     public List<Map<String, Object>> list() {
-        return jdbc.queryForList("SELECT c.*, s.licence_status FROM platform_channels c LEFT JOIN service_lines s ON s.code = c.licence_gate ORDER BY c.code");
+        return jdbc.queryForList("SELECT c.code, c.name, c.description, c.enabled, c.licence_gate AS product_line, c.reason, c.updated_by, c.updated_at FROM platform_channels c ORDER BY c.code");
     }
 
     @Transactional
     public Map<String, Object> set(String code, boolean enabled, String reason, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
+        if (reason == null || reason.isBlank()) reason = enabled ? "Switched on" : "Switched off";
         String c = code.toUpperCase(Locale.ROOT);
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT c.licence_gate, s.licence_status FROM platform_channels c "
-                + "LEFT JOIN service_lines s ON s.code = c.licence_gate WHERE c.code = ? FOR UPDATE", c);
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT code FROM platform_channels WHERE code = ? FOR UPDATE", c);
         if (rows.isEmpty()) throw new IllegalArgumentException("Unknown channel " + code);
-        Object gate = rows.get(0).get("licence_gate");
-        Object status = rows.get(0).get("licence_status");
-        if (enabled && gate != null && !"GRANTED".equals(status) && !"NOT_REQUIRED".equals(status)) {
-            throw new IllegalStateException("Channel " + c + " needs the " + gate + " licence question answered first (currently "
-                    + (status == null ? "NOT_ASSESSED" : status) + ")");
-        }
         jdbc.update("UPDATE platform_channels SET enabled = ?, reason = ?, updated_by = ?, updated_at = ? WHERE code = ?",
                 enabled, reason, by, Timestamp.valueOf(LocalDateTime.now()), c);
         audit.record(by, enabled ? "CHANNEL_ON" : "CHANNEL_OFF", "channel:" + c, reason);

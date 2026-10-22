@@ -759,15 +759,7 @@
   },
   {
    "method": "POST",
-   "path": "/api/v1/admin/service-lines/licence-requests/{id}/decide"
-  },
-  {
-   "method": "POST",
    "path": "/api/v1/admin/service-lines/{code}"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/admin/service-lines/{code}/licence-requests"
   },
   {
    "method": "GET",

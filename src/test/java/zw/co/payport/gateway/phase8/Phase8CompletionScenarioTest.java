@@ -46,9 +46,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Phase 8 completion over HTTP on MySQL 8. Everything starts OFF; each line is switched on the way
- * the owner will do it (two compliance officers record the licence answer, an administrator
- * switches the line and its channel on), then:
+ * Phase 8 completion over HTTP on MySQL 8. Everything starts OFF; an administrator switches each
+ * line and its channel on, then:
  *  - wallets: top-up through the orchestrator, PIN-confirmed transfers, overspend refused by the
  *    ledger, daily limits, pay a payment and a checkout with the wallet, refund to wallet, FX
  *    conversion between the holder's own wallets, idempotent retries;
@@ -153,18 +152,13 @@ class Phase8CompletionScenarioTest {
         return new Customer(phone, jwt.generateToken(users.loadUserByUsername(phone)));
     }
 
-    /** The owner's switch-on sequence: licence answer by two compliance officers, then an administrator. */
+    /** The owner's switch-on: an administrator switches the line (and its channel) on. */
     void switchOn(String line, String channel) throws Exception {
-        String c1 = staff("Comp One", "COMPLIANCE"), c2 = staff("Comp Two", "COMPLIANCE"), admin = staff("Ad Min", "ADMIN");
-        Res lic = call("POST", "/api/v1/admin/service-lines/" + line + "/licence-requests", c1,
-                Map.of("status", "GRANTED", "reference", "LIC/" + line + "/2026", "regulator", "RBZ", "reason", "licence on file"));
-        assertEquals(200, lic.status(), lic.body().toString());
-        assertEquals(200, call("POST", "/api/v1/admin/service-lines/licence-requests/" + lic.data().path("approvalId").asLong() + "/decide", c2,
-                Map.of("approve", true)).status());
-        Res on = call("POST", "/api/v1/admin/service-lines/" + line, admin, Map.of("enabled", true, "reason", "launch"));
+        String admin = staff("Ad Min", "ADMIN");
+        Res on = call("POST", "/api/v1/admin/service-lines/" + line, admin, Map.of("enabled", true));
         assertEquals(200, on.status(), on.body().toString());
         if (channel != null) {
-            Res ch = call("POST", "/api/v1/admin/channels/" + channel, admin, Map.of("enabled", true, "reason", "launch"));
+            Res ch = call("POST", "/api/v1/admin/channels/" + channel, admin, Map.of("enabled", true));
             assertEquals(200, ch.status(), ch.body().toString());
         }
     }

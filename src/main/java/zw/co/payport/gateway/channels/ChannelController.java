@@ -38,7 +38,7 @@ public class ChannelController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("CHANNEL_CHANGE_REFUSED", e.getMessage(), rid(req)));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(409).body(ApiResponse.error("LICENCE_REQUIRED", e.getMessage(), rid(req)));
+            return ResponseEntity.status(409).body(ApiResponse.error("CHANNEL_CHANGE_REFUSED", e.getMessage(), rid(req)));
         }
     }
 
