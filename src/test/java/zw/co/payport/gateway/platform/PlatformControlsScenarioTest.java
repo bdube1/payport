@@ -149,10 +149,10 @@ class PlatformControlsScenarioTest {
         assertFalse(zm.path("readiness").path("readyForLive").asBoolean());
         assertFalse(markets.liveCurrency("ZMW"));
 
-        // Placeholders block going live: the request itself is refused, with the reasons.
+        // Going live without a live currency is refused, with the reason.
         Res blocked = call("POST", "/api/v1/admin/markets/ZM/change-requests", adam, Map.of("changes", Map.of("status", "LIVE"), "reason", "launch"));
         assertEquals(400, blocked.status());
-        assertTrue(blocked.message().contains("placeholder"), blocked.message());
+        assertTrue(blocked.message().contains("no currency is marked live"), blocked.message());
 
         // A complete request: legal name, real bank account, ZMW live.
         Res req = call("POST", "/api/v1/admin/markets/ZM/change-requests", adam, Map.of(
