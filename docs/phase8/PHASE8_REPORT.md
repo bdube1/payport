@@ -29,7 +29,7 @@ portal, configures credentials, and switches each line on after internal checks.
 
 **Wallets** (`wallets/*`)
 - The balance **is** the ledger balance of the wallet's `CUSTOMER_WALLET` account. The ledger refuses, under row locks, any posting that would take it below zero, so concurrent spends cannot overdraw a wallet (tested: 30 simultaneous transfers against money for 10 → exactly 10).
-- Every movement: lock the wallets in id order, check status and tier limits (`WALLET.TIER_LIMITS`: maximum balance and daily outgoing per tier and currency), post **one** balanced journal, record the operations; idempotent per operation reference.
+- Every movement: lock the wallets in id order, check status and tier limits (`WALLET.TIER_LIMITS`: maximum balance and daily outgoing per tier and currency), post **one** balanced journal on the same transaction as the operation rows (they commit together), record the operations; idempotent per operation reference.
 - Top-up is a product (`WALLET_TOPUP`) paid on any rail; delivery credits the wallet (Dr PROVIDER_RECEIVABLE[rail] · Cr CUSTOMER_WALLET). The wallet is checked before the customer pays.
 - Pay with wallet (`WALLET` method): only with a PIN-confirmed authorisation for that payment; the payment then follows the normal lifecycle and is confirmed through the same status-query path as every rail. A guest who picks WALLET is refused with nothing taken. Also pays a merchant's hosted checkout.
 - Transfers by phone or wallet number (PIN, idempotent `clientRef`); conversions between a holder's own wallets at an approved rate (quote with expiry, one journal through `FX_CLEARING`, executed once); refunds of wallet payments back to the wallet (finance, closes the payment REFUNDED).
@@ -68,7 +68,7 @@ portal, configures credentials, and switches each line on after internal checks.
 
 ## 4. Evidence
 
-Backend CI run 38950628724 (all jobs green): `Phase8CompletionScenarioTest` (wallets, agents, POS, WhatsApp, provider settlements over HTTP on MySQL 8, ledger integrity checked after each), `Phase8UnitTest` (MTN/Airtel fail closed and status mapping, register overrides, POS signature, WhatsApp signature, CORS), `SecurityResilienceScenarioTest` (wallet concurrency), `PlatformControlsScenarioTest` (licence gate, QR, FX, USSD). Frontend CI: consumer, mobile, ops, merchant green with the API contract check. Details: `docs/PROJECT_STATUS.md`.
+Backend CI run 39791437666 (all jobs green): `Phase8CompletionScenarioTest` (wallets, agents, POS, WhatsApp, provider settlements over HTTP on MySQL 8, ledger integrity checked after each), `Phase8UnitTest` (MTN/Airtel fail closed and status mapping, register overrides, POS signature, WhatsApp signature, CORS), `SecurityResilienceScenarioTest` (wallet concurrency), `PlatformControlsScenarioTest` (licence gate, QR, FX, USSD). Frontend CI: consumer, mobile, ops, merchant green with the API contract check. Details: `docs/PROJECT_STATUS.md`.
 
 ## 5. Not code (owner inputs)
 

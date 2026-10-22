@@ -28,13 +28,19 @@ compromised Econet server. Replacing it with a minimal XML-RPC client is on the 
 
 ## 2. Scale and concurrency
 
-| Test | Result (CI run 38950628724) |
+| Test | Result (CI run 39791437666) |
 |---|---|
 | 30 simultaneous wallet transfers against money for 10 | exactly 10 succeed, 20 refused, balance 0, never negative |
 | One payment confirmed by 10 simultaneous wallet payments | taken once (one wallet debit), payment CONFIRMED |
 | Ledger: 200 parallel debits, same idempotency key from many threads, opposing transfers (existing `LedgerConcurrencyTest`) | no overdraft, no double post, no deadlock |
-| Latency, 400 authenticated wallet reads from 8 concurrent clients on the CI runner | **p50 51 ms, p95 74 ms, p99 91 ms** |
+| Latency, 400 authenticated wallet reads from 8 concurrent clients on the CI runner | **p50 38 ms, p95 59 ms, p99 71 ms** |
 | Staging load (open-model arrival rates, thresholds = SLOs) | `scripts/phase9/k6-staging.js`, run against staging before go-live |
+
+**Finding fixed:** under 30 concurrent transfers a fundable transfer failed. Each wallet operation held one
+pooled connection (the wallet row lock) while waiting for a second one to post the ledger journal, so the
+pool ran dry. The journal now posts on the operation's own connection and transaction (`ledger_post` is
+designed for that: it refuses autocommit), so the wallet rows and the journal commit together and an
+operation needs one connection. The same change applies to agent float postings.
 
 Graceful shutdown (`server.shutdown=graceful`, 30 s) lets in-flight payments finish during rolling deploys;
 liveness and readiness probes are at `/actuator/health/liveness` and `/readiness`.
@@ -45,7 +51,7 @@ liveness and readiness probes are at `/actuator/health/liveness` and `/readiness
 --single-transaction --routines --triggers`), restores it into an empty database and proves the copy is
 whole: identical row counts for every table, the ledger's definer procedures present, identical ledger
 balances per category and currency, and `ledger_integrity_report()` giving the same answer on the copy.
-It runs in CI after the ledger tests (job `ledger-db`) on the data they wrote: **PASS, restore 2 s**.
+It runs in CI after the ledger tests (job `ledger-db`) on the data they wrote: **PASS, restore 1–4 s**.
 
 On production: run it on a non-production server against a real backup (the Phase 0.5
 `restore-drill.sh` records the evidence), quarterly and after every schema change. RPO/RTO targets are in

@@ -11,7 +11,12 @@ each product on in the portal after internal checks: [`docs/runbooks/SWITCH_ON.m
 - `docs/platform/PLATFORM_CONTROLS.md`: markets, currencies, channels, product lines from the portal;
 - API contract: `docs/api/api-contract.json` (366 routes, equal to the running application).
 
-**Combined test run:** see the final CI section below (backend run plus the four frontend repositories).
+**Combined test run (backend run 39791437666, all jobs green; frontends green at their latest commits):**
+- `build-and-test`: **214 passed, 0 failed** (106 database tests run in `ledger-db`), including `Phase8CompletionScenarioTest`, `Phase8UnitTest`, `SecurityResilienceScenarioTest` and every earlier suite.
+- `ledger-db`: **106 / 106**; DR drill: **PASS** (backup → restore → identical rows, procedures, balances, integrity; restore 3 s).
+- `migrations-production-like` (V1–V52, binlog, non-SUPER user): pass. `dependency-scan`: 1 accepted advisory (R76).
+- Latency on CI (400 wallet reads, 8 clients): p50 38 ms, p95 59 ms, p99 71 ms.
+- Consumer, mobile, ops and merchant (#2) CI green with the API contract check (366 routes); merchant #1 re-checked locally against the same contract.
 
 | Item | Status |
 |---|---|
@@ -24,7 +29,7 @@ each product on in the portal after internal checks: [`docs/runbooks/SWITCH_ON.m
 | Provider settlements | **Built**: four-eyes rules book rail settlements found on camt.053 statements. |
 | Frontends | Consumer and mobile wallet; merchant agent and POS; ops wallets, agents, POS/WhatsApp, settlement rules, ledger. All green in CI with the contract check. |
 | Phase 9 security | Authorization matrix over every admin/merchant route (found and fixed 3 unguarded admin controllers, R75); URL-level role rules; CSP and other headers; CORS by environment (R36 closed); token-protected Prometheus; dependency scan with fixes (R77). |
-| Phase 9 scale | Wallet double-spend and one-payment-many-confirmations tests; latency p95 ≈ 75 ms on CI; k6 staging script with SLO thresholds. |
+| Phase 9 scale | Wallet double-spend and one-payment-many-confirmations tests (they found a connection-pool starvation in wallet postings, fixed: the journal now posts on the operation's own transaction); latency p95 59 ms on CI; k6 staging script with SLO thresholds. |
 | Phase 9 resilience | DR drill (backup → restore → verify rows, procedures, balances, integrity) in CI: PASS; graceful shutdown; probes. |
 
 **Owner inputs (configuration, not code)**
