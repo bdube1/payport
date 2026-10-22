@@ -792,9 +792,15 @@ public class EconetAirtimeAdaptor implements FulfilmentProviderAdaptor {
         config.setServerURL(new URL(urlStr));
         config.setConnectionTimeout(timeout);
         config.setReplyTimeout(timeout);
-        
+        // R76: never ask for compression or extensions; every response is checked before the library parses it.
+        config.setEnabledForExtensions(false);
+        config.setEnabledForExceptions(false);
+        config.setGzipCompressing(false);
+        config.setGzipRequesting(false);
+
         XmlRpcClient client = new XmlRpcClient();
         client.setConfig(config);
+        client.setTransportFactory(new GuardedXmlRpcTransportFactory(client));
         return client;
     }
 

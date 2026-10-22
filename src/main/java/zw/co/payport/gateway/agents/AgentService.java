@@ -174,6 +174,17 @@ public class AgentService {
     }
 
     public Map<String, Object> decideDeposit(long depositId, boolean approve, String note, String by) {
+        if (approve) {   // open the two accounts before the deposit row is locked
+            Map<String, Object> d0 = jdbc.queryForMap("SELECT agent_id, currency FROM agent_float_deposits WHERE id = ?", depositId);
+            Map<String, Object> a0 = get(((Number) d0.get("agent_id")).longValue());
+            String c0 = (String) d0.get("currency");
+            MarketRegistry.Market m0 = markets.requireForCurrency(c0);
+            MarketRegistry.BankAccount bank0 = markets.bankAccount(c0);
+            if (bank0 != null && bank0.ledgerOwner() != null) {
+                ledger.openAccount(AccountKey.of(m0.legalEntity(), Book.LIVE, LedgerCategory.BANK_CASH, bank0.ledgerOwner(), c0), by);
+            }
+            ledger.openAccount(floatAccount(m0.legalEntity(), (String) a0.get("agent_code"), c0), by);
+        }
         return tx.execute(s -> {
             Map<String, Object> d = jdbc.queryForMap("SELECT * FROM agent_float_deposits WHERE id = ? FOR UPDATE", depositId);
             if (!"PENDING".equals(d.get("status"))) throw new IllegalStateException("Deposit is " + d.get("status"));
@@ -194,7 +205,6 @@ public class AgentService {
                     .source("agent_float_deposit", depositId).postedBy(by)
                     .debit(AccountKey.of(m.legalEntity(), Book.LIVE, LedgerCategory.BANK_CASH, bank.ledgerOwner(), ccy), amount, "agent deposit")
                     .credit(floatAccount(m.legalEntity(), (String) a.get("agent_code"), ccy), amount, "agent float").build();
-            ledger.prepareAccounts(j);
             String entry = jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>) c -> ledger.postInTransaction(c, j).entryRef());
             jdbc.update("UPDATE agent_float_deposits SET status = 'APPROVED', approved_by = ?, approved_at = ?, note = ?, entry_ref = ? WHERE id = ?",
                     by, now(), note, entry, depositId);
@@ -220,6 +230,7 @@ public class AgentService {
                 .debit(floatAccount(w.entity(), code, ccy), amount, "e-value sent")
                 .credit(w.account(), amount, "cash-in");
         if (commission > 0) b.debit(commissionAccount(w.entity(), ccy), commission, "agent commission").credit(floatAccount(w.entity(), code, ccy), commission, "commission");
+        wallets.prepareAccounts(floatAccount(w.entity(), code, ccy), commissionAccount(w.entity(), ccy), w.account());
         Map<String, Object> done = tx.execute(s -> {
             String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_IN", "CR", amount, code, opRef)), by,
                     "Not enough agent float. Buy more float first.");
@@ -275,6 +286,12 @@ public class AgentService {
         if (failures != null && failures >= max) throw new SecurityException("Too many wrong cash-out codes. Try again later or contact PayPort.");
         String phone = "+" + (customerPhone == null ? "" : customerPhone.replaceAll("[^0-9]", ""));
         String h = hash(phone, code == null ? "" : code.trim());
+        // Open the accounts before the code row is locked (see WalletService.apply).
+        jdbc.queryForList("SELECT wallet_id, currency FROM cash_out_codes WHERE code_hash = ?", h).stream().findFirst().ifPresent(pre -> {
+            WalletService.Wallet w0 = wallets.get(((Number) pre.get("wallet_id")).longValue());
+            String c0 = (String) pre.get("currency");
+            wallets.prepareAccounts(w0.account(), floatAccount(w0.entity(), (String) a.get("agent_code"), c0), commissionAccount(w0.entity(), c0));
+        });
         Map<String, Object> result = tx.execute(s -> {
             List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM cash_out_codes WHERE code_hash = ? FOR UPDATE", h);
             if (rows.isEmpty() || !"ISSUED".equals(rows.get(0).get("status"))) return null;

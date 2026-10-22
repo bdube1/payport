@@ -173,11 +173,18 @@ public class BankMessageService {
         if (items.isEmpty() && "CRDT".equals(e.direction()) && providerSettlements != null) {
             var rule = providerSettlements.match(currency, e.counterparty(), e.remittance());
             if (rule.isPresent()) {
-                String key = st.accountId() + ":" + st.statementId() + ":" + e.no();
+                // The bank's own entry reference identifies the money movement; the same line can appear on two
+                // statements (intraday, then end of day), so the statement id and line number are only a fallback.
+                String key = e.bankReference() != null && !e.bankReference().isBlank()
+                        ? st.accountId() + ":BANKREF:" + e.bankReference()
+                        : st.accountId() + ":" + st.statementId() + ":" + e.no();
                 try {
-                    String ref = providerSettlements.book(rule.get(), key, e.amountMinor(), currency, e.bookingDate(), by);
-                    return new Trace("PROVIDER_SETTLEMENT", null, ref, rule.get().get("provider_code") + " settlement (rule " + rule.get().get("id") + ")");
+                    var posted = providerSettlements.book(rule.get(), key, e.amountMinor(), currency, e.bookingDate(), by);
+                    return new Trace("PROVIDER_SETTLEMENT", null, posted.entryRef(), rule.get().get("provider_code") + " settlement (rule " + rule.get().get("id") + ")"
+                            + (posted.outcome() == zw.co.payport.gateway.ledger.LedgerClient.Outcome.DUPLICATE ? "; already booked from an earlier statement" : ""));
                 } catch (RuntimeException ex) {
+                    exceptions.raise("MISSING_IN_PAYPORT", provider, null, e.bankReference(), null, e.amountMinor(), currency,
+                            rule.get().get("provider_code") + " settlement credit not booked: " + ex.getMessage(), "STATEMENT");
                     return new Trace("LEDGER_PENDING", null, null, rule.get().get("provider_code") + " settlement not booked: " + ex.getMessage());
                 }
             }

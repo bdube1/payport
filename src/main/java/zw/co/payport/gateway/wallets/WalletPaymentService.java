@@ -15,6 +15,7 @@ import zw.co.payport.gateway.service.adaptor.PaymentProviderAdaptor;
 import zw.co.payport.gateway.service.impl.TransactionOrchestratorService;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,9 +34,14 @@ public class WalletPaymentService {
     private final TransactionOrchestratorService orchestrator;
     private final PaymentStatusVerifier verifier;
     private final CheckoutSessionService checkout;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final org.springframework.transaction.support.TransactionTemplate tx;
 
     public WalletPaymentService(WalletService wallets, PinVerifier pins, TransactionRepository transactions, TransactionOrchestratorService orchestrator,
-                                PaymentStatusVerifier verifier, CheckoutSessionService checkout) {
+                                PaymentStatusVerifier verifier, CheckoutSessionService checkout,
+                                org.springframework.jdbc.core.JdbcTemplate jdbc, org.springframework.transaction.PlatformTransactionManager tm) {
+        this.jdbc = jdbc;
+        this.tx = new org.springframework.transaction.support.TransactionTemplate(tm);
         this.wallets = wallets;
         this.pins = pins;
         this.transactions = transactions;
@@ -89,22 +95,33 @@ public class WalletPaymentService {
         if (e != null) orchestrator.handlePaymentCallback(e);
     }
 
-    /** Ops: refund a wallet-paid payment to the wallet and close the payment as REFUNDED. */
+    /**
+     * Ops: refund a wallet-paid payment to the wallet and close the payment as REFUNDED. One transaction
+     * holding the payment row lock: the wallet credit, the ledger journal and the REFUNDED status commit
+     * together, and a concurrent second refund waits, then finds the payment REFUNDED and is refused.
+     */
     public Map<String, Object> refundToWallet(String reference, String reason, String by) {
         if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
-        Transaction tx = transactions.findByReference(reference).orElseThrow(() -> new IllegalArgumentException("No such payment"));
-        TransactionStatus st = tx.getStatus();
-        if (st == TransactionStatus.REFUNDED) throw new IllegalStateException(reference + " is already refunded");
-        if (st != TransactionStatus.REFUND_PENDING && !st.getAllowedTransitions().contains(TransactionStatus.REFUND_PENDING)) {
-            throw new IllegalStateException("A payment that is " + st + " cannot be refunded");
-        }
-        String entry = wallets.refundPayment(reference, by);
-        TransactionResponse r = orchestrator.completeManualRefund(reference, by, entry, "WALLET", reason);
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("reference", reference);
-        out.put("entryRef", entry);
-        out.put("status", String.valueOf(r.getStatus()));
-        return out;
+        wallets.operation(reference, "PAYMENT").ifPresent(op -> {   // accounts opened before any lock (see WalletService.apply)
+            WalletService.Wallet w = wallets.get(((Number) op.get("wallet_id")).longValue());
+            wallets.prepareAccounts(w.account(), WalletService.receivable(w.entity(), WalletService.RAIL, w.currency()));
+        });
+        return tx.execute(s -> {
+            List<String> locked = jdbc.queryForList("SELECT status FROM transactions WHERE reference = ? FOR UPDATE", String.class, reference);
+            if (locked.isEmpty()) throw new IllegalArgumentException("No such payment");
+            TransactionStatus st = TransactionStatus.valueOf(locked.get(0));
+            if (st == TransactionStatus.REFUNDED) throw new IllegalStateException(reference + " is already refunded");
+            if (st != TransactionStatus.REFUND_PENDING && !st.getAllowedTransitions().contains(TransactionStatus.REFUND_PENDING)) {
+                throw new IllegalStateException("A payment that is " + st + " cannot be refunded");
+            }
+            String entry = wallets.refundPayment(reference, by);
+            TransactionResponse r = orchestrator.completeManualRefund(reference, by, entry, "WALLET", reason);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("reference", reference);
+            out.put("entryRef", entry);
+            out.put("status", String.valueOf(r.getStatus()));
+            return out;
+        });
     }
 
     static boolean samePhone(String a, String b) {

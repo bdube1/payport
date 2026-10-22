@@ -87,7 +87,7 @@ public class ProviderSettlementService {
     }
 
     /** Books the settlement; returns the ledger entry reference. */
-    public String book(Map<String, Object> rule, String entryKey, long amount, String currency, java.time.LocalDate on, String by) {
+    public LedgerClient.PostResult book(Map<String, Object> rule, String entryKey, long amount, String currency, java.time.LocalDate on, String by) {
         MarketRegistry.Market m = markets.requireForCurrency(currency);
         MarketRegistry.BankAccount bank = markets.bankAccount(currency);
         if (bank == null || bank.ledgerOwner() == null) throw new IllegalStateException("No PayPort bank account is configured for " + currency);
@@ -97,7 +97,24 @@ public class ProviderSettlementService {
                 .source("bank_statement_entry", entryKey).postedBy(by)
                 .debit(AccountKey.of(m.legalEntity(), Book.LIVE, LedgerCategory.BANK_CASH, bank.ledgerOwner(), currency), amount, "received from " + provider)
                 .credit(AccountKey.of(m.legalEntity(), Book.LIVE, LedgerCategory.PROVIDER_RECEIVABLE, provider, currency), amount, "settled by " + provider).build();
-        return ledger.post(j).entryRef();
+        return ledger.post(j);
+    }
+
+    /**
+     * Comparison view (no automation): what each rail still owes PayPort per currency, from the ledger.
+     * Positive = collected by the rail and not yet settled to the bank (outstanding or a partial
+     * settlement); negative = the bank received more than the ledger shows as collected (over-settled
+     * or an unrecognised credit), which needs investigation.
+     */
+    public java.util.List<Map<String, Object>> positions() {
+        java.util.List<Map<String, Object>> rows = jdbc.queryForList("SELECT a.entity_code, a.owner_ref AS provider_code, a.currency, b.balance AS outstanding_minor, "
+                + "b.debit_total AS collected_minor, b.credit_total AS settled_minor FROM ledger_accounts a JOIN ledger_balances b ON b.account_id = a.id "
+                + "WHERE a.category = 'PROVIDER_RECEIVABLE' AND a.book = 'LIVE' ORDER BY a.entity_code, a.owner_ref, a.currency");
+        for (Map<String, Object> r : rows) {
+            long bal = ((Number) r.get("outstanding_minor")).longValue();
+            r.put("position", bal > 0 ? "OUTSTANDING" : bal < 0 ? "OVER_SETTLED" : "SETTLED");
+        }
+        return rows;
     }
 
     private static String blank(String s) {

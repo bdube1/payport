@@ -27,6 +27,13 @@ public class ProviderSettlementController {
         return Web.run(rules::rules, req);
     }
 
+    /** Comparison view: what each rail still owes, per currency (ledger PROVIDER_RECEIVABLE). */
+    @GetMapping("/positions")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> positions(HttpServletRequest req) {
+        return Web.run(rules::positions, req);
+    }
+
     public record RuleBody(String providerCode, String currency, String counterpartyPattern, String remittancePattern) {}
 
     @PostMapping

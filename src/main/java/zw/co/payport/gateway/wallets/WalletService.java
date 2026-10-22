@@ -173,7 +173,10 @@ public class WalletService {
 
     /** Locks, checks, posts and records. Returns the ledger entry reference. Idempotent per (opRef, first leg's wallet). */
     public String apply(String opRef, JournalRequest journal, List<Leg> legs, String by, String insufficientMessage) {
-        ledger.prepareAccounts(journal);   // before any lock or transaction: short transactions of their own
+        // Accounts are opened on short connections of their own, so only before any lock is taken. A caller that
+        // already holds locks in an open transaction must have prepared them ({@link #prepareAccounts}); taking
+        // more pooled connections while holding locks starves the pool under concurrency.
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) ledger.prepareAccounts(journal);
         return tx.execute(s -> {
             List<Long> ids = legs.stream().map(Leg::walletId).distinct().sorted().toList();
             Map<Long, Wallet> locked = new LinkedHashMap<>();
@@ -216,6 +219,11 @@ public class WalletService {
             }
             return entryRef;
         });
+    }
+
+    /** Opens these ledger accounts if missing (call before taking locks). */
+    public void prepareAccounts(AccountKey... accounts) {
+        for (AccountKey a : accounts) ledger.openAccount(a, "SYSTEM:wallet");
     }
 
     public JournalRequest.Builder journal(String key, String entity, String template, String description, String sourceType, String sourceRef, String by) {
@@ -362,6 +370,12 @@ public class WalletService {
     public Map<String, Object> convert(long userId, String quoteRef, String by) {
         requireOn();
         lines.require("FX_CONVERSION", "Currency conversion");
+        // Open the four accounts before the quote is locked (see apply).
+        jdbc.queryForList("SELECT from_wallet_id, to_wallet_id FROM fx_quotes WHERE quote_ref = ? AND user_id = ?", quoteRef, userId).stream().findFirst().ifPresent(pre -> {
+            Wallet a0 = get(((Number) pre.get("from_wallet_id")).longValue()), b0 = get(((Number) pre.get("to_wallet_id")).longValue());
+            prepareAccounts(a0.account(), b0.account(), AccountKey.of(a0.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", a0.currency()),
+                    AccountKey.of(b0.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", b0.currency()));
+        });
         return tx.execute(s -> {
             Map<String, Object> q = jdbc.queryForList("SELECT * FROM fx_quotes WHERE quote_ref = ? FOR UPDATE", quoteRef).stream().findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("No such quote"));
