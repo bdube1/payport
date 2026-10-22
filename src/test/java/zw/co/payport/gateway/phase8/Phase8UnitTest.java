@@ -112,6 +112,9 @@ class Phase8UnitTest {
         assertTrue(allows("staging", "", "http://localhost:3000"));
         assertTrue(allows("production", "https://ops.partner.example, http://insecure.example", "https://ops.partner.example"));
         assertFalse(allows("production", "https://ops.partner.example, http://insecure.example", "http://insecure.example"), "only https extras");
+        assertTrue(allows("staging", "http://68.183.134.5:4001", "http://68.183.134.5:4001"), "staging may list an http origin");
+        assertFalse(allows("staging", "http://68.183.134.5:4001", "http://68.183.134.5:9999"), "only the listed one");
+        assertFalse(allows("", "http://68.183.134.5:4001", "http://68.183.134.5:4001"), "unset environment = production = https only");
     }
 
     private static boolean allows(String env, String extra, String origin) {

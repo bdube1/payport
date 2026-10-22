@@ -189,13 +189,15 @@ public class SecurityConfig {
                 "https://merchant.payport.africa"));
         // Phase 9 (R36): localhost origins only outside production. A production deployment that needs
         // another browser origin lists it in payport.cors.extra-origins (comma-separated, https only).
-        if (!zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment)) {
+        // Outside production (staging on a bare IP, no TLS yet) http extras are accepted too.
+        boolean production = zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment);
+        if (!production) {
             origins.addAll(List.of("http://localhost:4321", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
                     "http://localhost:5173", "http://localhost:8081"));
         }
         for (String o : extraOrigins.split(",")) {
             String t = o.trim();
-            if (t.startsWith("https://")) origins.add(t);
+            if (t.startsWith("https://") || (!production && t.startsWith("http://"))) origins.add(t);
         }
         config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
