@@ -212,7 +212,9 @@ class PaymentLifecycleScenarioTest {
         for (int i = 0; i < 5; i++) callback("SIM", ref, "SUCCESS", 700);
 
         long applied = 0;
-        for (Future<CallbackInbox.Result> f : results) if (f.get().status() == CallbackInbox.Status.APPLIED) applied++;
+        // A delivery that arrives after the first one finished is answered from the inbox ("duplicate of an already
+        // APPLIED callback", duplicate = true) without being processed; only a processed delivery counts as applying.
+        for (Future<CallbackInbox.Result> f : results) if (f.get().status() == CallbackInbox.Status.APPLIED && !f.get().duplicate()) applied++;
         assertEquals(1, applied, "exactly one of the racing deliveries applied");
         assertConfirmedExactlyOnce(ref);
 
