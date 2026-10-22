@@ -1,6 +1,6 @@
 # PayPort PSP: project status
 
-_Last updated: 2026-10-22 (Phase 10: verification and operational readiness). Living document._
+_Last updated: 2026-10-22 (Phase 11 started: staging integration and acceptance). Living document._
 
 ## Readiness at a glance
 
@@ -13,7 +13,24 @@ _Last updated: 2026-10-22 (Phase 10: verification and operational readiness). Li
 Nothing has been deployed to production. No live payout, settlement automation or LIVE settlement mode has
 been enabled. No licence decision has been recorded by code.
 
-## Phase 10 (current)
+## Phase 11 (approved 2026-10-22, in progress): staging integration and acceptance
+
+Runbook and tracker: [`docs/phase11/STAGING_RUNBOOK.md`](phase11/STAGING_RUNBOOK.md). Tooling in `scripts/staging/`:
+- isolated staging database from a real backup, and post-migration verification of data and ledger
+  invariants (rehearsed locally on MySQL 8.0.46: PASS, and it detects a 1-cent change);
+- a start guard that refuses production settings;
+- provider sandbox runner with evidence recording;
+- load test with connection-pool watch;
+- settlement parallel-run comparison.
+
+`main` of every repository now carries this code for staging. **It is not a production release**: the
+production gateway must not be restarted on it without approval (runbook §0).
+
+Status: tooling ready. Every Phase 11 activity runs on the owner's staging host (VPNs to Econet and
+OneMoney, the real backup, k6) and none has been run yet. The penetration test needs a contract with an
+external tester.
+
+## Phase 10
 
 Report: [`docs/phase10/PHASE10_REPORT.md`](phase10/PHASE10_REPORT.md).
 
