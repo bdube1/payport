@@ -226,9 +226,14 @@ public class LedgerClient {
 
     // ── Reads ────────────────────────────────────────────────────────────
 
+    /**
+     * Reads on the caller's transaction connection when one is active (Phase 10, D10-6): a caller holding
+     * row locks must not wait for a second pooled connection, or concurrent operations exhaust the pool.
+     * Outside a transaction it uses a short connection of its own, as before.
+     */
     public Balance balance(AccountKey account) {
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement(
+        Connection c = org.springframework.jdbc.datasource.DataSourceUtils.getConnection(dataSource);
+        try (PreparedStatement ps = c.prepareStatement(
                      "SELECT b.balance, b.debit_total, b.credit_total FROM ledger_accounts a "
                              + "JOIN ledger_balances b ON b.account_id = a.id WHERE a.code = ?")) {
             ps.setString(1, account.code());
@@ -238,6 +243,8 @@ public class LedgerClient {
             }
         } catch (SQLException e) {
             throw LedgerException.fromDatabaseMessage(e.getMessage(), e);
+        } finally {
+            org.springframework.jdbc.datasource.DataSourceUtils.releaseConnection(c, dataSource);
         }
     }
 

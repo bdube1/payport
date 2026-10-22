@@ -229,7 +229,7 @@ class FinancialIntegrityScenarioTest {
         Holder a = holder(1_000), b = holder(0);
         List<Object> results = race(10, () -> wallets.transfer(a.id(), b.phone(), "USD", 300, "retry-1", "test"));
         onlyBusinessRefusals(results);
-        assertEquals(900, balance(a.usd()), "debited once");
+        assertEquals(700, balance(a.usd()), "debited once");
         assertEquals(300, balance(b.usd()), "credited once");
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM wallet_operations WHERE op_ref = ? AND kind = 'P2P_OUT'", Integer.class, "P2P:" + a.id() + ":retry-1"));
     }
