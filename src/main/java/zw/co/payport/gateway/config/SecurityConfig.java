@@ -95,6 +95,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/qr/resolve").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/ussd").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/fx/quote").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/markets").permitAll()
                         // Phase 8: POS terminals sign every request (HMAC + nonce, PosService); WhatsApp Cloud API
                         // webhook (X-Hub-Signature-256, WhatsAppService). No user login on either.
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales").permitAll()

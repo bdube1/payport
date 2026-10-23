@@ -36,6 +36,7 @@ public class ApplicationStatusController {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", merchant.getStatus());
+        body.put("applicationReference", merchant.getApplicationReference());
         body.put("businessName", merchant.getBusinessName());
         body.put("rejectionReason", merchant.getRejectionReason());
         body.put("submittedAt", merchant.getCreatedAt());

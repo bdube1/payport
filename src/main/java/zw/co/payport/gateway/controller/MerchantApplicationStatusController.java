@@ -33,6 +33,7 @@ public class MerchantApplicationStatusController {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", merchant.getStatus());
+        body.put("applicationReference", merchant.getApplicationReference());
         body.put("businessName", merchant.getBusinessName());
         body.put("rejectionReason", merchant.getRejectionReason());
         body.put("reviewNotes", notes.stream().map(this::toMap).toList());
