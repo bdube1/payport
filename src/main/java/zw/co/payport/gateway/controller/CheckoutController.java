@@ -31,6 +31,7 @@ public class CheckoutController {
 
     private final CheckoutSessionService checkoutSessionService;
     private final MerchantRepository merchantRepository;
+    private final zw.co.payport.gateway.repository.TransactionRepository transactionRepository;
 
     public record PayBody(String customerPhone, String customerEmail, String paymentMethodCode) {}
 
@@ -78,6 +79,12 @@ public class CheckoutController {
             if (result.widgetJsUrl() != null) {
                 resultBody.put("widgetJsUrl", result.widgetJsUrl());
                 resultBody.put("paymentCorrelator", result.paymentCorrelator());
+            }
+            // InnBucks: the code the customer approves in the InnBucks app (returned to the payer only).
+            if ("INNBUCKS".equalsIgnoreCase(body.paymentMethodCode()) && result.session().getTransactionReference() != null) {
+                transactionRepository.findByReference(result.session().getTransactionReference())
+                        .map(zw.co.payport.gateway.entity.Transaction::getProviderReference)
+                        .ifPresent(code -> resultBody.put("paymentCode", code));
             }
             return ResponseEntity.ok(ApiResponse.success(resultBody, requestId(req)));
         } catch (Exception e) {
