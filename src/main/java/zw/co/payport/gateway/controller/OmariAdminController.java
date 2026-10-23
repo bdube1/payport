@@ -158,8 +158,14 @@ public class OmariAdminController {
                 log.info("[OMARI ADMIN] ✅ Test flow - Auth successful. OTP Reference: {}", authResponse.getOtpReference());
             }
 
-            // Return RAW Omari auth response (same as /auth endpoint)
-            return ResponseEntity.ok(authResponse);
+            // The raw O'mari answer, with the reference the test payment is confirmed against.
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("reference", reference);
+            out.put("error", authResponse.isError());
+            out.put("message", authResponse.getMessage());
+            out.put("otpReference", authResponse.getOtpReference());
+            out.put("responseCode", authResponse.getResponseCode());
+            return ResponseEntity.ok(out);
 
         } catch (Exception e) {
             log.error("[OMARI ADMIN] ❌ Test flow error: {}", e.getMessage(), e);
