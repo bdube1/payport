@@ -3,6 +3,7 @@ package zw.co.payport.gateway.agents;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.*;
 import zw.co.payport.gateway.config.MerchantAuthResolver;
 import zw.co.payport.gateway.entity.Merchant;
@@ -108,10 +109,45 @@ public class AgentController {
         return Web.run(agents::list, req);
     }
 
+    @GetMapping("/api/v1/admin/agents/dashboard")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','FINANCE','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> dashboard(HttpServletRequest req) {
+        return Web.run(agents::dashboard, req);
+    }
+
+    @GetMapping("/api/v1/admin/agents/onboardable-merchants")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> onboardable(HttpServletRequest req) {
+        return Web.run(agents::onboardableMerchants, req);
+    }
+
+    public record OnboardBody(Long merchantId, String name, String phone, String location, Integer commissionBps) {}
+
+    @PostMapping("/api/v1/admin/agents")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> onboard(@RequestBody OnboardBody b, HttpServletRequest req) {
+        return Web.run(() -> {
+            if (b.merchantId() == null) throw new IllegalArgumentException("Choose the merchant");
+            return agents.onboard(b.merchantId(), b.name(), b.phone(), b.location(), b.commissionBps(), Web.staff());
+        }, req);
+    }
+
+    @GetMapping("/api/v1/admin/agents/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','FINANCE','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> detail(@PathVariable long id, HttpServletRequest req) {
+        return Web.run(() -> agents.detail(id), req);
+    }
+
+    @PutMapping("/api/v1/admin/agents/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','COMPLIANCE')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> update(@PathVariable long id, @RequestBody OnboardBody b, HttpServletRequest req) {
+        return Web.run(() -> agents.update(id, b.name(), b.phone(), b.location(), b.commissionBps(), Web.staff()), req);
+    }
+
     public record DecideBody(boolean approve, String reason, Integer commissionBps) {}
 
     @PostMapping("/api/v1/admin/agents/{id}/decide")
-    @PreAuthorize("hasRole('COMPLIANCE')")
+    @PreAuthorize("hasAnyRole('ADMIN','COMPLIANCE')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> decide(@PathVariable long id, @RequestBody DecideBody b, HttpServletRequest req) {
         return Web.run(() -> agents.decide(id, b.approve(), b.reason(), b.commissionBps(), Web.staff()), req);
     }

@@ -331,6 +331,46 @@ class Phase8CompletionScenarioTest {
     // ─── agents ──────────────────────────────────────────────────────────────
 
     @Test
+    void agents_onboardedByOps_withCode_detailDashboardAndEdit() throws Exception {
+        String admin = staff("Ad Onboard", "ADMIN"), ops = staff("Op Onboard", "OPS");
+        Customer cust = customer("Not Staff");
+        long m = activeMerchantWithLogin("Onboarded Agent Shop");
+        Res picker = call("GET", "/api/v1/admin/agents/onboardable-merchants", ops, null);
+        assertEquals(200, picker.status(), picker.body().toString());
+        boolean listed = false;
+        for (JsonNode x : picker.data()) listed |= x.path("id").asLong() == m;
+        assertTrue(listed, "an active merchant without an agent is offered");
+
+        assertEquals(403, call("POST", "/api/v1/admin/agents", cust.token(), Map.of("merchantId", m, "name", "X", "phone", "+263779990001", "location", "Harare")).status());
+        Res on = call("POST", "/api/v1/admin/agents", admin, Map.of("merchantId", m, "name", "Mbare Agent", "phone", "+263779990001", "location", "Mbare, Harare", "commissionBps", 60));
+        assertEquals(200, on.status(), on.body().toString());
+        long id = on.data().path("id").asLong();
+        assertTrue(on.data().path("agent_code").asText().matches("AG\\d{8}"), on.body().toString());
+        assertEquals("ACTIVE", on.data().path("status").asText(), "onboarded agents are live at once");
+        assertEquals(409, call("POST", "/api/v1/admin/agents", admin, Map.of("merchantId", m, "name", "Again", "phone", "+263779990001", "location", "Harare")).status(),
+                "one agent per merchant");
+
+        Res upd = call("PUT", "/api/v1/admin/agents/" + id, ops, Map.of("location", "Mbare Musika, Harare", "commissionBps", 75));
+        assertEquals(200, upd.status(), upd.body().toString());
+        assertEquals(75, upd.data().path("commission_bps").asInt());
+        Res detail = call("GET", "/api/v1/admin/agents/" + id, ops, null);
+        assertEquals("Mbare Musika, Harare", detail.data().path("location").asText());
+        assertTrue(detail.data().has("transactions") && detail.data().has("deposits") && detail.data().has("totals"));
+        Res dash = call("GET", "/api/v1/admin/agents/dashboard", ops, null);
+        assertEquals(200, dash.status(), dash.body().toString());
+        assertTrue(dash.data().path("byStatus").isArray() && dash.data().has("float") && dash.data().has("topAgents"));
+        assertEquals(403, call("GET", "/api/v1/admin/agents/dashboard", cust.token(), null).status());
+
+        // Countries and currencies for the apps' drop-downs: public, read-only.
+        Res mk = call("GET", "/api/v1/markets", null, null);
+        assertEquals(200, mk.status(), mk.body().toString());
+        boolean zwUsd = false;
+        for (JsonNode x : mk.data()) if ("ZW".equals(x.path("country").asText())) for (JsonNode c : x.path("currencies")) zwUsd |= "USD".equals(c.path("code").asText());
+        assertTrue(zwUsd, mk.body().toString());
+    }
+
+
+    @Test
     void agents_complianceApproval_fourEyesFloat_cashInCashOut_singleUseCodes() throws Exception {
         ensureOn("WALLETS", null);
         ensureOn("AGENTS", "AGENT");

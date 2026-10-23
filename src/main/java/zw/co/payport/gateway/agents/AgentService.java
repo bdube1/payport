@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -145,6 +146,79 @@ public class AgentService {
         jdbc.update("UPDATE agents SET status = ?, status_reason = ?, decided_by = ?, decided_at = ? WHERE id = ?", s, reason, by, now(), id);
         audit.record(by, "AGENT_" + s, "agent:" + a.get("agent_code"), reason);
         return view(get(id));
+    }
+
+    /** Ops onboarding: an agent for an active merchant, live at once, with its agent code. */
+    public Map<String, Object> onboard(long merchantId, String name, String phone, String location, Integer commissionBps, String by) {
+        if (name == null || name.isBlank() || location == null || location.isBlank()) throw new IllegalArgumentException("Name and location are required");
+        List<Map<String, Object>> m = jdbc.queryForList("SELECT id, status FROM merchants WHERE id = ?", merchantId);
+        if (m.isEmpty()) throw new IllegalArgumentException("No such merchant");
+        if (!"ACTIVE".equals(m.get(0).get("status"))) throw new IllegalStateException("The merchant must be active before it can be an agent");
+        if (forMerchant(merchantId).isPresent()) throw new IllegalStateException("This merchant is already an agent");
+        MarketRegistry.Market market = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("Enter the agent's mobile number with its country code, e.g. +263771234567"));
+        if (markets.normaliseMobile(phone, market.country()).isEmpty()) throw new IllegalArgumentException("The agent phone is not a valid mobile number");
+        if (commissionBps != null && (commissionBps < 0 || commissionBps > 1000)) throw new IllegalArgumentException("Commission must be between 0 and 1000 basis points");
+        String code = "AG" + digits(8);
+        Timestamp now = now();
+        jdbc.update("INSERT INTO agents (agent_code, merchant_id, name, phone, location, country, status, status_reason, commission_bps, applied_by, applied_at, decided_by, decided_at) "
+                        + "VALUES (?,?,?,?,?,?, 'ACTIVE', 'Onboarded by PayPort', ?,?,?,?,?)",
+                code, merchantId, name.trim(), "+" + phone.replaceAll("[^0-9]", ""), location.trim(), market.country(), commissionBps, by, now, by, now);
+        audit.record(by, "AGENT_ONBOARDED", "agent:" + code, name);
+        return view(forMerchant(merchantId).orElseThrow());
+    }
+
+    public Map<String, Object> update(long id, String name, String phone, String location, Integer commissionBps, String by) {
+        Map<String, Object> a = get(id);
+        String n = name == null || name.isBlank() ? (String) a.get("name") : name.trim();
+        String l = location == null || location.isBlank() ? (String) a.get("location") : location.trim();
+        String p = (String) a.get("phone");
+        if (phone != null && !phone.isBlank()) {
+            MarketRegistry.Market market = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("Enter the mobile number with its country code"));
+            if (markets.normaliseMobile(phone, market.country()).isEmpty()) throw new IllegalArgumentException("Not a valid mobile number");
+            p = "+" + phone.replaceAll("[^0-9]", "");
+        }
+        if (commissionBps != null && (commissionBps < 0 || commissionBps > 1000)) throw new IllegalArgumentException("Commission must be between 0 and 1000 basis points");
+        jdbc.update("UPDATE agents SET name = ?, phone = ?, location = ?, commission_bps = ? WHERE id = ?", n, p, l, commissionBps, id);
+        audit.record(by, "AGENT_UPDATED", "agent:" + a.get("agent_code"), n + " / " + l + " / " + commissionBps);
+        return view(get(id));
+    }
+
+    /** One agent with its float, recent transactions, commissions and float deposits. */
+    public Map<String, Object> detail(long id) {
+        Map<String, Object> out = new LinkedHashMap<>(view(get(id)));
+        jdbc.queryForList("SELECT business_name FROM merchants WHERE id = ?", out.get("merchant_id")).stream().findFirst()
+                .ifPresent(m -> out.put("business_name", m.get("business_name")));
+        out.put("transactions", transactions(id));
+        out.put("deposits", deposits(id, null));
+        out.put("totals", jdbc.queryForList("SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
+                + "FROM agent_transactions WHERE agent_id = ? GROUP BY kind, currency ORDER BY kind, currency", id));
+        return out;
+    }
+
+    /** Network-wide figures for the agents dashboard. */
+    public Map<String, Object> dashboard() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("byStatus", jdbc.queryForList("SELECT status, COUNT(*) AS count FROM agents GROUP BY status ORDER BY status"));
+        out.put("float", jdbc.queryForList("SELECT a.currency, COUNT(*) AS accounts, COALESCE(SUM(b.balance), 0) AS balance_minor FROM ledger_accounts a "
+                + "LEFT JOIN ledger_balances b ON b.account_id = a.id WHERE a.category = 'AGENT_FLOAT' AND a.book = 'LIVE' GROUP BY a.currency ORDER BY a.currency"));
+        Timestamp today = Timestamp.valueOf(LocalDate.now().atStartOfDay());
+        Timestamp month = Timestamp.valueOf(LocalDate.now().minusDays(30).atStartOfDay());
+        out.put("today", jdbc.queryForList("SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
+                + "FROM agent_transactions WHERE created_at >= ? GROUP BY kind, currency ORDER BY kind, currency", today));
+        out.put("last30Days", jdbc.queryForList("SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
+                + "FROM agent_transactions WHERE created_at >= ? GROUP BY kind, currency ORDER BY kind, currency", month));
+        out.put("topAgents", jdbc.queryForList("SELECT a.id, a.agent_code, a.name, a.location, t.currency, COUNT(*) AS count, SUM(t.amount_minor) AS amount_minor, "
+                + "SUM(t.commission_minor) AS commission_minor FROM agent_transactions t JOIN agents a ON a.id = t.agent_id WHERE t.created_at >= ? "
+                + "GROUP BY a.id, a.agent_code, a.name, a.location, t.currency ORDER BY amount_minor DESC LIMIT 10", month));
+        out.put("pendingApplications", jdbc.queryForObject("SELECT COUNT(*) FROM agents WHERE status = 'PENDING'", Integer.class));
+        out.put("pendingDeposits", jdbc.queryForObject("SELECT COUNT(*) FROM agent_float_deposits WHERE status = 'PENDING'", Integer.class));
+        return out;
+    }
+
+    /** Active merchants that are not agents yet (the onboarding picker). */
+    public List<Map<String, Object>> onboardableMerchants() {
+        return jdbc.queryForList("SELECT m.id, m.business_name, m.contact_phone FROM merchants m LEFT JOIN agents a ON a.merchant_id = m.id "
+                + "WHERE m.status = 'ACTIVE' AND a.id IS NULL ORDER BY m.business_name LIMIT 1000");
     }
 
     // ─── float ───────────────────────────────────────────────────────────────
