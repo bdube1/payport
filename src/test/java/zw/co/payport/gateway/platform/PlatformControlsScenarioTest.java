@@ -350,23 +350,101 @@ class PlatformControlsScenarioTest {
 
     @Test
     void ussdMenus_signed_channelSwitch_andStatusOnlyForThePayer() throws Exception {
-        String s = "AT-" + SEQ.incrementAndGet(), ph = "+263771234567";
+        String s = "AT-" + SEQ.incrementAndGet(), ph = String.format("+263778%06d", 400000 + SEQ.incrementAndGet());
         assertEquals(401, ussd(s, ph, "", false).status(), "unsigned hops are refused");
         String menu = ussd(s, ph, "", true).body().path("text").asText();
-        assertTrue(menu.startsWith("CON PayPort"), menu);
-        String ccy = ussd(s, ph, "1", true).body().path("text").asText();
+        assertTrue(menu.startsWith("CON PayPort") && menu.contains("1. Buy airtime") && menu.contains("5. Check a payment"), menu);
+        assertTrue(ussd(s, ph, "1", true).body().path("text").asText().startsWith("CON Airtime for:"));
+        String ccy = ussd(s, ph, "1*1", true).body().path("text").asText();
         assertTrue(ccy.startsWith("CON Currency:") && ccy.contains("USD"), ccy);
-        assertTrue(ussd(s, ph, "1*1", true).body().path("text").asText().startsWith("CON Amount (USD)"));
-        assertTrue(ussd(s, ph, "1*1*abc*1", true).body().path("text").asText().startsWith("END Invalid amount"));
-        String confirm = ussd(s, ph, "1*1*2.50*1", true).body().path("text").asText();
+        assertTrue(ussd(s, ph, "1*1*1", true).body().path("text").asText().startsWith("CON Amount (USD)"));
+        assertTrue(ussd(s, ph, "1*1*1*abc", true).body().path("text").asText().startsWith("END Invalid amount"));
+        String with = ussd(s, ph, "1*1*1*2.50", true).body().path("text").asText();
+        assertTrue(with.startsWith("CON Pay with:") && !with.contains("PayPort wallet"), "guests pay with the four wallets only: " + with);
+        String confirm = ussd(s, ph, "1*1*1*2.50*1", true).body().path("text").asText();
         assertTrue(confirm.contains("Buy USD 2.50 airtime") && confirm.contains("1. Confirm"), confirm);
-        assertTrue(ussd(s, ph, "1*1*2.50*1*2", true).body().path("text").asText().startsWith("END Cancelled"));
-        assertTrue(ussd(s, ph, "3*PP-NOT-MINE", true).body().path("text").asText().contains("No payment with that reference"));
+        assertTrue(ussd(s, ph, "1*1*1*2.50*1*2", true).body().path("text").asText().startsWith("END Cancelled"));
+        assertTrue(ussd(s, ph, "5*PP-NOT-MINE", true).body().path("text").asText().contains("No payment with that reference"));
         assertTrue(ussd(s, "+1555000111", "", true).body().path("text").asText().contains("not supported"), "numbers outside configured markets");
 
         String olivia = staff("Olivia Ussd", "OPS");
         call("POST", "/api/v1/admin/channels/USSD", olivia, Map.of("enabled", false, "reason", "aggregator outage"));
         assertTrue(ussd(s, ph, "", true).body().path("text").asText().contains("not available"));
         call("POST", "/api/v1/admin/channels/USSD", olivia, Map.of("enabled", true, "reason", "back"));
+    }
+
+    Res raw(String path, String body, String type) throws Exception {
+        HttpRequest r = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30))
+                .header("Content-Type", type).POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        HttpResponse<String> resp = HTTP.send(r, HttpResponse.BodyHandlers.ofString());
+        return new Res(resp.statusCode(), JSON.createObjectNode().put("text", resp.body()));
+    }
+
+    static String econetXml(String tx, String msisdn, String message, String stage) {
+        return "<messageRequest xmlns=\"http://econet.co.zw/intergration/messagingSchema\"><transactionTime>2026-10-23T10:00:00</transactionTime>"
+                + "<transactionID>" + tx + "</transactionID><sourceNumber>" + msisdn + "</sourceNumber><destinationNumber>123</destinationNumber>"
+                + "<message>" + message + "</message><stage>" + stage + "</stage><channel>USSD</channel></messageRequest>";
+    }
+
+    String econet(String key, String tx, String msisdn, String message, String stage) throws Exception {
+        return raw("/api/v1/ussd/econet?key=" + key, econetXml(tx, msisdn, message, stage), "application/xml").body().path("text").asText();
+    }
+
+    @Test
+    void ussdNetworkGateways_switchedAndKeyed_walletLoginWithPinNeverStored() throws Exception {
+        String guest = String.format("263778%06d", 400000 + SEQ.incrementAndGet());
+        String tx = "E" + SEQ.incrementAndGet();
+        assertEquals(401, raw("/api/v1/ussd/econet", econetXml(tx, guest, "*123#", "FIRST"), "application/xml").status(), "networks ship switched off");
+        String adam = staff("Adam Networks", "ADMIN");
+        Res on = call("PUT", "/api/v1/admin/ussd/networks/ECONET", adam, Map.of("enabled", true, "shortCode", "*123#"));
+        assertEquals(200, on.status(), on.body().toString());
+        assertEquals(401, raw("/api/v1/ussd/econet", econetXml(tx, guest, "*123#", "FIRST"), "application/xml").status(), "no key and no allowed IP: refused");
+        String key = call("POST", "/api/v1/admin/ussd/networks/ECONET/access-key", adam, null).data().path("accessKey").asText();
+        assertFalse(key.isBlank());
+        assertFalse(call("GET", "/api/v1/admin/ussd/networks", adam, null).body().toString().contains(key), "the key is shown once and never listed");
+
+        String menu = econet(key, tx, guest, "*123#", "FIRST");
+        assertTrue(menu.contains("<stage>PENDING</stage>") && menu.contains("1. Buy airtime") && menu.contains("<destinationNumber>" + guest), menu);
+        assertTrue(econet(key, tx, guest, "1", "PENDING").contains("Airtime for:"));
+        assertTrue(econet(key, tx, guest, "1", "PENDING").contains("Currency:"));
+        String bad = econet(key, tx, guest, "x", "PENDING");
+        assertTrue(bad.contains("<stage>COMPLETE</stage>") && bad.contains("Invalid choice"), bad);
+
+        String holder = String.format("263778%06d", 400000 + SEQ.incrementAndGet());
+        jdbc.update("INSERT INTO users (full_name, phone, pin_hash, role, is_active, is_verified) VALUES ('Tendai Moyo', ?, ?, 'CUSTOMER', TRUE, TRUE)",
+                "+" + holder, new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("2468"));
+        String w = "E" + SEQ.incrementAndGet();
+        assertTrue(econet(key, w, holder, "*123#", "FIRST").contains("Welcome to PayPort, Tendai"));
+        String in = econet(key, w, holder, "2468", "PENDING");
+        assertTrue(in.contains("Send money") && in.contains("Cash out at an agent"), in);
+        assertEquals("#", jdbc.queryForObject("SELECT path FROM ussd_state WHERE session_id = ?", String.class, "ECONET:" + w), "the PIN is never stored");
+        assertTrue(econet(key, w, holder, "1", "PENDING").contains("Airtime for:"));
+        String withWallet = econet(key, w, holder, "1", "PENDING");
+        assertTrue(withWallet.contains("Currency:"), withWallet);
+        String wrong = "E" + SEQ.incrementAndGet();
+        econet(key, wrong, holder, "*123#", "FIRST");
+        String refused = econet(key, wrong, holder, "1111", "PENDING");
+        assertTrue(refused.contains("<stage>COMPLETE</stage>") && refused.contains("Wrong PIN"), refused);
+        String asGuest = "E" + SEQ.incrementAndGet();
+        econet(key, asGuest, holder, "*123#", "FIRST");
+        assertTrue(econet(key, asGuest, holder, "0", "PENDING").contains("5. Check a payment"), "0 continues as guest");
+
+        assertEquals(200, call("PUT", "/api/v1/admin/ussd/networks/NETONE", adam, Map.of("enabled", true)).status());
+        String nkey = call("POST", "/api/v1/admin/ussd/networks/NETONE/access-key", adam, null).data().path("accessKey").asText();
+        String n1 = "<USSDDynMenuRequest><requestId>N" + tx + "</requestId><msisdn>" + guest + "</msisdn><timeStamp>20261023100000</timeStamp>"
+                + "<starCode>*123#</starCode><keyword>123</keyword><userData>*123#</userData></USSDDynMenuRequest>";
+        String r1 = raw("/api/v1/ussd/netone?key=" + nkey, n1, "text/xml").body().path("text").asText();
+        assertTrue(r1.contains("<rspFlag>1</rspFlag>") && r1.contains("1. Buy airtime"), r1);
+        String r2 = raw("/api/v1/ussd/netone?key=" + nkey, n1.replace("<userData>*123#</userData>", "<userData>5</userData>"), "text/xml").body().path("text").asText();
+        assertTrue(r2.contains("Payment reference"), r2);
+
+        assertEquals(200, call("PUT", "/api/v1/admin/ussd/networks/TELECEL", adam, Map.of("enabled", true, "shortCode", "*123#")).status());
+        String tkey = call("POST", "/api/v1/admin/ussd/networks/TELECEL/access-key", adam, null).data().path("accessKey").asText();
+        String t1 = JSON.writeValueAsString(Map.of("source_addr", guest, "destination_addr", "123", "short_message", Map.of("message", "80 T" + tx + " 0 *123#")));
+        JsonNode j1 = JSON.readTree(raw("/api/v1/ussd/telecel?key=" + tkey, t1, "application/json").body().path("text").asText());
+        assertTrue(j1.path("short_message").asText().startsWith("72 T" + tx + " 0 ") && j1.path("short_message").asText().contains("1. Buy airtime"), j1.toString());
+        String t2 = JSON.writeValueAsString(Map.of("source_addr", guest, "destination_addr", "123", "short_message", Map.of("message", "74 T" + tx + " 0 9")));
+        JsonNode j2 = JSON.readTree(raw("/api/v1/ussd/telecel?key=" + tkey, t2, "application/json").body().path("text").asText());
+        assertTrue(j2.path("short_message").asText().startsWith("81 T" + tx + " 0 "), j2.toString());
     }
 }

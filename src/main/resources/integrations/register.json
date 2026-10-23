@@ -57,6 +57,23 @@
       "notes": "Base URL points at UAT. Confirmation is the customer's OTP through PayPort, not a callback."
     },
     {
+      "code": "INNBUCKS",
+      "name": "InnBucks",
+      "kind": "PAYMENT",
+      "currencies": [
+        "USD",
+        "ZWG"
+      ],
+      "operations": [
+        "submit",
+        "status_query"
+      ],
+      "callbackAuth": "QUERY_CONFIRMED",
+      "endpointProperty": "payport.innbucks.base-url",
+      "verification": "SPEC_ONLY",
+      "notes": "Payment code approved by the customer in the InnBucks app or USSD; confirmed by status query. Paths configurable from the merchant pack."
+    },
+    {
       "code": "ZIMSWITCH",
       "name": "ZimSwitch (cards)",
       "kind": "PAYMENT",

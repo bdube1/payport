@@ -78,6 +78,12 @@ public class CallbackController {
         return handleCallback("MTN_MOMO", rawBody, request);
     }
 
+    /** InnBucks payment code callback. Trigger only: confirmed by status query. */
+    @PostMapping("/innbucks")
+    public ResponseEntity<String> innBucksCallback(@RequestBody String rawBody, HttpServletRequest request) {
+        return handleCallback("INNBUCKS", rawBody, request);
+    }
+
     /** Airtel Money collection callback. Trigger only: confirmed by status query. */
     @PostMapping("/airtel-money")
     public ResponseEntity<String> airtelMoneyCallback(@RequestBody String rawBody, HttpServletRequest request) {

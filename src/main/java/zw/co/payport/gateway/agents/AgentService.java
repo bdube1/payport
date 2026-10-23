@@ -317,7 +317,13 @@ public class AgentService {
     public Map<String, Object> issueCashOutCode(String phone, String pin, String currency, long amount) {
         requireOn();
         wallets.requireOn();
-        var user = pins.verify(phone, pin);
+        return issueCashOutCodeFor(pins.verify(phone, pin), currency, amount);
+    }
+
+    /** For a holder whose PIN was already checked in this session (USSD wallet login). */
+    public Map<String, Object> issueCashOutCodeFor(zw.co.payport.gateway.entity.User user, String currency, long amount) {
+        requireOn();
+        wallets.requireOn();
         String ccy = currency == null ? "" : currency.toUpperCase(Locale.ROOT);
         WalletService.Wallet w = wallets.forUser(user.getId(), ccy).orElseThrow(() -> new IllegalArgumentException("You have no " + ccy + " wallet"));
         if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("Your wallet is " + w.status());

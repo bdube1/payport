@@ -94,6 +94,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*/qr").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/qr/resolve").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/ussd").permitAll()
+                        // Network USSD gateways (access key or allowed IP, UssdNetworkService)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ussd/econet", "/api/v1/ussd/netone", "/api/v1/ussd/telecel").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/fx/quote").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/markets").permitAll()
                         // Phase 8: POS terminals sign every request (HMAC + nonce, PosService); WhatsApp Cloud API

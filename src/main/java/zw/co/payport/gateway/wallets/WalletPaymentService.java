@@ -57,7 +57,13 @@ public class WalletPaymentService {
     /** Pays an initiated PayPort payment (airtime, bill, ...) from the holder's wallet in its currency. */
     public Map<String, Object> payTransaction(String phone, String reference, String pin) throws Exception {
         wallets.requireOn();
-        User u = pins.verify(phone, pin);
+        return payTransactionAs(pins.verify(phone, pin), reference);
+    }
+
+    /** For a holder whose PIN was already checked in this session (USSD wallet login). */
+    public Map<String, Object> payTransactionAs(User u, String reference) throws Exception {
+        wallets.requireOn();
+        String phone = u.getPhone();
         Transaction tx = transactions.findByReference(reference).orElseThrow(() -> new IllegalArgumentException("No such payment"));
         WalletService.Wallet w = wallets.forUser(u.getId(), tx.getCurrency())
                 .orElseThrow(() -> new IllegalArgumentException("You have no " + tx.getCurrency() + " wallet"));
@@ -76,7 +82,13 @@ public class WalletPaymentService {
     /** Pays a merchant's hosted checkout session from the holder's wallet. */
     public Map<String, Object> payCheckout(String phone, long sessionId, String pin, String ip) throws Exception {
         wallets.requireOn();
-        User u = pins.verify(phone, pin);
+        return payCheckoutAs(pins.verify(phone, pin), sessionId, ip);
+    }
+
+    /** For a holder whose PIN was already checked in this session (USSD wallet login). */
+    public Map<String, Object> payCheckoutAs(User u, long sessionId, String ip) throws Exception {
+        wallets.requireOn();
+        String phone = u.getPhone();
         CheckoutSession s = checkout.getPublic(sessionId);
         WalletService.Wallet w = wallets.forUser(u.getId(), s.getCurrency())
                 .orElseThrow(() -> new IllegalArgumentException("You have no " + s.getCurrency() + " wallet"));

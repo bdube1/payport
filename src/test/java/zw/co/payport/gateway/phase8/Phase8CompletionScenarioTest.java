@@ -504,9 +504,11 @@ class Phase8CompletionScenarioTest {
         whatsapp(from, "wamid.1", "hi", true);
         assertTrue(reply("wamid.1").contains("1. Buy airtime"), reply("wamid.1"));
         whatsapp(from, "wamid.2", "1", true);
-        assertTrue(reply("wamid.2").startsWith("Currency:"), reply("wamid.2"));
+        assertTrue(reply("wamid.2").startsWith("Airtime for:"), reply("wamid.2"));
         whatsapp(from, "wamid.2", "1", true);
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM whatsapp_messages_seen WHERE message_id = 'wamid.2'", Integer.class), "Meta retries are answered once");
+        whatsapp(from, "wamid.2b", "1", true);
+        assertTrue(reply("wamid.2b").startsWith("Currency:"), reply("wamid.2b"));
         whatsapp(from, "wamid.3", "1", true);
         assertTrue(reply("wamid.3").startsWith("Amount (USD)"), reply("wamid.3"));
         whatsapp(from, "wamid.4", "menu", true);
