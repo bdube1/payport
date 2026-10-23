@@ -200,3 +200,12 @@ The uncertain-payment reconciler (EcoCash, OneMoney) is the first containment au
 1. **Owner:** record the licence answers, enter the bank accounts and credentials, confirm the provisional parameters, then switch each line on (runbook `docs/runbooks/SWITCH_ON.md`).
 2. **Owner:** provider sandbox runs and record the evidence; external penetration test; staging k6 run; restore drill on a real backup.
 3. **Next phase (recommended):** Phase 11, staging integration and acceptance (see the Phase 10 report §13); open engineering items: replace the XML-RPC client in the Econet adapter (R76), card acquirer adapter when contracted, national QR scheme parameters.
+
+## Update 2026-10-23 (owner requests)
+- **Agents are separate from merchants**: own records (no merchant link), own portal logins (`/agent` in the merchant portal app, `/api/v1/agent/**`), own dashboards in ops and in the portal. Merchants have no agent screens.
+- **USSD** on the Econet, NetOne and Telecel gateways (ops: USSD & WhatsApp), wallet login by PIN or guest, EcoCash, OneMoney, O'mari and InnBucks (new adapter, SPEC_ONLY, R83). Setup: `docs/phase11/USSD_WHATSAPP_SETUP.md`.
+- **WhatsApp** connection set from ops (secrets encrypted at rest), business number +263 71 918 3557.
+- **Passwords**: ops resets merchant and agent logins to a temporary password; forgot-password by emailed link in both portals.
+- **Switches**: every on/off asks for confirmation only; no reason is required.
+- **Dark and light mode** in ops (fixed inside the console), merchant/agent portal, consumer site and mobile app.
+
