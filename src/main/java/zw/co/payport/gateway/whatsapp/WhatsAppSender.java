@@ -18,33 +18,28 @@ import java.util.Map;
 public class WhatsAppSender {
 
     private final RestTemplate rest;
-    private final String apiBase;
-    private final String phoneNumberId;
-    private final String token;
+    private final WhatsAppSettings settings;
 
-    public WhatsAppSender(RestTemplate rest,
-                          @Value("${payport.whatsapp.api-base:https://graph.facebook.com/v20.0}") String apiBase,
-                          @Value("${payport.whatsapp.phone-number-id:}") String phoneNumberId,
-                          @Value("${payport.whatsapp.access-token:}") String token) {
+    public WhatsAppSender(RestTemplate rest, WhatsAppSettings settings) {
         this.rest = rest;
-        this.apiBase = apiBase;
-        this.phoneNumberId = phoneNumberId;
-        this.token = token;
+        this.settings = settings;
     }
 
     public boolean configured() {
-        return !phoneNumberId.isBlank() && !token.isBlank();
+        WhatsAppSettings.Values v = settings.get();
+        return !v.phoneNumberId().isBlank() && !v.accessToken().isBlank();
     }
 
     /** Returns null when sent, otherwise why not. */
     public String send(String to, String text) {
-        if (!configured()) return "WhatsApp sender not configured (payport.whatsapp.phone-number-id / access-token)";
+        if (!configured()) return "WhatsApp sender not configured (phone number ID and access token, set in the ops console)";
+        WhatsAppSettings.Values v = settings.get();
         try {
             HttpHeaders h = new HttpHeaders();
-            h.setBearerAuth(token);
+            h.setBearerAuth(v.accessToken());
             h.setContentType(MediaType.APPLICATION_JSON);
             Map<String, Object> body = Map.of("messaging_product", "whatsapp", "to", to, "type", "text", "text", Map.of("body", text));
-            rest.postForEntity(apiBase + "/" + phoneNumberId + "/messages", new HttpEntity<>(body, h), String.class);
+            rest.postForEntity(v.apiBase() + "/" + v.phoneNumberId() + "/messages", new HttpEntity<>(body, h), String.class);
             return null;
         } catch (Exception e) {
             return e.getClass().getSimpleName() + ": " + e.getMessage();

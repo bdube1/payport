@@ -46,6 +46,7 @@ public class SecurityConfig {
                                                    JwtAuthenticationFilter jwtAuthFilter,
                                                    ApiKeyAuthenticationFilter apiKeyAuthFilter,
                                                    MerchantJwtAuthenticationFilter merchantJwtAuthFilter,
+                                                   zw.co.payport.gateway.agents.AgentJwtAuthenticationFilter agentJwtAuthFilter,
                                                    RateLimitFilter rateLimitFilter,
                                                    MetricsTokenFilter metricsTokenFilter) throws Exception {
         http
@@ -64,6 +65,11 @@ public class SecurityConfig {
                         // those too the moment they're added.
                         .requestMatchers(HttpMethod.POST, "/api/v1/merchant-portal/signup").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/merchant-portal/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/merchant-portal/forgot-password", "/api/v1/merchant-portal/reset-password").permitAll()
+                        // Agent portal: public login, password reset, application and its tracking
+                        .requestMatchers(HttpMethod.POST, "/api/v1/agent-portal/login", "/api/v1/agent-portal/forgot-password",
+                                "/api/v1/agent-portal/reset-password", "/api/v1/agent-portal/apply").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/agent-portal/track/*").permitAll()
 
                         // Public application tracking -- a reference number is
                         // effectively a long random password (see
@@ -147,6 +153,7 @@ public class SecurityConfig {
                         // customers (three admin controllers were found unguarded by the authorization matrix test).
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "OPS", "FINANCE", "COMPLIANCE", "OPS_MANAGER")
                         .requestMatchers("/api/v1/merchant/**").hasAnyRole("MERCHANT", "MERCHANT_PENDING")
+                        .requestMatchers("/api/v1/agent/**").hasRole("AGENT")
 
                         // Everything else requires a valid login. Staff-only endpoints are
                         // further restricted via @PreAuthorize on their controllers.
@@ -158,6 +165,7 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(merchantJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(agentJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 // Phase 9: an API serves JSON only, so the strictest policy applies: nothing may be loaded,
                 // framed or referred from a response. HSTS and nosniff are Spring Security defaults.
                 .headers(headers -> headers

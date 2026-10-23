@@ -103,7 +103,7 @@ public class PosService {
     }
 
     public Map<String, Object> setStatus(Long merchantId, String terminalId, boolean active, String reason, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
+        if (reason == null || reason.isBlank()) reason = active ? "Enabled" : "Disabled";
         int n = merchantId == null
                 ? jdbc.update("UPDATE pos_terminals SET status = ?, status_reason = ? WHERE terminal_id = ?", active ? "ACTIVE" : "DISABLED", reason, terminalId)
                 : jdbc.update("UPDATE pos_terminals SET status = ?, status_reason = ? WHERE terminal_id = ? AND merchant_id = ?", active ? "ACTIVE" : "DISABLED", reason, terminalId, merchantId);

@@ -252,7 +252,7 @@ public class MarketAdminService {
 
     @Transactional
     public Map<String, Object> suspend(String country, String reason, String by) {
-        requireReason(reason);
+        reason = orDefault(reason, "Suspended from the ops console");
         String cc = country.toUpperCase(Locale.ROOT);
         int n = jdbc.update("UPDATE markets SET status = 'SUSPENDED', status_note = ?, version = version + 1, updated_by = ?, updated_at = ? WHERE country = ?",
                 reason, by, now(), cc);
@@ -266,7 +266,7 @@ public class MarketAdminService {
     /** enabled=false stops all new payments in the currency; liveOnly=true only stops live money. */
     @Transactional
     public Map<String, Object> switchOffCurrency(String currency, boolean liveOnly, String reason, String by) {
-        requireReason(reason);
+        reason = orDefault(reason, "Switched off from the ops console");
         String ccy = currency.toUpperCase(Locale.ROOT);
         int n = liveOnly
                 ? jdbc.update("UPDATE market_currencies SET live = FALSE, updated_by = ?, updated_at = ? WHERE currency = ?", by, now(), ccy)
@@ -491,8 +491,8 @@ public class MarketAdminService {
         return o == null || String.valueOf(o).isBlank() || "null".equals(String.valueOf(o)) ? null : o;
     }
 
-    private static void requireReason(String reason) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
+    private static String orDefault(String reason, String d) {
+        return reason == null || reason.isBlank() ? d : reason.trim();
     }
 
     private static Timestamp now() {

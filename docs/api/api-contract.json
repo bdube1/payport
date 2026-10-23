@@ -39,10 +39,6 @@
   },
   {
    "method": "GET",
-   "path": "/api/v1/admin/agents/onboardable-merchants"
-  },
-  {
-   "method": "GET",
    "path": "/api/v1/admin/agents/{id}"
   },
   {
@@ -56,6 +52,14 @@
   {
    "method": "POST",
    "path": "/api/v1/admin/agents/{id}/status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/users"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/users/{userId}/reset-password"
   },
   {
    "method": "GET",
@@ -599,6 +603,14 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}/users"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/users/{userId}/reset-password"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/merchants/{merchantId}/documents"
   },
   {
@@ -902,6 +914,74 @@
    "path": "/api/v1/admin/whatsapp"
   },
   {
+   "method": "PUT",
+   "path": "/api/v1/admin/whatsapp/settings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/whatsapp/test"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/forgot-password"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/reset-password"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent-portal/track/{reference}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/cash-in"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/cash-out"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/change-password"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/commissions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/customer"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/dashboard"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/float-deposits"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/float-deposits"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/me"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/transactions"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/assistant/chat"
   },
@@ -1055,7 +1135,15 @@
   },
   {
    "method": "POST",
+   "path": "/api/v1/merchant-portal/forgot-password"
+  },
+  {
+   "method": "POST",
    "path": "/api/v1/merchant-portal/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/reset-password"
   },
   {
    "method": "POST",
@@ -1072,38 +1160,6 @@
   {
    "method": "POST",
    "path": "/api/v1/merchant-portal/track/{reference}/review-notes/{noteId}/resolve"
-  },
-  {
-   "method": "GET",
-   "path": "/api/v1/merchant/agent"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/merchant/agent/apply"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/merchant/agent/cash-in"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/merchant/agent/cash-out"
-  },
-  {
-   "method": "GET",
-   "path": "/api/v1/merchant/agent/commissions"
-  },
-  {
-   "method": "GET",
-   "path": "/api/v1/merchant/agent/float-deposits"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/merchant/agent/float-deposits"
-  },
-  {
-   "method": "GET",
-   "path": "/api/v1/merchant/agent/transactions"
   },
   {
    "method": "GET",

@@ -375,11 +375,11 @@ class OperationalReadinessScenarioTest {
         assertEquals(404, call("GET", "/api/v1/merchant/checkout-sessions/" + sid, b.token(), null).status());
         assertEquals(404, call("GET", "/api/v1/merchant/checkout-sessions/by-reference/" + orderRef, b.token(), null).status());
 
-        // A merchant API key is for the checkout API only: never the agent, POS management or dashboard routes.
+        // A merchant API key is for the checkout API only: never the POS management or dashboard routes.
         Res key = call("POST", "/api/v1/merchant/api-keys", a.token(), Map.of("environment", "TEST", "label", "server", "scopes", List.of("checkout:read", "checkout:write")));
         assertEquals(201, key.status(), key.raw());
         String sk = key.data().path("secretKey").asText();
-        for (String path : List.of("/api/v1/merchant/pos/terminals", "/api/v1/merchant/agent", "/api/v1/merchant/api-keys")) {
+        for (String path : List.of("/api/v1/merchant/pos/terminals", "/api/v1/merchant/api-keys")) {
             assertEquals(403, call("GET", path, sk, null).status(), "API key on " + path);
         }
 

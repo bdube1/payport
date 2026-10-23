@@ -34,9 +34,11 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Cash-in / cash-out agents (Phase 8). An agent is an approved merchant that holds e-value float.
+ * Cash-in / cash-out agents. An agent is its own kind of business, separate from merchants: it
+ * provides cash-in and cash-out, holds cash and e-float, and earns commission. A merchant is never
+ * an agent by default. Agents log in to their own portal (AgentAuthService).
  *
- *  - Becoming an agent: the merchant applies; a COMPLIANCE officer approves (agent due diligence).
+ *  - Becoming an agent: ops onboards it (live at once), or it applies and compliance approves.
  *  - Float: the agent deposits cash at PayPort's bank; the deposit is recorded by one person and
  *    approved by another (database CHECK maker ≠ checker, bank reference unique), then posted
  *    Dr BANK_CASH[market account] · Cr AGENT_FLOAT[agent].
@@ -88,21 +90,57 @@ public class AgentService {
 
     // ─── onboarding ──────────────────────────────────────────────────────────
 
-    public Map<String, Object> apply(long merchantId, String name, String phone, String location, String by) {
-        lines.require(LINE, "The agent network");
-        if (name == null || name.isBlank() || location == null || location.isBlank()) throw new IllegalArgumentException("Name and location are required");
-        MarketRegistry.Market m = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("The agent phone must be a mobile number in a country PayPort serves"));
-        if (markets.normaliseMobile(phone, m.country()).isEmpty()) throw new IllegalArgumentException("The agent phone is not a valid mobile number");
-        if (forMerchant(merchantId).isPresent()) throw new IllegalStateException("This merchant has already applied to be an agent");
+    /** Public application from the agent portal: PENDING until compliance decides. Returns the application reference. */
+    public Map<String, Object> apply(String name, String contactPerson, String phone, String email, String location, String idNumber, String by) {
+        Fields f = fields(name, contactPerson, phone, email, location, idNumber);
         String code = "AG" + digits(8);
-        jdbc.update("INSERT INTO agents (agent_code, merchant_id, name, phone, location, country, applied_by, applied_at) VALUES (?,?,?,?,?,?,?,?)",
-                code, merchantId, name.trim(), "+" + phone.replaceAll("[^0-9]", ""), location.trim(), m.country(), by, now());
-        audit.record(by, "AGENT_APPLIED", "agent:" + code, name);
-        return view(forMerchant(merchantId).orElseThrow());
+        String ref = "AGT-" + LocalDate.now().toString().replace("-", "") + "-" + digits(6);
+        try {
+            jdbc.update("INSERT INTO agents (agent_code, application_reference, name, contact_person, phone, email, id_number, location, country, applied_by, applied_at) "
+                    + "VALUES (?,?,?,?,?,?,?,?,?,?,?)", code, ref, f.name, f.contact, f.phone, f.email, f.idNumber, f.location, f.country, by, now());
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new IllegalStateException("An agent with this phone number already exists");
+        }
+        audit.record(by, "AGENT_APPLIED", "agent:" + code, f.name);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("applicationReference", ref);
+        out.put("status", "PENDING");
+        out.put("name", f.name);
+        return out;
     }
 
-    public Optional<Map<String, Object>> forMerchant(long merchantId) {
-        return jdbc.queryForList("SELECT * FROM agents WHERE merchant_id = ?", merchantId).stream().findFirst();
+    /** Status only, by application reference (references are guessable, so nothing else is shown). */
+    public Map<String, Object> track(String reference) {
+        Map<String, Object> a = jdbc.queryForList("SELECT status, applied_at, decided_at FROM agents WHERE application_reference = ?",
+                reference == null ? "" : reference.trim().toUpperCase(Locale.ROOT)).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No application with that reference"));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("applicationReference", reference.trim().toUpperCase(Locale.ROOT));
+        out.put("status", a.get("status"));
+        out.put("appliedAt", a.get("applied_at"));
+        out.put("decidedAt", a.get("decided_at"));
+        return out;
+    }
+
+    private record Fields(String name, String contact, String phone, String email, String idNumber, String location, String country) {}
+
+    private Fields fields(String name, String contactPerson, String phone, String email, String location, String idNumber) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("The agent's business name is required");
+        if (location == null || location.isBlank()) throw new IllegalArgumentException("The location is required");
+        if (phone == null || phone.isBlank()) throw new IllegalArgumentException("The mobile number is required");
+        MarketRegistry.Market m = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("Enter the mobile number with its country code, e.g. +263771234567"));
+        if (markets.normaliseMobile(phone, m.country()).isEmpty()) throw new IllegalArgumentException("The mobile number is not valid");
+        String e = email == null || email.isBlank() ? null : email.trim().toLowerCase(Locale.ROOT);
+        if (e != null && !e.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) throw new IllegalArgumentException("The email address is not valid");
+        return new Fields(name.trim(), blank(contactPerson), "+" + phone.replaceAll("[^0-9]", ""), e, blank(idNumber), location.trim(), m.country());
+    }
+
+    private static String blank(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    public Optional<Map<String, Object>> byCode(String agentCode) {
+        return jdbc.queryForList("SELECT * FROM agents WHERE agent_code = ?", agentCode).stream().findFirst();
     }
 
     public Map<String, Object> get(long id) {
@@ -110,7 +148,7 @@ public class AgentService {
     }
 
     public List<Map<String, Object>> list() {
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT a.*, m.business_name FROM agents a LEFT JOIN merchants m ON m.id = a.merchant_id ORDER BY a.id DESC LIMIT 500");
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT a.* FROM agents a ORDER BY a.id DESC LIMIT 500");
         rows.replaceAll(this::view);
         return rows;
     }
@@ -127,7 +165,7 @@ public class AgentService {
     }
 
     public Map<String, Object> decide(long id, boolean approve, String reason, Integer commissionBps, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required (due-diligence evidence)");
+        if (reason == null || reason.isBlank()) reason = approve ? "Approved from the ops console" : "Rejected from the ops console";
         Map<String, Object> a = get(id);
         if (!"PENDING".equals(a.get("status"))) throw new IllegalStateException("Agent is " + a.get("status"));
         if (by.equals(a.get("applied_by"))) throw new IllegalStateException("The applicant cannot approve their own application");
@@ -138,56 +176,57 @@ public class AgentService {
     }
 
     public Map<String, Object> setStatus(long id, String status, String reason, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
         String s = status == null ? "" : status.toUpperCase(Locale.ROOT);
         if (!Set.of("ACTIVE", "SUSPENDED").contains(s)) throw new IllegalArgumentException("status must be ACTIVE or SUSPENDED");
         Map<String, Object> a = get(id);
         if ("PENDING".equals(a.get("status")) || "REJECTED".equals(a.get("status"))) throw new IllegalStateException("Agent is " + a.get("status"));
+        if (reason == null || reason.isBlank()) reason = ("ACTIVE".equals(s) ? "Reinstated" : "Suspended") + " from the ops console";
         jdbc.update("UPDATE agents SET status = ?, status_reason = ?, decided_by = ?, decided_at = ? WHERE id = ?", s, reason, by, now(), id);
         audit.record(by, "AGENT_" + s, "agent:" + a.get("agent_code"), reason);
         return view(get(id));
     }
 
-    /** Ops onboarding: an agent for an active merchant, live at once, with its agent code. */
-    public Map<String, Object> onboard(long merchantId, String name, String phone, String location, Integer commissionBps, String by) {
-        if (name == null || name.isBlank() || location == null || location.isBlank()) throw new IllegalArgumentException("Name and location are required");
-        List<Map<String, Object>> m = jdbc.queryForList("SELECT id, status FROM merchants WHERE id = ?", merchantId);
-        if (m.isEmpty()) throw new IllegalArgumentException("No such merchant");
-        if (!"ACTIVE".equals(m.get(0).get("status"))) throw new IllegalStateException("The merchant must be active before it can be an agent");
-        if (forMerchant(merchantId).isPresent()) throw new IllegalStateException("This merchant is already an agent");
-        MarketRegistry.Market market = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("Enter the agent's mobile number with its country code, e.g. +263771234567"));
-        if (markets.normaliseMobile(phone, market.country()).isEmpty()) throw new IllegalArgumentException("The agent phone is not a valid mobile number");
+    /** Ops onboarding: a new agent, live at once, with its agent code. */
+    public Map<String, Object> onboard(String name, String contactPerson, String phone, String email, String location, String idNumber,
+                                       Integer commissionBps, String by) {
+        Fields f = fields(name, contactPerson, phone, email, location, idNumber);
         if (commissionBps != null && (commissionBps < 0 || commissionBps > 1000)) throw new IllegalArgumentException("Commission must be between 0 and 1000 basis points");
         String code = "AG" + digits(8);
         Timestamp now = now();
-        jdbc.update("INSERT INTO agents (agent_code, merchant_id, name, phone, location, country, status, status_reason, commission_bps, applied_by, applied_at, decided_by, decided_at) "
-                        + "VALUES (?,?,?,?,?,?, 'ACTIVE', 'Onboarded by PayPort', ?,?,?,?,?)",
-                code, merchantId, name.trim(), "+" + phone.replaceAll("[^0-9]", ""), location.trim(), market.country(), commissionBps, by, now, by, now);
-        audit.record(by, "AGENT_ONBOARDED", "agent:" + code, name);
-        return view(forMerchant(merchantId).orElseThrow());
+        try {
+            jdbc.update("INSERT INTO agents (agent_code, name, contact_person, phone, email, id_number, location, country, status, status_reason, commission_bps, "
+                            + "applied_by, applied_at, decided_by, decided_at) VALUES (?,?,?,?,?,?,?,?, 'ACTIVE', 'Onboarded by PayPort', ?,?,?,?,?)",
+                    code, f.name, f.contact, f.phone, f.email, f.idNumber, f.location, f.country, commissionBps, by, now, by, now);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new IllegalStateException("An agent with this phone number already exists");
+        }
+        audit.record(by, "AGENT_ONBOARDED", "agent:" + code, f.name);
+        return view(byCode(code).orElseThrow());
     }
 
-    public Map<String, Object> update(long id, String name, String phone, String location, Integer commissionBps, String by) {
+    public Map<String, Object> update(long id, String name, String contactPerson, String phone, String email, String location, String idNumber,
+                                      Integer commissionBps, String by) {
         Map<String, Object> a = get(id);
-        String n = name == null || name.isBlank() ? (String) a.get("name") : name.trim();
-        String l = location == null || location.isBlank() ? (String) a.get("location") : location.trim();
-        String p = (String) a.get("phone");
-        if (phone != null && !phone.isBlank()) {
-            MarketRegistry.Market market = markets.forMsisdn(phone).orElseThrow(() -> new IllegalArgumentException("Enter the mobile number with its country code"));
-            if (markets.normaliseMobile(phone, market.country()).isEmpty()) throw new IllegalArgumentException("Not a valid mobile number");
-            p = "+" + phone.replaceAll("[^0-9]", "");
-        }
+        Fields f = fields(name == null || name.isBlank() ? (String) a.get("name") : name,
+                contactPerson == null ? (String) a.get("contact_person") : contactPerson,
+                phone == null || phone.isBlank() ? (String) a.get("phone") : phone,
+                email == null ? (String) a.get("email") : email,
+                location == null || location.isBlank() ? (String) a.get("location") : location,
+                idNumber == null ? (String) a.get("id_number") : idNumber);
         if (commissionBps != null && (commissionBps < 0 || commissionBps > 1000)) throw new IllegalArgumentException("Commission must be between 0 and 1000 basis points");
-        jdbc.update("UPDATE agents SET name = ?, phone = ?, location = ?, commission_bps = ? WHERE id = ?", n, p, l, commissionBps, id);
-        audit.record(by, "AGENT_UPDATED", "agent:" + a.get("agent_code"), n + " / " + l + " / " + commissionBps);
+        try {
+            jdbc.update("UPDATE agents SET name = ?, contact_person = ?, phone = ?, email = ?, id_number = ?, location = ?, commission_bps = ? WHERE id = ?",
+                    f.name, f.contact, f.phone, f.email, f.idNumber, f.location, commissionBps, id);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new IllegalStateException("Another agent already uses this phone number");
+        }
+        audit.record(by, "AGENT_UPDATED", "agent:" + a.get("agent_code"), f.name + " / " + f.location + " / " + commissionBps);
         return view(get(id));
     }
 
     /** One agent with its float, recent transactions, commissions and float deposits. */
     public Map<String, Object> detail(long id) {
         Map<String, Object> out = new LinkedHashMap<>(view(get(id)));
-        jdbc.queryForList("SELECT business_name FROM merchants WHERE id = ?", out.get("merchant_id")).stream().findFirst()
-                .ifPresent(m -> out.put("business_name", m.get("business_name")));
         out.put("transactions", transactions(id));
         out.put("deposits", deposits(id, null));
         out.put("totals", jdbc.queryForList("SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
@@ -215,10 +254,48 @@ public class AgentService {
         return out;
     }
 
-    /** Active merchants that are not agents yet (the onboarding picker). */
-    public List<Map<String, Object>> onboardableMerchants() {
-        return jdbc.queryForList("SELECT m.id, m.business_name, m.contact_phone FROM merchants m LEFT JOIN agents a ON a.merchant_id = m.id "
-                + "WHERE m.status = 'ACTIVE' AND a.id IS NULL ORDER BY m.business_name LIMIT 1000");
+    /** The agent's own dashboard: float, today's and the last 30 days' operations, commission this month, recent operations. */
+    public Map<String, Object> agentDashboard(long agentId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("agent", view(get(agentId)));
+        Timestamp today = Timestamp.valueOf(LocalDate.now().atStartOfDay());
+        Timestamp month = Timestamp.valueOf(LocalDate.now().minusDays(30).atStartOfDay());
+        Timestamp monthStart = Timestamp.valueOf(LocalDate.now().withDayOfMonth(1).atStartOfDay());
+        String sql = "SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
+                + "FROM agent_transactions WHERE agent_id = ? AND created_at >= ? GROUP BY kind, currency ORDER BY kind, currency";
+        out.put("today", jdbc.queryForList(sql, agentId, today));
+        out.put("last30Days", jdbc.queryForList(sql, agentId, month));
+        out.put("commissionThisMonth", jdbc.queryForList("SELECT currency, SUM(commission_minor) AS commission_minor FROM agent_transactions "
+                + "WHERE agent_id = ? AND created_at >= ? GROUP BY currency ORDER BY currency", agentId, monthStart));
+        out.put("pendingDeposits", jdbc.queryForObject("SELECT COUNT(*) FROM agent_float_deposits WHERE agent_id = ? AND status = 'PENDING'", Integer.class, agentId));
+        List<Map<String, Object>> recent = transactions(agentId);
+        out.put("recent", recent.size() > 10 ? recent.subList(0, 10) : recent);
+        return out;
+    }
+
+    /** What an agent may see about a customer before cash-in: that the wallet exists, and a masked name. */
+    public Map<String, Object> customer(long agentId, String customer, String currency) {
+        Map<String, Object> a = activeAgent(agentId);
+        String ccy = currency(currency, (String) a.get("country"));
+        WalletService.Wallet w = wallets.forPhone(customer, ccy).or(() -> wallets.byRef(customer))
+                .orElseThrow(() -> new IllegalArgumentException("No PayPort " + ccy + " wallet for " + customer));
+        String name = jdbc.queryForList("SELECT full_name FROM users WHERE id = ?", String.class, w.userId()).stream().findFirst().orElse("");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("wallet", w.ref());
+        out.put("currency", w.currency());
+        out.put("status", w.status());
+        out.put("name", mask(name));
+        return out;
+    }
+
+    static String mask(String fullName) {
+        StringBuilder b = new StringBuilder();
+        for (String p : fullName.trim().split("\\s+")) {
+            if (p.isEmpty()) continue;
+            if (b.length() > 0) b.append(' ');
+            b.append(b.length() == 0 ? p : p.charAt(0) + "***");
+        }
+        return b.toString();
     }
 
     // ─── float ───────────────────────────────────────────────────────────────
@@ -289,10 +366,10 @@ public class AgentService {
 
     // ─── cash-in / cash-out ─────────────────────────────────────────────────
 
-    public Map<String, Object> cashIn(long merchantId, String customer, String currency, long amount, String clientRef, String by) {
+    public Map<String, Object> cashIn(long agentId, String customer, String currency, long amount, String clientRef, String by) {
         requireOn();
         wallets.requireOn();
-        Map<String, Object> a = activeAgent(merchantId);
+        Map<String, Object> a = activeAgent(agentId);
         if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
         String ccy = currency(currency, (String) a.get("country"));
         WalletService.Wallet w = wallets.forPhone(customer, ccy).or(() -> wallets.byRef(customer))
@@ -355,10 +432,10 @@ public class AgentService {
                 + "c.expires_at, c.created_at, c.redeemed_at FROM cash_out_codes c JOIN wallets w ON w.id = c.wallet_id WHERE w.phone = ? ORDER BY c.id DESC LIMIT 50", phone);
     }
 
-    public Map<String, Object> cashOut(long merchantId, String customerPhone, String code, String by) {
+    public Map<String, Object> cashOut(long agentIdArg, String customerPhone, String code, String by) {
         requireOn();
         wallets.requireOn();
-        Map<String, Object> a = activeAgent(merchantId);
+        Map<String, Object> a = activeAgent(agentIdArg);
         long agentId = ((Number) a.get("id")).longValue();
         int max = (int) params.number("AGENT.MAX_CASH_OUT_FAILURES_PER_HOUR");
         Integer failures = jdbc.queryForObject("SELECT COUNT(*) FROM cash_out_attempts WHERE agent_id = ? AND success = FALSE AND at > ?",
@@ -415,8 +492,8 @@ public class AgentService {
 
     // ─── helpers ─────────────────────────────────────────────────────────────
 
-    Map<String, Object> activeAgent(long merchantId) {
-        Map<String, Object> a = forMerchant(merchantId).orElseThrow(() -> new IllegalArgumentException("This merchant is not a PayPort agent"));
+    Map<String, Object> activeAgent(long agentId) {
+        Map<String, Object> a = get(agentId);
         if (!"ACTIVE".equals(a.get("status"))) throw new IllegalStateException("Agent status is " + a.get("status"));
         return a;
     }

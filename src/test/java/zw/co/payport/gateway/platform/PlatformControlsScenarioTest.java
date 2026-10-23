@@ -187,8 +187,7 @@ class PlatformControlsScenarioTest {
                 Map.of("country", "ZM", "currency", "ZMW", "enabled", true)).status());
         assertDoesNotThrow(() -> checkout.requireLiveCurrency(m, "ZMW"));
 
-        // Switching off is immediate, by one person, with a reason.
-        assertEquals(400, call("POST", "/api/v1/admin/markets/ZM/suspend", olivia, Map.of("reason", "")).status());
+        // Switching off is immediate, by one person; a reason is optional.
         assertEquals(200, call("POST", "/api/v1/admin/markets/ZM/suspend", olivia, Map.of("reason", "incident drill")).status());
         markets.reload();
         assertFalse(markets.liveCurrency("ZMW"));

@@ -216,6 +216,35 @@ class Phase8CompletionScenarioTest {
 
     String lastLogin;
 
+    @Test
+    void merchantPasswords_opsResetToTemporary_andForgotPasswordByLink() throws Exception {
+        long m = activeMerchantWithLogin("Forgetful Shop");
+        String ops = staff("Op Reset", "OPS");
+        Res list = call("GET", "/api/v1/admin/merchants/" + m + "/users", ops, null);
+        assertEquals(200, list.status(), list.body().toString());
+        long userId = list.data().get(0).path("id").asLong();
+        String mail = list.data().get(0).path("email").asText();
+        jdbc.update("UPDATE merchant_users SET account_locked = TRUE, failed_login_attempts = 3 WHERE id = ?", userId);
+
+        Res reset = call("POST", "/api/v1/admin/merchants/" + m + "/users/" + userId + "/reset-password", ops, null);
+        assertEquals(200, reset.status(), reset.body().toString());
+        String temp = reset.data().path("temporaryPassword").asText();
+        Res in = call("POST", "/api/v1/merchant-portal/login", null, Map.of("email", mail, "password", temp));
+        assertEquals(200, in.status(), "the reset also unlocks: " + in.body());
+        assertTrue(in.data().path("user").path("mustChangePassword").asBoolean());
+        assertEquals(403, call("POST", "/api/v1/admin/merchants/" + m + "/users/" + userId + "/reset-password", customer("Not Ops").token(), null).status());
+
+        assertEquals(200, call("POST", "/api/v1/merchant-portal/forgot-password", null, Map.of("email", "nobody@nowhere.test")).status(), "no hint whether an email exists");
+        assertEquals(200, call("POST", "/api/v1/merchant-portal/forgot-password", null, Map.of("email", mail)).status());
+        String stored = jdbc.queryForObject("SELECT reset_token FROM merchant_users WHERE id = ?", String.class, userId);
+        assertEquals(64, stored.length(), "only the link's hash is stored");
+        jdbc.update("UPDATE merchant_users SET reset_token = ? WHERE id = ?", zw.co.payport.gateway.platform.PortalCredentials.sha256("known-link-token"), userId);
+        assertEquals(400, call("POST", "/api/v1/merchant-portal/reset-password", null, Map.of("token", "known-link-token", "newPassword", "weak")).status());
+        assertEquals(200, call("POST", "/api/v1/merchant-portal/reset-password", null, Map.of("token", "known-link-token", "newPassword", "New!Passw0rd")).status());
+        assertEquals(400, call("POST", "/api/v1/merchant-portal/reset-password", null, Map.of("token", "known-link-token", "newPassword", "New!Passw0rd")).status(), "a link works once");
+        assertEquals(200, call("POST", "/api/v1/merchant-portal/login", null, Map.of("email", mail, "password", "New!Passw0rd")).status());
+    }
+
     // ─── wallets ─────────────────────────────────────────────────────────────
 
     @Test
@@ -331,24 +360,46 @@ class Phase8CompletionScenarioTest {
     // ─── agents ──────────────────────────────────────────────────────────────
 
     @Test
-    void agents_onboardedByOps_withCode_detailDashboardAndEdit() throws Exception {
+    void agents_onboardedByOps_ownPortalLogin_separateFromMerchants() throws Exception {
         String admin = staff("Ad Onboard", "ADMIN"), ops = staff("Op Onboard", "OPS");
         Customer cust = customer("Not Staff");
-        long m = activeMerchantWithLogin("Onboarded Agent Shop");
-        Res picker = call("GET", "/api/v1/admin/agents/onboardable-merchants", ops, null);
-        assertEquals(200, picker.status(), picker.body().toString());
-        boolean listed = false;
-        for (JsonNode x : picker.data()) listed |= x.path("id").asLong() == m;
-        assertTrue(listed, "an active merchant without an agent is offered");
+        long m = activeMerchantWithLogin("A Merchant, Not An Agent");
+        String merchantToken = lastLogin;
+        String mail = "mbare" + SEQ.incrementAndGet() + "@agents.test";
 
-        assertEquals(403, call("POST", "/api/v1/admin/agents", cust.token(), Map.of("merchantId", m, "name", "X", "phone", "+263779990001", "location", "Harare")).status());
-        Res on = call("POST", "/api/v1/admin/agents", admin, Map.of("merchantId", m, "name", "Mbare Agent", "phone", "+263779990001", "location", "Mbare, Harare", "commissionBps", 60));
+        assertEquals(403, call("POST", "/api/v1/admin/agents", cust.token(), Map.of("name", "X", "phone", "+263779990001", "email", mail, "location", "Harare")).status());
+        assertEquals(400, call("POST", "/api/v1/admin/agents", admin, Map.of("name", "No Mail", "phone", "+263779990009", "location", "Harare")).status(),
+                "a portal login needs an email address");
+        Res on = call("POST", "/api/v1/admin/agents", admin, Map.of("name", "Mbare Agent", "contactPerson", "Rudo Moyo", "phone", "+263779990001",
+                "email", mail, "location", "Mbare, Harare", "idNumber", "63-123456A42", "commissionBps", 60));
         assertEquals(200, on.status(), on.body().toString());
         long id = on.data().path("id").asLong();
         assertTrue(on.data().path("agent_code").asText().matches("AG\\d{8}"), on.body().toString());
         assertEquals("ACTIVE", on.data().path("status").asText(), "onboarded agents are live at once");
-        assertEquals(409, call("POST", "/api/v1/admin/agents", admin, Map.of("merchantId", m, "name", "Again", "phone", "+263779990001", "location", "Harare")).status(),
-                "one agent per merchant");
+        assertFalse(on.data().has("merchant_id"), "an agent is not a merchant");
+        String temp = on.data().path("login").path("temporaryPassword").asText();
+        assertFalse(temp.isBlank());
+        assertEquals(409, call("POST", "/api/v1/admin/agents", admin, Map.of("name", "Again", "phone", "+263779990001", "email", "x" + mail, "location", "Harare")).status(),
+                "one agent per phone number");
+
+        // The agent's own portal: its own login, a forced password change, then its own dashboard.
+        assertEquals(403, call("POST", "/api/v1/agent-portal/login", null, Map.of("email", mail, "password", "wrong")).status());
+        Res login = call("POST", "/api/v1/agent-portal/login", null, Map.of("email", mail, "password", temp));
+        assertEquals(200, login.status(), login.body().toString());
+        String agentToken = login.data().path("token").asText();
+        assertTrue(login.data().path("user").path("mustChangePassword").asBoolean());
+        assertEquals(403, call("GET", "/api/v1/agent/dashboard", agentToken, null).status(), "the temporary password must be changed first");
+        assertEquals(200, call("POST", "/api/v1/agent/change-password", agentToken, Map.of("currentPassword", temp, "newPassword", "Agent!Pass2026")).status());
+        Res mine = call("GET", "/api/v1/agent/dashboard", agentToken, null);
+        assertEquals(200, mine.status(), mine.body().toString());
+        assertEquals(id, mine.data().path("agent").path("id").asLong());
+        assertTrue(mine.data().has("today") && mine.data().has("commissionThisMonth") && mine.data().has("recent"));
+
+        int asMerchant = call("GET", "/api/v1/agent/me", merchantToken, null).status();
+        assertTrue(asMerchant == 401 || asMerchant == 403, "a merchant login is not an agent login: " + asMerchant);
+        int asAgent = call("GET", "/api/v1/merchant/checkout-sessions", agentToken, null).status();
+        assertTrue(asAgent == 401 || asAgent == 403, "an agent login is not a merchant login: " + asAgent);
+        assertEquals(403, call("GET", "/api/v1/agent/me", cust.token(), null).status());
 
         Res upd = call("PUT", "/api/v1/admin/agents/" + id, ops, Map.of("location", "Mbare Musika, Harare", "commissionBps", 75));
         assertEquals(200, upd.status(), upd.body().toString());
@@ -356,10 +407,17 @@ class Phase8CompletionScenarioTest {
         Res detail = call("GET", "/api/v1/admin/agents/" + id, ops, null);
         assertEquals("Mbare Musika, Harare", detail.data().path("location").asText());
         assertTrue(detail.data().has("transactions") && detail.data().has("deposits") && detail.data().has("totals"));
+        long userId = detail.data().path("users").get(0).path("id").asLong();
+        Res reset = call("POST", "/api/v1/admin/agents/" + id + "/users/" + userId + "/reset-password", ops, null);
+        assertEquals(200, reset.status(), reset.body().toString());
+        assertEquals(200, call("POST", "/api/v1/agent-portal/login", null, Map.of("email", mail, "password", reset.data().path("temporaryPassword").asText())).status());
+        assertEquals(200, call("POST", "/api/v1/agent-portal/forgot-password", null, Map.of("email", "nobody@agents.test")).status(), "no hint whether an email exists");
+
         Res dash = call("GET", "/api/v1/admin/agents/dashboard", ops, null);
         assertEquals(200, dash.status(), dash.body().toString());
         assertTrue(dash.data().path("byStatus").isArray() && dash.data().has("float") && dash.data().has("topAgents"));
         assertEquals(403, call("GET", "/api/v1/admin/agents/dashboard", cust.token(), null).status());
+        assertTrue(m > 0);
 
         // Countries and currencies for the apps' drop-downs: public, read-only.
         Res mk = call("GET", "/api/v1/markets", null, null);
@@ -371,65 +429,74 @@ class Phase8CompletionScenarioTest {
 
 
     @Test
-    void agents_complianceApproval_fourEyesFloat_cashInCashOut_singleUseCodes() throws Exception {
+    void agents_applyAndTrack_complianceApproval_fourEyesFloat_cashInCashOut_singleUseCodes() throws Exception {
         ensureOn("WALLETS", null);
         ensureOn("AGENTS", "AGENT");
-        long merchantId = activeMerchantWithLogin("Corner Agent");
-        String agentToken = lastLogin;
-        Res applied = call("POST", "/api/v1/merchant/agent/apply", agentToken, Map.of("name", "Corner Agent", "phone", "+263772100100", "location", "Mbare, Harare"));
+        String mail = "corner" + SEQ.incrementAndGet() + "@agents.test";
+        Res applied = call("POST", "/api/v1/agent-portal/apply", null, Map.of("name", "Corner Agent", "contactPerson", "Tino", "phone", "+263772100100",
+                "email", mail, "location", "Mbare, Harare"));
         assertEquals(200, applied.status(), applied.body().toString());
         assertEquals("PENDING", applied.data().path("status").asText());
-        long agentId = applied.data().path("id").asLong();
-        assertEquals(409, call("POST", "/api/v1/merchant/agent/cash-in", agentToken, Map.of("customer", "+263771234567", "currency", "USD", "amountMinor", 100)).status(),
-                "not active yet");
+        String ref = applied.data().path("applicationReference").asText();
+        assertEquals("PENDING", call("GET", "/api/v1/agent-portal/track/" + ref, null, null).data().path("status").asText());
+        long agentId = 0;
+        for (JsonNode a : call("GET", "/api/v1/admin/agents", staff("Ag Viewer", "OPS"), null).data()) if (ref.equals(a.path("application_reference").asText())) agentId = a.path("id").asLong();
+        assertTrue(agentId > 0);
+        assertEquals(403, call("POST", "/api/v1/agent-portal/login", null, Map.of("email", mail, "password", "anything")).status(), "no login before approval");
 
         String comp = staff("Ag Comp", "COMPLIANCE");
-        Res approved = call("POST", "/api/v1/admin/agents/" + agentId + "/decide", comp, Map.of("approve", true, "reason", "due diligence complete"));
+        Res approved = call("POST", "/api/v1/admin/agents/" + agentId + "/decide", comp, Map.of("approve", true));
         assertEquals(200, approved.status(), approved.body().toString());
         assertEquals("ACTIVE", approved.data().path("status").asText());
+        assertEquals("ACTIVE", call("GET", "/api/v1/agent-portal/track/" + ref, null, null).data().path("status").asText());
+        String temp = approved.data().path("login").path("temporaryPassword").asText();
+        String agentToken = call("POST", "/api/v1/agent-portal/login", null, Map.of("email", mail, "password", temp)).data().path("token").asText();
+        assertEquals(200, call("POST", "/api/v1/agent/change-password", agentToken, Map.of("currentPassword", temp, "newPassword", "Corner!Agent1")).status());
 
         // Float: the agent declares the bank deposit; finance approves (not the declarer); a bank reference is used once.
         String bankRef = "DEP-" + SEQ.incrementAndGet();
-        Res dep = call("POST", "/api/v1/merchant/agent/float-deposits", agentToken, Map.of("amountMinor", 10_000, "currency", "USD", "bankReference", bankRef));
+        Res dep = call("POST", "/api/v1/agent/float-deposits", agentToken, Map.of("amountMinor", 10_000, "currency", "USD", "bankReference", bankRef));
         assertEquals(200, dep.status(), dep.body().toString());
-        assertEquals(409, call("POST", "/api/v1/merchant/agent/float-deposits", agentToken, Map.of("amountMinor", 10_000, "currency", "USD", "bankReference", bankRef)).status());
+        assertEquals(409, call("POST", "/api/v1/agent/float-deposits", agentToken, Map.of("amountMinor", 10_000, "currency", "USD", "bankReference", bankRef)).status());
         String fin = staff("Fin Float", "FINANCE");
         Res ok = call("POST", "/api/v1/admin/agents/float-deposits/" + dep.data().path("id").asLong() + "/decide", fin, Map.of("approve", true, "note", "seen on statement"));
         assertEquals(200, ok.status(), ok.body().toString());
         Res own = call("POST", "/api/v1/admin/agents/float-deposits", fin, Map.of("agentId", agentId, "amountMinor", 500, "currency", "USD", "bankReference", "DEP-SELF-" + SEQ.incrementAndGet()));
         assertEquals(409, call("POST", "/api/v1/admin/agents/float-deposits/" + own.data().path("id").asLong() + "/decide", fin, Map.of("approve", true)).status(),
                 "four eyes: the recorder cannot approve");
-        assertEquals(10_000, call("GET", "/api/v1/merchant/agent", agentToken, null).data().path("agent").path("float").path("USD").asLong());
+        assertEquals(10_000, call("GET", "/api/v1/agent/me", agentToken, null).data().path("agent").path("float").path("USD").asLong());
 
         // Cash-in: float -> wallet, commission 0.50% on top of float.
         Customer cara = customer("Cara Cash");
         openWallet(cara, "USD");
-        Res in = call("POST", "/api/v1/merchant/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 3_000, "clientRef", "ci-1"));
+        Res who = call("GET", "/api/v1/agent/customer?customer=" + java.net.URLEncoder.encode(cara.phone(), java.nio.charset.StandardCharsets.UTF_8) + "&currency=USD", agentToken, null);
+        assertEquals(200, who.status(), who.body().toString());
+        assertEquals("Cara C***", who.data().path("name").asText());
+        Res in = call("POST", "/api/v1/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 3_000, "clientRef", "ci-1"));
         assertEquals(200, in.status(), in.body().toString());
         assertEquals(15, in.data().path("commissionMinor").asLong());
         assertEquals(7_015, in.data().path("floatMinor").asLong());
         assertEquals(3_000, balance(cara, "USD"));
-        assertEquals(402, call("POST", "/api/v1/merchant/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 9_000)).status(),
+        assertEquals(402, call("POST", "/api/v1/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 9_000)).status(),
                 "an agent cannot hand out more e-value than its float");
 
         // Cash-out: the holder's one-time code; wrong code refused; redeemed once.
         Res code = call("POST", "/api/v1/wallet/cash-out-codes", cara.token(), Map.of("currency", "USD", "amountMinor", 1_000, "pin", PIN));
         assertEquals(200, code.status(), code.body().toString());
         String c = code.data().path("code").asText();
-        assertEquals(400, call("POST", "/api/v1/merchant/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", "00000000")).status());
-        Res out = call("POST", "/api/v1/merchant/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c));
+        assertEquals(400, call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", "00000000")).status());
+        Res out = call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c));
         assertEquals(200, out.status(), out.body().toString());
         assertEquals(2_000, balance(cara, "USD"));
         assertEquals(7_015 + 1_000 + 10, out.data().path("floatMinor").asLong());
-        assertEquals(400, call("POST", "/api/v1/merchant/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c)).status(), "single use");
-        assertEquals(2, call("GET", "/api/v1/merchant/agent/transactions", agentToken, null).data().size());
-        assertTrue(call("GET", "/api/v1/merchant/agent/commissions", agentToken, null).data().size() >= 2);
-        assertEquals(merchantId, call("GET", "/api/v1/admin/agents", comp, null).data().get(0).path("merchant_id").asLong());
+        assertEquals(400, call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c)).status(), "single use");
+        assertEquals(2, call("GET", "/api/v1/agent/transactions", agentToken, null).data().size());
+        assertTrue(call("GET", "/api/v1/agent/commissions", agentToken, null).data().size() >= 2);
 
         // Suspension is immediate.
         String ops = staff("Ag Ops", "OPS");
-        assertEquals(200, call("POST", "/api/v1/admin/agents/" + agentId + "/status", ops, Map.of("status", "SUSPENDED", "reason", "complaint")).status());
-        assertEquals(409, call("POST", "/api/v1/merchant/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 100)).status());
+        assertEquals(200, call("POST", "/api/v1/admin/agents/" + agentId + "/status", ops, Map.of("status", "SUSPENDED")).status());
+        assertEquals(409, call("POST", "/api/v1/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 100)).status());
         assertTrue(ledger.integrityReport().isEmpty(), ledger.integrityReport().toString());
     }
 
@@ -520,6 +587,18 @@ class Phase8CompletionScenarioTest {
         call("POST", "/api/v1/admin/channels/WHATSAPP", ops, Map.of("enabled", false, "reason", "Meta outage"));
         whatsapp(from, "wamid.5", "hi", true);
         assertTrue(reply("wamid.5").contains("not available"));
+
+        // Connection settings from ops: identifiers shown, secrets stored encrypted and never shown.
+        String admin = staff("Wa Admin", "ADMIN");
+        assertEquals(403, call("PUT", "/api/v1/admin/whatsapp/settings", ops, Map.of("phoneNumberId", "123456789012345")).status(), "administrators only");
+        Res set = call("PUT", "/api/v1/admin/whatsapp/settings", admin, Map.of("businessNumber", "+263 719 183 557", "phoneNumberId", "123456789012345",
+                "accessToken", "EAAG-test-token-value"));
+        assertEquals(200, set.status(), set.body().toString());
+        assertEquals("+263719183557", set.data().path("businessNumber").asText());
+        assertTrue(set.data().path("accessTokenSet").asBoolean());
+        assertFalse(set.body().toString().contains("EAAG-test-token-value"));
+        assertTrue(jdbc.queryForObject("SELECT access_token FROM whatsapp_settings WHERE id = 1", String.class).startsWith("enc:v1:"), "encrypted at rest");
+        assertEquals(400, call("PUT", "/api/v1/admin/whatsapp/settings", admin, Map.of("phoneNumberId", "not-a-number")).status());
     }
 
     // ─── provider settlements on the bank statement ─────────────────────────

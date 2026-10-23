@@ -43,26 +43,23 @@ public class WhatsAppService {
     private final JdbcTemplate jdbc;
     private final UssdService engine;
     private final WhatsAppSender sender;
-    private final String appSecret;
-    private final String verifyToken;
+    private final WhatsAppSettings settings;
     private final ObjectMapper json = new ObjectMapper();
 
-    public WhatsAppService(JdbcTemplate jdbc, UssdService engine, WhatsAppSender sender,
-                           @Value("${payport.whatsapp.app-secret:}") String appSecret,
-                           @Value("${payport.whatsapp.verify-token:}") String verifyToken) {
+    public WhatsAppService(JdbcTemplate jdbc, UssdService engine, WhatsAppSender sender, WhatsAppSettings settings) {
         this.jdbc = jdbc;
         this.engine = engine;
         this.sender = sender;
-        this.appSecret = appSecret;
-        this.verifyToken = verifyToken;
+        this.settings = settings;
     }
 
     public boolean configured() {
-        return !appSecret.isBlank();
+        return !settings.get().appSecret().isBlank();
     }
 
     /** Meta's subscription handshake. */
     public String verify(String mode, String token, String challenge) {
+        String verifyToken = settings.get().verifyToken();
         if (verifyToken.isBlank() || !"subscribe".equals(mode) || token == null
                 || !MessageDigest.isEqual(verifyToken.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
             throw new SecurityException("verification refused");
@@ -74,7 +71,7 @@ public class WhatsAppService {
         if (!configured() || header == null || !header.startsWith("sha256=")) return false;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(appSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.init(new SecretKeySpec(settings.get().appSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             String expected = "sha256=" + HexFormat.of().formatHex(mac.doFinal((rawBody == null ? "" : rawBody).getBytes(StandardCharsets.UTF_8)));
             return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), header.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
@@ -137,7 +134,11 @@ public class WhatsAppService {
     }
 
     public Map<String, Object> status() {
-        return Map.of("webhookSecretConfigured", configured(), "verifyTokenConfigured", !verifyToken.isBlank(), "senderConfigured", sender.configured());
+        Map<String, Object> out = new java.util.LinkedHashMap<>(settings.view());
+        out.put("webhookSecretConfigured", configured());
+        out.put("verifyTokenConfigured", !settings.get().verifyToken().isBlank());
+        out.put("senderConfigured", sender.configured());
+        return out;
     }
 
     private static String token() {
