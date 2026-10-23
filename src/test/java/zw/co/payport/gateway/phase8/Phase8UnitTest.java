@@ -87,12 +87,22 @@ class Phase8UnitTest {
         assertEquals(64, a.length());
     }
 
+    static zw.co.payport.gateway.whatsapp.WhatsAppSettings fixed(String appSecret, String verifyToken) {
+        var v = new zw.co.payport.gateway.whatsapp.WhatsAppSettings.Values("", "", "", "", appSecret, verifyToken, "https://graph.facebook.com/v20.0");
+        return new zw.co.payport.gateway.whatsapp.WhatsAppSettings(null, null, "", "", appSecret, verifyToken, "https://graph.facebook.com/v20.0") {
+            @Override
+            public Values get() {
+                return v;
+            }
+        };
+    }
+
     @Test
     void whatsappWebhook_signatureRequired_andFailsClosedWithoutSecret() throws Exception {
-        WhatsAppService off = new WhatsAppService(null, null, null, "", "");
+        WhatsAppService off = new WhatsAppService(null, null, null, fixed("", ""));
         assertFalse(off.configured());
         assertFalse(off.signatureValid("sha256=00", "{}"));
-        WhatsAppService on = new WhatsAppService(null, null, null, "app-secret", "verify-me");
+        WhatsAppService on = new WhatsAppService(null, null, null, fixed("app-secret", "verify-me"));
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec("app-secret".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         String body = "{\"entry\":[]}";

@@ -60,6 +60,26 @@ public class EmailService {
     }
 
     /**
+     * Merchant and agent portal mail (welcome with a temporary password, password reset link).
+     * Best effort: returns false when it could not be sent, so the caller can show the value to ops.
+     */
+    public boolean sendPortalMail(String toEmail, String subject, String text) {
+        if (toEmail == null || toEmail.isBlank()) return false;
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(toEmail);
+        message.setSubject(subject);
+        message.setText(text);
+        try {
+            mailSender.send(message);
+            return true;
+        } catch (Exception e) {
+            log.warn("[EMAIL] Portal mail to {} not sent: {}", toEmail, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Payment confirmation receipt -- deliberately best-effort. A failed
      * confirmation email must never cause the underlying payment to look
      * like it failed; log and move on, don't throw.

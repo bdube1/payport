@@ -183,12 +183,11 @@ class FinancialIntegrityScenarioTest {
         return jdbc.queryForObject("SELECT MAX(id) FROM merchants", Long.class);
     }
 
-    /** An approved agent with the given float (four-eyes deposit). */
-    long agent(long merchantId, long floatMinor) {
+    /** An onboarded agent with the given float (four-eyes deposit). */
+    long agent(long floatMinor) {
         String phone = String.format("+26378%07d", SEQ.incrementAndGet() % 10_000_000);
-        long id = ((Number) agents.apply(merchantId, "Agent " + merchantId, phone, "Harare", "merchant:" + merchantId).get("id")).longValue();
-        agents.decide(id, true, "due diligence", null, "staff:comp");
-        long dep = ((Number) agents.recordDeposit(id, floatMinor, "USD", "DEP-" + SEQ.incrementAndGet(), "merchant:" + merchantId).get("id")).longValue();
+        long id = ((Number) agents.onboard("Agent " + phone, null, phone, null, "Harare", null, null, "staff:ops").get("id")).longValue();
+        long dep = ((Number) agents.recordDeposit(id, floatMinor, "USD", "DEP-" + SEQ.incrementAndGet(), "agent:" + id).get("id")).longValue();
         agents.decideDeposit(dep, true, "on statement", "staff:fin");
         return id;
     }
@@ -248,10 +247,9 @@ class FinancialIntegrityScenarioTest {
     @Test
     void cashOutCode_redeemedByManyAgentsAtOnce_paysOutOnce() throws Exception {
         Holder c = holder(5_000);
-        long m = merchant();
-        long agentId = agent(m, 10_000);
+        long agentId = agent(10_000);
         String code = (String) agents.issueCashOutCode(c.phone(), PIN, "USD", 2_000).get("code");
-        List<Object> results = race(10, () -> agents.cashOut(m, c.phone(), code, "merchant:" + m));
+        List<Object> results = race(10, () -> agents.cashOut(agentId, c.phone(), code, "agent:" + agentId));
         onlyBusinessRefusals(results);
         assertEquals(1, ok(results), "a code is single-use");
         assertEquals(3_000, balance(c.usd()));
@@ -261,11 +259,10 @@ class FinancialIntegrityScenarioTest {
 
     @Test
     void agentFloat_cannotBeOverspentByConcurrentCashIns() throws Exception {
-        long m = merchant();
-        long agentId = agent(m, 100_000);
+        long agentId = agent(100_000);
         Holder c = holder(0);
         wallets.setTier(c.usd().ref(), "TIER3", "KYC evidence on file", "staff:comp");   // TIER1 holds at most 500.00
-        List<Object> results = race(20, () -> agents.cashIn(m, c.phone(), "USD", 10_000, null, "merchant:" + m));
+        List<Object> results = race(20, () -> agents.cashIn(agentId, c.phone(), "USD", 10_000, null, "agent:" + agentId));
         onlyBusinessRefusals(results);
         // Each cash-in costs the float 10,000 less a 50 commission (0.50%): 100,000 funds exactly ten.
         assertEquals(10, ok(results));

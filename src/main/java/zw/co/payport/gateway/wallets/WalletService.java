@@ -423,8 +423,8 @@ public class WalletService {
     }
 
     public Map<String, Object> setStatus(String ref, String status, String reason, String by) {
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
         String s = upper(status);
+        if (reason == null || reason.isBlank()) reason = ("FROZEN".equals(s) ? "Frozen" : "Unfrozen") + " from the ops console";
         if (!Set.of("ACTIVE", "FROZEN").contains(s)) throw new IllegalArgumentException("status must be ACTIVE or FROZEN");
         Wallet w = byRef(ref).orElseThrow(() -> new IllegalArgumentException("No such wallet"));
         jdbc.update("UPDATE wallets SET status = ?, status_reason = ?, updated_by = ?, updated_at = ? WHERE id = ?", s, reason, by, now(), w.id());

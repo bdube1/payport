@@ -58,6 +58,8 @@ public class TransactionResponse {
      */
     private String widgetJsUrl;
     private String paymentCorrelator;
+    /** InnBucks: the code the customer approves in the InnBucks app or USSD (while the payment is pending). */
+    private String paymentCode;
 
     /**
      * True only for Omari, only right after submission -- Omari's flow
@@ -146,6 +148,9 @@ public class TransactionResponse {
         // payment leaves PAYMENT_PENDING, whichever way it resolves.
         if ("OMARI".equals(tx.getPaymentProviderCode()) && tx.getStatus() == zw.co.payport.gateway.enums.TransactionStatus.PAYMENT_PENDING) {
             r.setRequiresOtpEntry(true);
+        }
+        if ("INNBUCKS".equals(tx.getPaymentProviderCode()) && tx.getStatus() == zw.co.payport.gateway.enums.TransactionStatus.PAYMENT_PENDING) {
+            r.setPaymentCode(tx.getProviderReference());
         }
 
         return r;

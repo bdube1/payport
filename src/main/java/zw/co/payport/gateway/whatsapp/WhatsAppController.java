@@ -18,9 +18,13 @@ import java.util.Map;
 public class WhatsAppController {
 
     private final WhatsAppService whatsapp;
+    private final WhatsAppSettings settings;
+    private final WhatsAppSender sender;
 
-    public WhatsAppController(WhatsAppService whatsapp) {
+    public WhatsAppController(WhatsAppService whatsapp, WhatsAppSettings settings, WhatsAppSender sender) {
         this.whatsapp = whatsapp;
+        this.settings = settings;
+        this.sender = sender;
     }
 
     @GetMapping(value = "/api/v1/whatsapp/webhook", produces = MediaType.TEXT_PLAIN_VALUE)
@@ -54,6 +58,28 @@ public class WhatsAppController {
             List<Map<String, Object>> recent = whatsapp.recent();
             m.put("recent", recent);
             return m;
+        }, req);
+    }
+
+    public record SettingsBody(String businessNumber, String phoneNumberId, String wabaId, String accessToken, String appSecret, String verifyToken, String apiBase) {}
+
+    @PutMapping("/api/v1/admin/whatsapp/settings")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> settings(@RequestBody SettingsBody b, HttpServletRequest req) {
+        return Web.run(() -> settings.update(b.businessNumber(), b.phoneNumberId(), b.wabaId(), b.accessToken(), b.appSecret(), b.verifyToken(), b.apiBase(), Web.staff()), req);
+    }
+
+    public record TestBody(String to) {}
+
+    /** Sends one message through the configured sender; the number must have messaged the business in the last 24 hours (Meta's rule for free-form replies). */
+    @PostMapping("/api/v1/admin/whatsapp/test")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> test(@RequestBody TestBody b, HttpServletRequest req) {
+        return Web.run(() -> {
+            String to = b.to() == null ? "" : b.to().replaceAll("[^0-9]", "");
+            if (to.length() < 9) throw new IllegalArgumentException("Enter the number to send the test to, with its country code");
+            String err = sender.send(to, "PayPort WhatsApp is connected. Send MENU to start.");
+            return Map.<String, Object>of("sent", err == null, "error", err == null ? "" : err);
         }, req);
     }
 }

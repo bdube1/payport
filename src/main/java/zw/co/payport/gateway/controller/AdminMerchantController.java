@@ -56,6 +56,7 @@ public class AdminMerchantController {
             String needle = search.trim().toLowerCase();
             merchants = merchants.stream().filter(m ->
                     (m.getBusinessName() != null && m.getBusinessName().toLowerCase().contains(needle)) ||
+                    (m.getApplicationReference() != null && m.getApplicationReference().toLowerCase().contains(needle)) ||
                     (m.getRegistrationNumber() != null && m.getRegistrationNumber().toLowerCase().contains(needle)) ||
                     (m.getContactEmail() != null && m.getContactEmail().toLowerCase().contains(needle)) ||
                     (m.getContactPhone() != null && m.getContactPhone().contains(needle))
@@ -253,6 +254,7 @@ public class AdminMerchantController {
     private Map<String, Object> toMap(Merchant m) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", m.getId());
+        map.put("applicationReference", m.getApplicationReference());
         map.put("businessName", m.getBusinessName());
         map.put("registrationNumber", m.getRegistrationNumber());
         map.put("businessCategory", m.getBusinessCategory());
