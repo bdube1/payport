@@ -67,7 +67,8 @@ public class CardService {
                 jdbc.update("UPDATE wallet_cards SET status_note = ? WHERE card_ref = ?", "Issuer: " + trim(e.getMessage()), w.get("card_ref"));
             }
         }
-        return jdbc.queryForList("SELECT c.*, w.wallet_ref, w.currency FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id "
+        return jdbc.queryForList("SELECT c.*, w.wallet_ref, w.currency, w2.wallet_ref AS wallet_ref2, w2.currency AS currency2 FROM wallet_cards c "
+                + "JOIN wallets w ON w.id = c.wallet_id LEFT JOIN wallets w2 ON w2.id = c.second_wallet_id "
                 + "WHERE w.user_id = ? ORDER BY c.id DESC", userId).stream().map(this::view).toList();
     }
 
@@ -81,10 +82,22 @@ public class CardService {
         String s = upper(scheme), f = upper(form);
         if (!SCHEMES.contains(s)) throw new IllegalArgumentException("Choose VISA or ZimSwitch");
         if (!FORMS.contains(f)) throw new IllegalArgumentException("Choose a virtual or a physical card");
-        WalletService.Wallet w = (walletRef != null && !walletRef.isBlank() ? wallets.byRef(walletRef.trim()) : wallets.forUser(userId, upper(currency)))
-                .filter(x -> x.userId() == userId).orElseThrow(() -> new IllegalArgumentException("Open the wallet first"));
-        if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("This wallet is " + w.status().toLowerCase());
-        if ("ZIMSWITCH".equals(s) && !"ZWG".equals(w.currency())) throw new IllegalArgumentException("ZimSwitch cards are linked to a ZWG wallet");
+        // VISA: the USD wallet only. ZimSwitch (dual interface): the holder's USD and ZWG wallets together.
+        WalletService.Wallet w;
+        WalletService.Wallet second = null;
+        if ("VISA".equals(s)) {
+            w = wallets.forUser(userId, "USD").filter(x -> !"CLOSED".equals(x.status()))
+                    .orElseThrow(() -> new IllegalArgumentException("A VISA card is linked to your USD wallet. Open a USD wallet first."));
+            if (walletRef != null && !walletRef.isBlank() && !walletRef.trim().equalsIgnoreCase(w.ref()))
+                throw new IllegalArgumentException("A VISA card is linked to your USD wallet only");
+        } else {
+            Optional<WalletService.Wallet> usd = wallets.forUser(userId, "USD").filter(x -> !"CLOSED".equals(x.status()));
+            Optional<WalletService.Wallet> zwg = wallets.forUser(userId, "ZWG").filter(x -> !"CLOSED".equals(x.status()));
+            if (usd.isEmpty() && zwg.isEmpty()) throw new IllegalArgumentException("Open a USD or ZWG wallet first");
+            w = usd.orElseGet(zwg::get);
+            if (usd.isPresent() && zwg.isPresent()) second = zwg.get();
+        }
+        if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("Your " + w.currency() + " wallet is " + w.status().toLowerCase());
         String name = nameOnCard == null ? "" : nameOnCard.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z .'-]", "").replaceAll("\\s+", " ");
         if (name.length() > 26) name = name.substring(0, 26).trim();
         String nick = nickname == null || nickname.isBlank() ? null : nickname.trim();
@@ -92,23 +105,24 @@ public class CardService {
         if (name.isEmpty() || name.length() > 26 || !name.matches("[A-Z .'-]+")) throw new IllegalArgumentException("Enter the name for the card (letters only, up to 26)");
         String address = deliveryAddress == null ? null : deliveryAddress.trim();
         if ("PHYSICAL".equals(f) && (address == null || address.length() < 5)) throw new IllegalArgumentException("Enter the delivery address");
-        Integer open = jdbc.queryForObject("SELECT COUNT(*) FROM wallet_cards WHERE wallet_id = ? AND scheme = ? AND form = ? AND status IN ('REQUESTED','ACTIVE','FROZEN')",
-                Integer.class, w.id(), s, f);
-        if (open != null && open > 0) throw new IllegalStateException("You already have a " + f.toLowerCase() + " " + label(s) + " card on this wallet");
+        Integer open = jdbc.queryForObject("SELECT COUNT(*) FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id WHERE w.user_id = ? AND c.scheme = ? AND c.form = ? "
+                + "AND c.status IN ('REQUESTED','ACTIVE','FROZEN')", Integer.class, userId, s, f);
+        if (open != null && open > 0) throw new IllegalStateException("You already have a " + f.toLowerCase() + " " + label(s) + " card");
+        final Long secondId = second == null ? null : second.id();
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
         String ref = null;
         for (int i = 0; i < 10 && ref == null; i++) {
             String candidate = "C" + String.format("%011d", Math.floorMod(RANDOM.nextLong(), 100_000_000_000L));
             try {
-                jdbc.update("INSERT INTO wallet_cards (card_ref, wallet_id, scheme, form, status, name_on_card, nickname, delivery_address, created_by, created_at, updated_at) "
-                        + "VALUES (?,?,?,?, 'REQUESTED', ?,?,?,?,?,?)", candidate, w.id(), s, f, name, nick, "PHYSICAL".equals(f) ? address : null, by, now, now);
+                jdbc.update("INSERT INTO wallet_cards (card_ref, wallet_id, second_wallet_id, scheme, form, status, name_on_card, nickname, delivery_address, created_by, created_at, updated_at) "
+                        + "VALUES (?,?,?,?,?, 'REQUESTED', ?,?,?,?,?,?)", candidate, w.id(), secondId, s, f, name, nick, "PHYSICAL".equals(f) ? address : null, by, now, now);
                 ref = candidate;
             } catch (DuplicateKeyException e) {
                 // try another reference
             }
         }
         if (ref == null) throw new IllegalStateException("Please try again");
-        audit.record(by, "CARD_REQUESTED", "card:" + ref, s + " " + f + " on " + w.ref());
+        audit.record(by, "CARD_REQUESTED", "card:" + ref, s + " " + f + " on " + w.ref() + (second != null ? " and " + second.ref() : ""));
         CardIssuer issuer = issuer(s);
         if (issuer.connected()) {
             try {
@@ -203,7 +217,8 @@ public class CardService {
     }
 
     public List<Map<String, Object>> search(String q, String status, String scheme) {
-        StringBuilder sql = new StringBuilder("SELECT c.*, w.wallet_ref, w.currency, w.phone, u.full_name AS holder FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id "
+        StringBuilder sql = new StringBuilder("SELECT c.*, w.wallet_ref, w.currency, w2.wallet_ref AS wallet_ref2, w2.currency AS currency2, w.phone, u.full_name AS holder "
+                + "FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id LEFT JOIN wallets w2 ON w2.id = c.second_wallet_id "
                 + "LEFT JOIN users u ON u.id = w.user_id WHERE 1=1");
         List<Object> args = new ArrayList<>();
         if (status != null && !status.isBlank()) { sql.append(" AND c.status = ?"); args.add(upper(status)); }
@@ -218,7 +233,8 @@ public class CardService {
     }
 
     Map<String, Object> row(String ref) {
-        List<Map<String, Object>> r = jdbc.queryForList("SELECT c.*, w.wallet_ref, w.currency, w.user_id, w.phone FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id WHERE c.card_ref = ?",
+        List<Map<String, Object>> r = jdbc.queryForList("SELECT c.*, w.wallet_ref, w.currency, w.user_id, w.phone, w2.wallet_ref AS wallet_ref2, w2.currency AS currency2 "
+                + "FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id LEFT JOIN wallets w2 ON w2.id = c.second_wallet_id WHERE c.card_ref = ?",
                 ref == null ? "" : ref.trim());
         if (r.isEmpty()) throw new IllegalArgumentException("No such card");
         return r.get(0);
@@ -229,6 +245,11 @@ public class CardService {
         out.put("cardRef", c.get("card_ref"));
         out.put("walletRef", c.get("wallet_ref"));
         out.put("currency", c.get("currency"));
+        List<String> currencies = new ArrayList<>(List.of(String.valueOf(c.get("currency"))));
+        List<String> refs = new ArrayList<>(List.of(String.valueOf(c.get("wallet_ref"))));
+        if (c.get("currency2") != null) { currencies.add(String.valueOf(c.get("currency2"))); refs.add(String.valueOf(c.get("wallet_ref2"))); }
+        out.put("currencies", currencies);
+        out.put("walletRefs", refs);
         out.put("scheme", c.get("scheme"));
         out.put("form", c.get("form"));
         out.put("status", c.get("status"));
