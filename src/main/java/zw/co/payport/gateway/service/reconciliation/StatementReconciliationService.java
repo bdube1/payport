@@ -103,7 +103,7 @@ public class StatementReconciliationService {
             }
 
             unmatchedPayport.remove(match);
-            boolean amountsAgree = match.getAmountCents() != null && match.getAmountCents().longValue() == line.getAmountCents();
+            boolean amountsAgree = match.getAmountCents() != null && match.collectCents() == line.getAmountCents();
 
             if (amountsAgree) {
                 results.add(buildMatchRow(match, "MATCHED", confidence, line));
@@ -182,7 +182,7 @@ public class StatementReconciliationService {
     private Transaction findByFuzzyMatch(ProviderStatementLine line, List<Transaction> pool) {
         Transaction best = null;
         for (Transaction tx : pool) {
-            if (tx.getAmountCents() == null || tx.getAmountCents().longValue() != line.getAmountCents()) continue;
+            if (tx.getAmountCents() == null || tx.collectCents() != line.getAmountCents()) continue;
 
             boolean phoneOk = line.getPhone() == null
                     || phoneMatches(line.getPhone(), tx.getCustomerPhone())
@@ -229,7 +229,7 @@ public class StatementReconciliationService {
                 .transactionReference(tx != null ? tx.getReference() : null)
                 .providerReference(line.getCandidateReferences() != null && !line.getCandidateReferences().isEmpty() ? line.getCandidateReferences().get(0) : null)
                 .providerAmountCents(line.getAmountCents())
-                .payportAmountCents(tx != null ? tx.getAmountCents() : null)
+                .payportAmountCents(tx != null ? Long.valueOf(tx.collectCents()) : null)
                 .providerPhone(line.getPhone())
                 .providerTimestamp(line.getTimestamp())
                 .rawProviderRow(line.getRawRow())
@@ -242,7 +242,7 @@ public class StatementReconciliationService {
                 .matchType("PAYPORT_ONLY")
                 .matchConfidence("NONE")
                 .transactionReference(tx.getReference())
-                .payportAmountCents(tx.getAmountCents())
+                .payportAmountCents(Long.valueOf(tx.collectCents()))
                 .providerPhone(tx.getCustomerPhone())
                 .providerTimestamp(tx.getCreatedAt())
                 .rawProviderRow(null)

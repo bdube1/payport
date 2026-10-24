@@ -57,6 +57,11 @@ public class CardService {
 
     public Map<String, Object> request(long userId, String walletRef, String currency, String scheme, String form, String nameOnCard,
                                        String deliveryAddress, String by) {
+        return request(userId, walletRef, currency, scheme, form, nameOnCard, null, deliveryAddress, by);
+    }
+
+    public Map<String, Object> request(long userId, String walletRef, String currency, String scheme, String form, String nameOnCard,
+                                       String nickname, String deliveryAddress, String by) {
         String s = upper(scheme), f = upper(form);
         if (!SCHEMES.contains(s)) throw new IllegalArgumentException("Choose VISA or ZimSwitch");
         if (!FORMS.contains(f)) throw new IllegalArgumentException("Choose a virtual or a physical card");
@@ -64,7 +69,10 @@ public class CardService {
                 .filter(x -> x.userId() == userId).orElseThrow(() -> new IllegalArgumentException("Open the wallet first"));
         if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("This wallet is " + w.status().toLowerCase());
         if ("ZIMSWITCH".equals(s) && !"ZWG".equals(w.currency())) throw new IllegalArgumentException("ZimSwitch cards are linked to a ZWG wallet");
-        String name = nameOnCard == null ? "" : nameOnCard.trim().toUpperCase(Locale.ROOT);
+        String name = nameOnCard == null ? "" : nameOnCard.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z .'-]", "").replaceAll("\\s+", " ");
+        if (name.length() > 26) name = name.substring(0, 26).trim();
+        String nick = nickname == null || nickname.isBlank() ? null : nickname.trim();
+        if (nick != null && nick.length() > 40) throw new IllegalArgumentException("Keep the nickname to 40 characters");
         if (name.isEmpty() || name.length() > 26 || !name.matches("[A-Z .'-]+")) throw new IllegalArgumentException("Enter the name for the card (letters only, up to 26)");
         String address = deliveryAddress == null ? null : deliveryAddress.trim();
         if ("PHYSICAL".equals(f) && (address == null || address.length() < 5)) throw new IllegalArgumentException("Enter the delivery address");
@@ -76,8 +84,8 @@ public class CardService {
         for (int i = 0; i < 10 && ref == null; i++) {
             String candidate = "C" + String.format("%011d", Math.floorMod(RANDOM.nextLong(), 100_000_000_000L));
             try {
-                jdbc.update("INSERT INTO wallet_cards (card_ref, wallet_id, scheme, form, status, name_on_card, delivery_address, created_by, created_at, updated_at) "
-                        + "VALUES (?,?,?,?, 'REQUESTED', ?,?,?,?,?)", candidate, w.id(), s, f, name, "PHYSICAL".equals(f) ? address : null, by, now, now);
+                jdbc.update("INSERT INTO wallet_cards (card_ref, wallet_id, scheme, form, status, name_on_card, nickname, delivery_address, created_by, created_at, updated_at) "
+                        + "VALUES (?,?,?,?, 'REQUESTED', ?,?,?,?,?,?)", candidate, w.id(), s, f, name, nick, "PHYSICAL".equals(f) ? address : null, by, now, now);
                 ref = candidate;
             } catch (DuplicateKeyException e) {
                 // try another reference
@@ -102,11 +110,11 @@ public class CardService {
     public Map<String, Object> customerAction(long userId, String cardRef, String action, String by) {
         Map<String, Object> c = row(cardRef);
         if (((Number) c.get("user_id")).longValue() != userId) throw new IllegalArgumentException("No such card");
-        String a = upper(action);
+        String a = switch (upper(action)) { case "BLOCK" -> "FREEZE"; case "UNBLOCK" -> "UNFREEZE"; default -> upper(action); };
         String status = (String) c.get("status");
         String target = switch (a) {
-            case "FREEZE" -> { if (!"ACTIVE".equals(status)) throw new IllegalStateException("Only an active card can be frozen"); yield "FROZEN"; }
-            case "UNFREEZE" -> { if (!"FROZEN".equals(status)) throw new IllegalStateException("This card is not frozen"); yield "ACTIVE"; }
+            case "FREEZE" -> { if (!"ACTIVE".equals(status)) throw new IllegalStateException("Only an active card can be blocked"); yield "FROZEN"; }
+            case "UNFREEZE" -> { if (!"FROZEN".equals(status)) throw new IllegalStateException("This card is not blocked"); yield "ACTIVE"; }
             case "CANCEL" -> { if (!OPEN.contains(status)) throw new IllegalStateException("This card is already " + status.toLowerCase()); yield "CANCELLED"; }
             default -> throw new IllegalArgumentException("Choose freeze, unfreeze or cancel");
         };
@@ -145,6 +153,23 @@ public class CardService {
         Map<String, Object> c = row(cardRef);
         if (c.get("issuer_ref") != null) issuer((String) c.get("scheme")).fetch(c).ifPresent(i -> apply(cardRef, i));
         return view(row(cardRef));
+    }
+
+    /** The full number, expiry and CVV from the issuer, for the holder's own active card. */
+    public Map<String, Object> reveal(long userId, String cardRef) {
+        Map<String, Object> c = row(cardRef);
+        if (((Number) c.get("user_id")).longValue() != userId) throw new IllegalArgumentException("No such card");
+        if (c.get("issuer_ref") == null) throw new IllegalStateException("Card details are shown once the card is issued");
+        CardIssuer issuer = issuer((String) c.get("scheme"));
+        if (!issuer.connected()) throw new IllegalStateException("Card details are not available at the moment");
+        CardIssuer.Sensitive s = issuer.reveal(c);
+        audit.record("customer:" + c.get("phone"), "CARD_DETAILS_VIEWED", "card:" + cardRef, "");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("cardRef", cardRef);
+        out.put("pan", s.pan());
+        out.put("expiry", s.expiry());
+        out.put("cvv", s.cvv());
+        return out;
     }
 
     public Map<String, Object> refreshFor(long userId, String cardRef) {
@@ -195,6 +220,7 @@ public class CardService {
         out.put("last4", c.get("last4"));
         out.put("expiry", c.get("expiry"));
         out.put("nameOnCard", c.get("name_on_card"));
+        out.put("nickname", c.get("nickname"));
         out.put("deliveryAddress", c.get("delivery_address"));
         out.put("note", c.get("status_note"));
         out.put("issuerConnected", issuer((String) c.get("scheme")).connected());

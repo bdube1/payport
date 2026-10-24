@@ -270,6 +270,26 @@ class Phase8CompletionScenarioTest {
         long ruleId = rule.data().path("id").asLong();
         assertEquals(200, call("DELETE", "/api/v1/admin/rules/WALLET/" + ruleId, fin, null).status());
 
+        // A customer charge on a product: USD 1.00 airtime costs USD 1.10 on the mobile app (any payment method).
+        Res air = call("POST", "/api/v1/admin/rules/WALLET", fin, Map.of("product", "AIRTIME", "currency", "USD", "channel", "MOB", "chargeFlat", "0.10"));
+        assertEquals(200, air.status(), air.body().toString());
+        Res quote = call("GET", "/api/v1/charges/quote?product=AIRTIME_ECONET&currency=USD&amountCents=100&channel=MOB", null, null);
+        assertEquals(200, quote.status(), quote.body().toString());
+        assertEquals(110, quote.data().path("totalCents").asLong());
+        assertEquals(100, call("GET", "/api/v1/charges/quote?product=AIRTIME_ECONET&currency=USD&amountCents=100&channel=WEB", null, null).data().path("totalCents").asLong());
+        String airRef = ref("MOB");
+        Res started = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", airRef, "productTypeCode", "AIRTIME_ECONET",
+                "recipientIdentifier", "0771234567", "amountCents", 100, "currency", "USD", "customerPhone", dee.phone(), "channel", "MOB"));
+        assertEquals(201, started.status(), started.body().toString());
+        assertEquals(10, started.data().path("chargeCents").asLong());
+        assertEquals(110, started.data().path("totalCents").asLong());
+        long before = balance(dee, "USD");
+        Res paidAir = call("POST", "/api/v1/wallet/pay", dee.token(), Map.of("reference", airRef, "pin", PIN), mob);
+        assertEquals(200, paidAir.status(), paidAir.body().toString());
+        assertEquals(before - 110, balance(dee, "USD"), "face value + charge from the wallet");
+        assertEquals(100L, jdbc.queryForObject("SELECT amount_cents FROM transactions WHERE reference = ?", Long.class, airRef), "the face value is what is delivered");
+        assertEquals(200, call("DELETE", "/api/v1/admin/rules/WALLET/" + air.data().path("id").asLong(), fin, null).status());
+
         // Raw wallet report: filtered, with the charge and tax, exported to Excel and PDF.
         Res report = call("GET", "/api/v1/admin/wallets/report?q=" + deeRef + "&kind=P2P_OUT", fin, null);
         assertEquals(200, report.status(), report.body().toString());

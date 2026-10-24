@@ -137,7 +137,7 @@ public class CallbackInbox {
             }
             if (verifier.isAmountMismatch(tx, verified)) {
                 return new Outcome(Status.CONFLICT, "provider confirmed " + verified.amountCents() + " cents, expected "
-                        + tx.getAmountCents(), ref, claimed.getStatus());
+                        + tx.collectCents(), ref, claimed.getStatus());
             }
             toApply = verifier.toEvent(tx, verified, provider + " callback");
             if (toApply == null) {

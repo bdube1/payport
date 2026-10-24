@@ -140,7 +140,7 @@ public class PaymentReconciliationScheduler {
         if (verifier.isAmountMismatch(tx, v)) {
             checks.recordCheck(c.reference(), now, v.detail(), now);
             checks.close(c.reference(), PaymentCheckStore.Status.MANUAL,
-                    "AMOUNT MISMATCH: provider confirmed " + v.amountCents() + " cents, expected " + tx.getAmountCents(), now);
+                    "AMOUNT MISMATCH: provider confirmed " + v.amountCents() + " cents, expected " + tx.collectCents(), now);
             return Result.MANUAL;
         }
         PaymentProviderAdaptor.CallbackEvent event = verifier.toEvent(tx, v, "resolver");

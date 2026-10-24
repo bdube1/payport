@@ -57,7 +57,17 @@ public final class PostingTemplates {
 
     public record Settlement(long settlementId, long merchantId, String currency, long netCents, LocalDate on) {}
 
-    public record ConsumerPurchase(String reference, String currency, long amountCents, String rail, String vendor, LocalDate on) {}
+    public record ConsumerPurchase(String reference, String currency, long amountCents, String rail, String vendor, LocalDate on,
+                                   long chargeCents, long taxCents) {
+        public ConsumerPurchase(String reference, String currency, long amountCents, String rail, String vendor, LocalDate on) {
+            this(reference, currency, amountCents, rail, vendor, on, 0, 0);
+        }
+
+        /** What the customer paid: face value + charge + tax. */
+        public long collected() {
+            return amountCents + chargeCents + taxCents;
+        }
+    }
 
     // ── Merchant checkout ───────────────────────────────────────────────
 
@@ -121,11 +131,13 @@ public final class PostingTemplates {
 
     /** Payment confirmed: Dr PROVIDER_RECEIVABLE[rail] · Cr CUSTOMER_ORDER_OBLIGATION. */
     public static JournalRequest consumerPayment(String entity, ConsumerPurchase p) {
-        return base(entity, Book.LIVE, CONSUMER_PAYMENT, "transaction", p.reference(), p.on())
+        JournalRequest.Builder b = base(entity, Book.LIVE, CONSUMER_PAYMENT, "transaction", p.reference(), p.on())
                 .description("Consumer payment " + p.reference())
-                .debit(acct(entity, Book.LIVE, PROVIDER_RECEIVABLE, rail(p.rail()), p.currency()), p.amountCents(), "collected")
-                .credit(acct(entity, Book.LIVE, CUSTOMER_ORDER_OBLIGATION, ALL, p.currency()), p.amountCents(), "to deliver")
-                .build();
+                .debit(acct(entity, Book.LIVE, PROVIDER_RECEIVABLE, rail(p.rail()), p.currency()), p.collected(), "collected")
+                .credit(acct(entity, Book.LIVE, CUSTOMER_ORDER_OBLIGATION, ALL, p.currency()), p.amountCents(), "to deliver");
+        if (p.chargeCents() > 0) b.credit(acct(entity, Book.LIVE, FEE_REVENUE, "CUSTOMER", p.currency()), p.chargeCents(), "customer charge");
+        if (p.taxCents() > 0) b.credit(acct(entity, Book.LIVE, TAX_PAYABLE, "CUSTOMER", p.currency()), p.taxCents(), "tax on customer charge");
+        return b.build();
     }
 
     /**
@@ -145,19 +157,20 @@ public final class PostingTemplates {
 
     /** Not delivered, refund owed: Dr CUSTOMER_ORDER_OBLIGATION · Cr CUSTOMER_REFUND_PAYABLE. */
     public static JournalRequest consumerRefundDue(String entity, ConsumerPurchase p) {
-        return base(entity, Book.LIVE, CONSUMER_REFUND_DUE, "transaction", p.reference(), p.on())
+        JournalRequest.Builder b = base(entity, Book.LIVE, CONSUMER_REFUND_DUE, "transaction", p.reference(), p.on())
                 .description("Consumer purchase " + p.reference() + " to be refunded")
-                .debit(acct(entity, Book.LIVE, CUSTOMER_ORDER_OBLIGATION, ALL, p.currency()), p.amountCents(), "not delivered")
-                .credit(acct(entity, Book.LIVE, CUSTOMER_REFUND_PAYABLE, ALL, p.currency()), p.amountCents(), "refund owed")
-                .build();
+                .debit(acct(entity, Book.LIVE, CUSTOMER_ORDER_OBLIGATION, ALL, p.currency()), p.amountCents(), "not delivered");
+        if (p.chargeCents() > 0) b.debit(acct(entity, Book.LIVE, FEE_REVENUE, "CUSTOMER", p.currency()), p.chargeCents(), "charge returned");
+        if (p.taxCents() > 0) b.debit(acct(entity, Book.LIVE, TAX_PAYABLE, "CUSTOMER", p.currency()), p.taxCents(), "tax returned");
+        return b.credit(acct(entity, Book.LIVE, CUSTOMER_REFUND_PAYABLE, ALL, p.currency()), p.collected(), "refund owed").build();
     }
 
     /** Refund paid back through the rail: Dr CUSTOMER_REFUND_PAYABLE · Cr PROVIDER_RECEIVABLE[rail]. */
     public static JournalRequest consumerRefundPaid(String entity, ConsumerPurchase p) {
         return base(entity, Book.LIVE, CONSUMER_REFUND_PAID, "transaction", p.reference(), p.on())
                 .description("Consumer refund " + p.reference() + " paid")
-                .debit(acct(entity, Book.LIVE, CUSTOMER_REFUND_PAYABLE, ALL, p.currency()), p.amountCents(), "refund paid")
-                .credit(acct(entity, Book.LIVE, PROVIDER_RECEIVABLE, rail(p.rail()), p.currency()), p.amountCents(), "returned via rail")
+                .debit(acct(entity, Book.LIVE, CUSTOMER_REFUND_PAYABLE, ALL, p.currency()), p.collected(), "refund paid")
+                .credit(acct(entity, Book.LIVE, PROVIDER_RECEIVABLE, rail(p.rail()), p.currency()), p.collected(), "returned via rail")
                 .build();
     }
 

@@ -1135,6 +1135,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/charges/quote"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/checkout/{id}"
   },
   {
@@ -1580,6 +1584,10 @@
   {
    "method": "POST",
    "path": "/api/v1/wallet/cards/{ref}/refresh"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/reveal"
   },
   {
    "method": "POST",

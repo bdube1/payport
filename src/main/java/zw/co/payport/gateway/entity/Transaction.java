@@ -71,6 +71,25 @@ public class Transaction {
     @Column(nullable = false)
     private Long amountCents;              // $5.00 → 500L
 
+    /** The customer charge and tax collected on top of the face value (Limits & Charges). */
+    @Column(name = "charge_cents", nullable = false)
+    @Builder.Default
+    private Long chargeCents = 0L;
+
+    @Column(name = "tax_cents", nullable = false)
+    @Builder.Default
+    private Long taxCents = 0L;
+
+    void defaultCharges() {
+        if (chargeCents == null) chargeCents = 0L;
+        if (taxCents == null) taxCents = 0L;
+    }
+
+    /** What the customer pays: face value + charge + tax. */
+    public long collectCents() {
+        return (amountCents == null ? 0 : amountCents) + (chargeCents == null ? 0 : chargeCents) + (taxCents == null ? 0 : taxCents);
+    }
+
     @Column(nullable = false, length = 3, columnDefinition = "VARCHAR(3)")
     private String currency;
 
@@ -235,11 +254,13 @@ public class Transaction {
         if (currency == null)   currency   = "USD";
         if (retryCount == null) retryCount = 0;
         if (channel == null)    channel    = TransactionChannel.WEB;
+        defaultCharges();
     }
 
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+        defaultCharges();
     }
 
     // ── Helpers ───────────────────────────────────────────────────

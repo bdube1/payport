@@ -69,11 +69,8 @@ public class WalletPaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("You have no " + tx.getCurrency() + " wallet"));
         if ("WALLET".equalsIgnoreCase(tx.getProductType().getCategory())) throw new IllegalArgumentException("A wallet cannot be topped up from a wallet");
         if (tx.getCustomerPhone() != null && !samePhone(tx.getCustomerPhone(), phone)) throw new IllegalArgumentException("No such payment");
-        // Limits were checked when the payment was started; the wallet charge for the product is taken with it.
-        zw.co.payport.gateway.rules.PartyRules.Charge charge = wallets.quoteCharge(
-                java.util.List.of(tx.getProductType().getCode(), TransactionOrchestratorService.productGroup(tx.getProductType())),
-                tx.getCurrency(), tx.getChannel() == null ? "WEB" : tx.getChannel().name(), tx.getAmountCents());
-        wallets.authorizePayment(w, reference, tx.getAmountCents(), tx.getCurrency(), charge, "customer:" + phone);
+        // Limits and the customer charge were fixed when the payment was started; the wallet pays face value + charge + tax.
+        wallets.authorizePayment(w, reference, tx.collectCents(), tx.getCurrency(), zw.co.payport.gateway.rules.PartyRules.Charge.NONE, "customer:" + phone);
         PayTransactionRequest pay = new PayTransactionRequest();
         pay.setReference(reference);
         pay.setPaymentMethodCode(WalletService.RAIL);

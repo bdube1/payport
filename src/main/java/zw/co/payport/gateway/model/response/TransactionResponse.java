@@ -24,6 +24,9 @@ public class TransactionResponse {
     private String paymentMethodCode;
     private String recipientIdentifier;
     private Long amountCents;
+    private Long chargeCents;
+    private Long taxCents;
+    private Long totalCents;
     private String amountFormatted;
     private String currency;
     private String customerPhone;
@@ -94,6 +97,9 @@ public class TransactionResponse {
                 .productName(full.getProductName())
                 .paymentMethodCode(full.getPaymentMethodCode())
                 .amountCents(full.getAmountCents())
+                .chargeCents(full.getChargeCents())
+                .taxCents(full.getTaxCents())
+                .totalCents(full.getTotalCents())
                 .amountFormatted(full.getAmountFormatted())
                 .currency(full.getCurrency())
                 .failureReason(full.getFailureReason())
@@ -118,6 +124,9 @@ public class TransactionResponse {
                 .paymentMethodCode(tx.getPaymentMethod() != null ? tx.getPaymentMethod().getCode() : null)
                 .recipientIdentifier(tx.getRecipientIdentifier())
                 .amountCents(tx.getAmountCents())
+                .chargeCents(tx.getChargeCents() == null ? 0L : tx.getChargeCents())
+                .taxCents(tx.getTaxCents() == null ? 0L : tx.getTaxCents())
+                .totalCents(tx.collectCents())
                 .amountFormatted(tx.getAmountFormatted())
                 .currency(tx.getCurrency())
                 .customerPhone(tx.getCustomerPhone())
