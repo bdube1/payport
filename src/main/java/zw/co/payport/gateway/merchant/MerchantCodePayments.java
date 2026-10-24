@@ -28,6 +28,9 @@ public class MerchantCodePayments {
     private final MerchantRepository merchants;
     private final CheckoutSessionService checkout;
     private final CheckoutSessionRepository sessions;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private zw.co.payport.gateway.agents.AgentService agents;
 
     public MerchantCodePayments(PartyCodes codes, MerchantRepository merchants, CheckoutSessionService checkout, CheckoutSessionRepository sessions) {
         this.codes = codes;
@@ -45,10 +48,13 @@ public class MerchantCodePayments {
 
     public Map<String, Object> lookup(String code) {
         Merchant m = merchant(code);
+        String digits = code.replaceAll("[^0-9]", "");
+        Map<String, Object> c = codes.row(digits).orElse(Map.of());
+        boolean branch = c.get("label") != null && !Boolean.TRUE.equals(c.get("is_primary"));
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("code", m.getMerchantCode());
-        out.put("name", m.getBusinessName());
-        out.put("address", m.getAddress());
+        out.put("code", digits);
+        out.put("name", branch ? m.getBusinessName() + " – " + c.get("label") : m.getBusinessName());
+        out.put("address", c.get("address") != null ? c.get("address") : m.getAddress());
         out.put("currencies", checkoutCurrencies(m));
         return out;
     }
@@ -71,10 +77,29 @@ public class MerchantCodePayments {
             throw new IllegalArgumentException(m.getBusinessName() + " does not take payments in " + ccy + " yet");
         }
         s.setChannel(PartyRules.channel(channel));
+        s.setPartyCode(code.replaceAll("[^0-9]", ""));
         return sessions.save(s);
     }
 
+    /** What a scanned PayPort QR (or a typed code) points to: merchant or agent, its code and name. */
+    public Map<String, Object> scanned(String payload) {
+        Map<String, Object> c = codes.fromQr(payload).orElseThrow(() -> new IllegalArgumentException("This QR code is not valid. Ask for the current PayPort QR or enter the code."));
+        String code = (String) c.get("code");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", c.get("party_type"));
+        out.put("code", code);
+        if (PartyCodes.MERCHANT.equals(c.get("party_type"))) out.putAll(lookup(code));
+        else out.putAll(agents.lookup(code));
+        out.put("type", c.get("party_type"));
+        return out;
+    }
+
     // ─── public routes ───────────────────────────────────────────────────────
+
+    @GetMapping("/api/v1/codes/scan")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> scanRoute(@RequestParam String payload, HttpServletRequest req) {
+        return Web.run(() -> scanned(payload), req);
+    }
 
     @GetMapping("/api/v1/merchants/by-code/{code}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> lookupRoute(@PathVariable String code, HttpServletRequest req) {

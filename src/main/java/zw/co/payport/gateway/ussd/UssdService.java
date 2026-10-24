@@ -418,8 +418,8 @@ public class UssdService {
             if (!in.has()) return "CON Enter your " + methodName(method) + " number:";
             payer = "+" + phone(in.next(), c.market());
         }
-        String fee = WalletService.RAIL.equals(method) ? chargeNote(List.of("MERCHANT_PAYMENT"), ccy, amount) : "";
-        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(amount) + fee + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
+        long due = WalletService.RAIL.equals(method) ? withCharge(List.of("MERCHANT_PAYMENT"), ccy, amount) : amount;
+        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(due) + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());
         final String from = payer;
@@ -441,10 +441,14 @@ public class UssdService {
         });
     }
 
-    /** " + charge CCY x.xx" when a wallet charge applies, for the confirmation screen. */
-    private String chargeNote(List<String> products, String ccy, long amount) {
-        var ch = wallets.quoteCharge(products, ccy, "USD", amount);
-        return ch.total() > 0 ? " + charge " + ccy + " " + major(ch.total()) : "";
+    /** What the customer pays for a wallet operation (the charge is never shown on its own). */
+    private String totalNote(List<String> products, String ccy, long amount) {
+        long total = withCharge(products, ccy, amount);
+        return total == amount ? "" : ". Total " + ccy + " " + major(total);
+    }
+
+    private long withCharge(List<String> products, String ccy, long amount) {
+        return amount + wallets.quoteCharge(products, ccy, "USD", amount).total();
     }
 
     // ─── wallet services ─────────────────────────────────────────────────────
@@ -458,7 +462,7 @@ public class UssdService {
         WalletService.Wallet w = pick(mine, in.next());
         if (!in.has()) return "CON Amount (" + w.currency() + "):";
         long amount = minor(in.next());
-        if (!in.has()) return "CON Send " + w.currency() + " " + major(amount) + chargeNote(List.of("P2P_TRANSFER"), w.currency(), amount) + " to " + to + "?\n1. Confirm\n2. Cancel";
+        if (!in.has()) return "CON Send " + w.currency() + " " + major(amount) + " to " + to + totalNote(List.of("P2P_TRANSFER"), w.currency(), amount) + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled. No money was sent.";
         final String recipient = to;
         return once(c, () -> {
@@ -498,7 +502,7 @@ public class UssdService {
         WalletService.Wallet w = pick(mine, in.next());
         if (!in.has()) return "CON Amount (" + w.currency() + "):";
         long amount = minor(in.next());
-        if (!in.has()) return "CON Cash out " + w.currency() + " " + major(amount) + chargeNote(List.of("CASH_OUT"), w.currency(), amount) + " at " + name + "?\n1. Confirm\n2. Cancel";
+        if (!in.has()) return "CON Cash out " + w.currency() + " " + major(amount) + " at " + name + totalNote(List.of("CASH_OUT"), w.currency(), amount) + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled.";
         return once(c, () -> {
             try {
@@ -560,8 +564,9 @@ public class UssdService {
         }
         if (!in.has()) {
             var ch = chargeQuotes == null ? zw.co.payport.gateway.rules.PartyRules.Charge.NONE : chargeQuotes.quote(product, ccy, amount, c.channel());
-            String fee = ch.total() > 0 ? " + charge " + ccy + " " + major(ch.total()) + " = " + ccy + " " + major(amount + ch.total()) : "";
-            return "CON " + summary + fee + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
+            // The customer sees only what they pay: the total replaces the face value in the summary.
+            String shown = ch.total() > 0 ? summary.replace(ccy + " " + major(amount), ccy + " " + major(amount + ch.total())) : summary;
+            return "CON " + shown + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
         }
         if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());

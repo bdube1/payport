@@ -355,8 +355,11 @@ public class TransactionOrchestratorService {
         Transaction tx = lockTransaction(dto.getReference());
         assertTransition(tx, TransactionStatus.PAYMENT_PENDING);
 
-        PaymentMethod paymentMethod = paymentMethodRepository
-                .findByCodeAndIsActiveTrue(dto.getPaymentMethodCode())
+        // The PayPort wallet is always offered to its holders (it is governed by the wallet service line and the
+        // holder's PIN confirmation), whatever the payment-method switch says.
+        PaymentMethod paymentMethod = ("WALLET".equalsIgnoreCase(dto.getPaymentMethodCode())
+                ? paymentMethodRepository.findByCode("WALLET")
+                : paymentMethodRepository.findByCodeAndIsActiveTrue(dto.getPaymentMethodCode()))
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Payment method not found or inactive: " + dto.getPaymentMethodCode()));
         String providerCode = paymentMethod.getCode().toUpperCase();
