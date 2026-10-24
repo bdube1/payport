@@ -787,6 +787,22 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/rules/{party}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/rules/{party}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/rules/{party}/options"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/rules/{party}/{id}"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/service-lines"
   },
   {
@@ -944,10 +960,6 @@
   {
    "method": "POST",
    "path": "/api/v1/agent/cash-in"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/agent/cash-out"
   },
   {
    "method": "POST",
@@ -1394,6 +1406,14 @@
    "path": "/api/v1/merchant/webhooks/{id}/test"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/merchants/by-code/{code}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchants/by-code/{code}/payments"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/omari/admin/auth"
   },
@@ -1523,11 +1543,15 @@
   },
   {
    "method": "GET",
-   "path": "/api/v1/wallet/cash-out-codes"
+   "path": "/api/v1/wallet/agents/{code}"
   },
   {
    "method": "POST",
-   "path": "/api/v1/wallet/cash-out-codes"
+   "path": "/api/v1/wallet/cash-out"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/charges"
   },
   {
    "method": "POST",
@@ -1536,6 +1560,10 @@
   {
    "method": "POST",
    "path": "/api/v1/wallet/fx/quotes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/merchants/{code}"
   },
   {
    "method": "POST",
@@ -1548,6 +1576,10 @@
   {
    "method": "POST",
    "path": "/api/v1/wallet/pay-checkout"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay-merchant"
   },
   {
    "method": "POST",

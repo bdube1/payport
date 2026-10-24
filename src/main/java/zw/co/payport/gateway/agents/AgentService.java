@@ -18,6 +18,8 @@ import zw.co.payport.gateway.risk.ComplianceAudit;
 import zw.co.payport.gateway.risk.ComplianceParameters;
 import zw.co.payport.gateway.wallets.PinVerifier;
 import zw.co.payport.gateway.wallets.WalletService;
+import zw.co.payport.gateway.platform.PartyCodes;
+import zw.co.payport.gateway.rules.PartyRules;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -83,6 +85,12 @@ public class AgentService {
         this.tx = new TransactionTemplate(tm);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private PartyCodes codes;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PartyRules rules;
+
     private void requireOn() {
         lines.require(LINE, "The agent network");
         channels.require("AGENT");
@@ -101,6 +109,7 @@ public class AgentService {
         } catch (org.springframework.dao.DuplicateKeyException e) {
             throw new IllegalStateException("An agent with this phone number already exists");
         }
+        codes.allocate(PartyCodes.AGENT, ((Number) byCode(code).orElseThrow().get("id")).longValue());
         audit.record(by, "AGENT_APPLIED", "agent:" + code, f.name);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("applicationReference", ref);
@@ -200,6 +209,7 @@ public class AgentService {
         } catch (org.springframework.dao.DuplicateKeyException e) {
             throw new IllegalStateException("An agent with this phone number already exists");
         }
+        codes.allocate(PartyCodes.AGENT, ((Number) byCode(code).orElseThrow().get("id")).longValue());
         audit.record(by, "AGENT_ONBOARDED", "agent:" + code, f.name);
         return view(byCode(code).orElseThrow());
     }
@@ -246,9 +256,9 @@ public class AgentService {
                 + "FROM agent_transactions WHERE created_at >= ? GROUP BY kind, currency ORDER BY kind, currency", today));
         out.put("last30Days", jdbc.queryForList("SELECT kind, currency, COUNT(*) AS count, SUM(amount_minor) AS amount_minor, SUM(commission_minor) AS commission_minor "
                 + "FROM agent_transactions WHERE created_at >= ? GROUP BY kind, currency ORDER BY kind, currency", month));
-        out.put("topAgents", jdbc.queryForList("SELECT a.id, a.agent_code, a.name, a.location, t.currency, COUNT(*) AS count, SUM(t.amount_minor) AS amount_minor, "
+        out.put("topAgents", jdbc.queryForList("SELECT a.id, a.code, a.agent_code, a.name, a.location, t.currency, COUNT(*) AS count, SUM(t.amount_minor) AS amount_minor, "
                 + "SUM(t.commission_minor) AS commission_minor FROM agent_transactions t JOIN agents a ON a.id = t.agent_id WHERE t.created_at >= ? "
-                + "GROUP BY a.id, a.agent_code, a.name, a.location, t.currency ORDER BY amount_minor DESC LIMIT 10", month));
+                + "GROUP BY a.id, a.code, a.agent_code, a.name, a.location, t.currency ORDER BY amount_minor DESC LIMIT 10", month));
         out.put("pendingApplications", jdbc.queryForObject("SELECT COUNT(*) FROM agents WHERE status = 'PENDING'", Integer.class));
         out.put("pendingDeposits", jdbc.queryForObject("SELECT COUNT(*) FROM agent_float_deposits WHERE status = 'PENDING'", Integer.class));
         return out;
@@ -316,7 +326,7 @@ public class AgentService {
     }
 
     public List<Map<String, Object>> deposits(Long agentId, String status) {
-        StringBuilder sql = new StringBuilder("SELECT d.*, a.agent_code, a.name FROM agent_float_deposits d JOIN agents a ON a.id = d.agent_id WHERE 1=1");
+        StringBuilder sql = new StringBuilder("SELECT d.*, a.code, a.agent_code, a.name FROM agent_float_deposits d JOIN agents a ON a.id = d.agent_id WHERE 1=1");
         List<Object> args = new java.util.ArrayList<>();
         if (agentId != null) { sql.append(" AND d.agent_id = ?"); args.add(agentId); }
         if (status != null && !status.isBlank()) { sql.append(" AND d.status = ?"); args.add(status.toUpperCase(Locale.ROOT)); }
@@ -367,6 +377,11 @@ public class AgentService {
     // ─── cash-in / cash-out ─────────────────────────────────────────────────
 
     public Map<String, Object> cashIn(long agentId, String customer, String currency, long amount, String clientRef, String by) {
+        return cashIn(agentId, customer, currency, amount, clientRef, by, "AGENT");
+    }
+
+    /** Cash-in: the customer gives the agent cash and the agent sends the same value from its float to the customer's wallet. */
+    public Map<String, Object> cashIn(long agentId, String customer, String currency, long amount, String clientRef, String by, String channel) {
         requireOn();
         wallets.requireOn();
         Map<String, Object> a = activeAgent(agentId);
@@ -376,108 +391,121 @@ public class AgentService {
                 .orElseThrow(() -> new IllegalArgumentException("No PayPort " + ccy + " wallet for " + customer));
         String code = (String) a.get("agent_code");
         String opRef = "CASHIN:" + code + ":" + (clientRef == null || clientRef.isBlank() ? token() : clientRef.trim());
+        boolean replay = isDone(opRef);
+        PartyRules.Charge agentCharge = replay ? PartyRules.Charge.NONE : agentCheck(agentId, "CASH_IN", ccy, channel, amount);
         long commission = commission(a, "CASH_IN", amount);
         JournalRequest.Builder b = wallets.journal(opRef, w.entity(), "AGENT_CASH_IN", "Cash-in at " + code + " to " + w.ref(), "agent_transaction", opRef, by)
-                .debit(floatAccount(w.entity(), code, ccy), amount, "e-value sent")
+                .debit(floatAccount(w.entity(), code, ccy), amount + agentCharge.total(), "e-value sent")
                 .credit(w.account(), amount, "cash-in");
+        withAgentCharge(b, w.entity(), ccy, agentCharge);
         if (commission > 0) b.debit(commissionAccount(w.entity(), ccy), commission, "agent commission").credit(floatAccount(w.entity(), code, ccy), commission, "commission");
-        wallets.prepareAccounts(floatAccount(w.entity(), code, ccy), commissionAccount(w.entity(), ccy), w.account());
+        wallets.prepareAccounts(floatAccount(w.entity(), code, ccy), commissionAccount(w.entity(), ccy), w.account(),
+                agentFeeAccount(w.entity(), ccy), agentTaxAccount(w.entity(), ccy));
         Map<String, Object> done = tx.execute(s -> {
-            String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_IN", "CR", amount, code, opRef)), by,
+            String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_IN", "CR", amount, agentLabel(a), opRef)), by,
                     "Not enough agent float. Buy more float first.");
             record(opRef, a, "CASH_IN", w, amount, ccy, commission, entry, by);
             return result(opRef, a, w, amount, ccy, commission, entry);
         });
+        if (!replay && rules != null) rules.record("AGENT", String.valueOf(agentId), "CASH_IN", ccy, channel, amount, agentCharge, opRef);
+        done.put("agentChargeMinor", agentCharge.total());
         return withFloat(done, a);
     }
 
-    public Map<String, Object> issueCashOutCode(String phone, String pin, String currency, long amount) {
-        requireOn();
-        wallets.requireOn();
-        return issueCashOutCodeFor(pins.verify(phone, pin), currency, amount);
+    /** What a customer is shown before cashing out: the agent behind a six-digit agent code (active agents only). */
+    public Map<String, Object> lookup(String agentCode) {
+        long id = codes.resolve(PartyCodes.AGENT, agentCode).orElseThrow(() -> new IllegalArgumentException("No agent with code " + agentCode));
+        Map<String, Object> a = get(id);
+        if (!"ACTIVE".equals(a.get("status"))) throw new IllegalStateException("This agent cannot serve customers at the moment");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("code", a.get("code"));
+        out.put("name", a.get("name"));
+        out.put("location", a.get("location"));
+        return out;
     }
 
-    /** For a holder whose PIN was already checked in this session (USSD wallet login). */
-    public Map<String, Object> issueCashOutCodeFor(zw.co.payport.gateway.entity.User user, String currency, long amount) {
+    /**
+     * Cash-out at an agent, started by the customer: the customer types the agent's six-digit code and the
+     * amount, sees the agent's name, and confirms with the wallet PIN (checked by the caller). The value moves
+     * at once from the customer's wallet to the agent's float; the agent then pays out the cash.
+     */
+    public Map<String, Object> customerCashOut(zw.co.payport.gateway.entity.User holder, String agentCode, String currency, long amount, String clientRef, String channel) {
         requireOn();
         wallets.requireOn();
-        String ccy = currency == null ? "" : currency.toUpperCase(Locale.ROOT);
-        WalletService.Wallet w = wallets.forUser(user.getId(), ccy).orElseThrow(() -> new IllegalArgumentException("You have no " + ccy + " wallet"));
-        if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("Your wallet is " + w.status());
+        long agentId = codes.resolve(PartyCodes.AGENT, agentCode).orElseThrow(() -> new IllegalArgumentException("No agent with code " + agentCode));
+        Map<String, Object> a = activeAgent(agentId);
         if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
-        if (wallets.balance(w) < amount) throw new zw.co.payport.gateway.platform.Web.InsufficientFundsException("Not enough money in your wallet");
-        int ttl = (int) params.number("WALLET.CASH_OUT_CODE_TTL_MINUTES");
-        for (int attempt = 0; attempt < 5; attempt++) {
-            String code = digits(8);
-            try {
-                LocalDateTime exp = LocalDateTime.now().plusMinutes(ttl);
-                jdbc.update("INSERT INTO cash_out_codes (code_hash, wallet_id, amount_minor, currency, expires_at, created_at) VALUES (?,?,?,?,?,?)",
-                        hash(w.phone(), code), w.id(), amount, ccy, Timestamp.valueOf(exp), now());
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("code", code);
-                out.put("amountMinor", amount);
-                out.put("currency", ccy);
-                out.put("expiresAt", exp.toString());
-                out.put("note", "Give this code and your phone number to a PayPort agent. It works once.");
-                return out;
-            } catch (org.springframework.dao.DuplicateKeyException e) {
-                // astronomically unlikely; try another code
-            }
+        String ccy = currency(currency, (String) a.get("country"));
+        WalletService.Wallet w = wallets.forUser(holder.getId(), ccy).orElseThrow(() -> new IllegalArgumentException("You have no " + ccy + " wallet"));
+        if (!"ACTIVE".equals(w.status())) throw new IllegalStateException("Your wallet is " + w.status());
+        String code = (String) a.get("agent_code");
+        String opRef = "CASHOUT:" + holder.getId() + ":" + (clientRef == null || clientRef.isBlank() ? token() : clientRef.trim());
+        boolean replay = isDone(opRef);
+        PartyRules.Charge customerCharge = replay ? PartyRules.Charge.NONE : wallets.walletCharge(holder.getId(), "CASH_OUT", ccy, channel, amount);
+        PartyRules.Charge agentCharge = replay ? PartyRules.Charge.NONE : agentCheck(agentId, "CASH_OUT", ccy, channel, amount);
+        long commission = commission(a, "CASH_OUT", amount);
+        JournalRequest.Builder b = wallets.journal(opRef, w.entity(), "AGENT_CASH_OUT", "Cash-out at " + code + " from " + w.ref(), "agent_transaction", opRef,
+                        "customer:" + holder.getPhone())
+                .debit(w.account(), amount + customerCharge.total(), "cash-out")
+                .credit(floatAccount(w.entity(), code, ccy), amount, "e-value received");
+        WalletService.withCharge(b, w.entity(), ccy, customerCharge);
+        if (agentCharge.total() > 0) {
+            b.debit(floatAccount(w.entity(), code, ccy), agentCharge.total(), "agent charge");
+            withAgentCharge(b, w.entity(), ccy, agentCharge);
         }
-        throw new IllegalStateException("Could not create a code, please try again");
-    }
-
-    public List<Map<String, Object>> cashOutCodes(String phone) {
-        return jdbc.queryForList("SELECT c.id, c.amount_minor, c.currency, IF(c.status = 'ISSUED' AND c.expires_at < NOW(6), 'EXPIRED', c.status) AS status, "
-                + "c.expires_at, c.created_at, c.redeemed_at FROM cash_out_codes c JOIN wallets w ON w.id = c.wallet_id WHERE w.phone = ? ORDER BY c.id DESC LIMIT 50", phone);
-    }
-
-    public Map<String, Object> cashOut(long agentIdArg, String customerPhone, String code, String by) {
-        requireOn();
-        wallets.requireOn();
-        Map<String, Object> a = activeAgent(agentIdArg);
-        long agentId = ((Number) a.get("id")).longValue();
-        int max = (int) params.number("AGENT.MAX_CASH_OUT_FAILURES_PER_HOUR");
-        Integer failures = jdbc.queryForObject("SELECT COUNT(*) FROM cash_out_attempts WHERE agent_id = ? AND success = FALSE AND at > ?",
-                Integer.class, agentId, Timestamp.valueOf(LocalDateTime.now().minusHours(1)));
-        if (failures != null && failures >= max) throw new SecurityException("Too many wrong cash-out codes. Try again later or contact PayPort.");
-        String phone = "+" + (customerPhone == null ? "" : customerPhone.replaceAll("[^0-9]", ""));
-        String h = hash(phone, code == null ? "" : code.trim());
-        // Open the accounts before the code row is locked (see WalletService.apply).
-        jdbc.queryForList("SELECT wallet_id, currency FROM cash_out_codes WHERE code_hash = ?", h).stream().findFirst().ifPresent(pre -> {
-            WalletService.Wallet w0 = wallets.get(((Number) pre.get("wallet_id")).longValue());
-            String c0 = (String) pre.get("currency");
-            wallets.prepareAccounts(w0.account(), floatAccount(w0.entity(), (String) a.get("agent_code"), c0), commissionAccount(w0.entity(), c0));
-        });
-        Map<String, Object> result = tx.execute(s -> {
-            List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM cash_out_codes WHERE code_hash = ? FOR UPDATE", h);
-            if (rows.isEmpty() || !"ISSUED".equals(rows.get(0).get("status"))) return null;
-            Map<String, Object> c = rows.get(0);
-            if (WalletService.ldt(c.get("expires_at")).isBefore(LocalDateTime.now())) {
-                jdbc.update("UPDATE cash_out_codes SET status = 'EXPIRED' WHERE id = ?", c.get("id"));
-                return Map.<String, Object>of("expired", true);
-            }
-            WalletService.Wallet w = wallets.get(((Number) c.get("wallet_id")).longValue());
-            String ccy = (String) c.get("currency");
-            if (!markets.requireForCurrency(ccy).country().equals(a.get("country"))) throw new IllegalArgumentException("This code is for another country");
-            long amount = ((Number) c.get("amount_minor")).longValue();
-            String agentCode = (String) a.get("agent_code");
-            String opRef = "CASHOUT:" + c.get("id");
-            long commission = commission(a, "CASH_OUT", amount);
-            JournalRequest.Builder b = wallets.journal(opRef, w.entity(), "AGENT_CASH_OUT", "Cash-out at " + agentCode + " from " + w.ref(), "agent_transaction", opRef, by)
-                    .debit(w.account(), amount, "cash-out")
-                    .credit(floatAccount(w.entity(), agentCode, ccy), amount, "e-value received");
-            if (commission > 0) b.debit(commissionAccount(w.entity(), ccy), commission, "agent commission").credit(floatAccount(w.entity(), agentCode, ccy), commission, "commission");
-            String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_OUT", "DR", amount, agentCode, opRef)), by,
-                    "The customer's wallet no longer has enough money for this code");
-            jdbc.update("UPDATE cash_out_codes SET status = 'REDEEMED', redeemed_by_agent = ?, redeemed_at = ? WHERE id = ?", agentId, now(), c.get("id"));
+        if (commission > 0) b.debit(commissionAccount(w.entity(), ccy), commission, "agent commission").credit(floatAccount(w.entity(), code, ccy), commission, "commission");
+        wallets.prepareAccounts(w.account(), floatAccount(w.entity(), code, ccy), commissionAccount(w.entity(), ccy), WalletService.feeAccount(w.entity(), ccy),
+                WalletService.taxAccount(w.entity(), ccy), agentFeeAccount(w.entity(), ccy), agentTaxAccount(w.entity(), ccy));
+        String by = "customer:" + holder.getPhone();
+        Map<String, Object> done = tx.execute(s -> {
+            String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_OUT", "DR", amount + customerCharge.total(), agentLabel(a), opRef)), by,
+                    "Not enough money in your wallet");
             record(opRef, a, "CASH_OUT", w, amount, ccy, commission, entry, by);
             return result(opRef, a, w, amount, ccy, commission, entry);
         });
-        jdbc.update("INSERT INTO cash_out_attempts (agent_id, success, at) VALUES (?,?,?)", agentId, result != null && !result.containsKey("expired"), now());
-        if (result == null) throw new IllegalArgumentException("Wrong code or phone number, or the code was already used");
-        if (result.containsKey("expired")) throw new IllegalStateException("This code has expired. Ask the customer for a new one.");
-        return withFloat(result, a);
+        if (!replay) {
+            wallets.recordUsage(holder.getId(), "CASH_OUT", ccy, channel, amount, customerCharge, opRef);
+            if (rules != null) rules.record("AGENT", String.valueOf(agentId), "CASH_OUT", ccy, channel, amount, agentCharge, opRef);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("opRef", opRef);
+        out.put("agentCode", a.get("code"));
+        out.put("agentName", a.get("name"));
+        out.put("agentLocation", a.get("location"));
+        out.put("amountMinor", amount);
+        out.put("currency", ccy);
+        out.put("chargeMinor", customerCharge.charge());
+        out.put("taxMinor", customerCharge.tax());
+        out.put("balanceMinor", wallets.balance(w));
+        out.put("entryRef", done.get("entryRef"));
+        return out;
+    }
+
+    private boolean isDone(String opRef) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM agent_transactions WHERE op_ref = ?", Integer.class, opRef);
+        return n != null && n > 0;
+    }
+
+    private PartyRules.Charge agentCheck(long agentId, String product, String ccy, String channel, long amount) {
+        if (rules == null) return PartyRules.Charge.NONE;
+        return rules.check("AGENT", List.of(product), ccy, channel, amount, rules.recorded("AGENT", String.valueOf(agentId), ccy));
+    }
+
+    private static void withAgentCharge(JournalRequest.Builder b, String entity, String ccy, PartyRules.Charge c) {
+        if (c.charge() > 0) b.credit(agentFeeAccount(entity, ccy), c.charge(), "agent charge");
+        if (c.tax() > 0) b.credit(agentTaxAccount(entity, ccy), c.tax(), "tax on agent charge");
+    }
+
+    static AccountKey agentFeeAccount(String entity, String ccy) {
+        return AccountKey.of(entity, Book.LIVE, LedgerCategory.FEE_REVENUE, "AGENTS", ccy);
+    }
+
+    static AccountKey agentTaxAccount(String entity, String ccy) {
+        return AccountKey.of(entity, Book.LIVE, LedgerCategory.TAX_PAYABLE, "AGENTS", ccy);
+    }
+
+    private static String agentLabel(Map<String, Object> a) {
+        return a.get("code") + " " + a.get("name");
     }
 
     public List<Map<String, Object>> transactions(long agentId) {

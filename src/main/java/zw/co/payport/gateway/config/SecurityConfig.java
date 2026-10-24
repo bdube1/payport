@@ -104,6 +104,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/ussd/econet", "/api/v1/ussd/netone", "/api/v1/ussd/telecel").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/fx/quote").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/markets").permitAll()
+                        // Pay a merchant by its six-digit code (guests too): look up the name, open a session
+                        .requestMatchers(HttpMethod.GET, "/api/v1/merchants/by-code/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/by-code/*/payments").permitAll()
                         // Phase 8: POS terminals sign every request (HMAC + nonce, PosService); WhatsApp Cloud API
                         // webhook (X-Hub-Signature-256, WhatsAppService). No user login on either.
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales").permitAll()

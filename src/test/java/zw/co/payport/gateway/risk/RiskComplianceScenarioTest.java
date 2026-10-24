@@ -226,7 +226,7 @@ class RiskComplianceScenarioTest {
         int n = SEQ.incrementAndGet();
         Res signup = call("POST", "/api/v1/merchant-portal/signup", null, Map.of("businessName", "Acme Smuggling (Private) Limited",
                 "registrationNumber", "REG-ACME-9", "businessCategory", "RETAIL", "contactEmail", "acme" + n + "@example.test",
-                "contactPhone", "+263772" + String.format("%06d", n % 1_000_000), "ownerFullName", "Peter Banda", "password", "Str0ng!Pass"));
+                "contactPhone", "+263772" + String.format("%06d", n % 1_000_000), "address", "12 Samora Machel Ave, Harare", "ownerFullName", "Peter Banda", "password", "Str0ng!Pass"));
         assertEquals(201, signup.status(), signup.body().toString());
         long merchantId = signup.data().path("id").asLong();
         assertNotNull(openCase("MERCHANT:" + merchantId), "screened at signup");
@@ -469,7 +469,7 @@ class RiskComplianceScenarioTest {
         int n = SEQ.incrementAndGet();
         Res signup = call("POST", "/api/v1/merchant-portal/signup", null, Map.of("businessName", "Clean Traders " + n, "registrationNumber", "REG-CLEAN-" + n,
                 "businessCategory", "RETAIL", "contactEmail", "clean" + n + "@example.test", "contactPhone", "+263773" + String.format("%06d", n % 1_000_000),
-                "ownerFullName", "Mary Clean", "password", "Str0ng!Pass"));
+                "address", "12 Samora Machel Ave, Harare", "ownerFullName", "Mary Clean", "password", "Str0ng!Pass"));
         long merchantId = signup.data().path("id").asLong();
         Map<String, Boolean> checklist = new java.util.LinkedHashMap<>();
         for (String item : zw.co.payport.gateway.merchant.MerchantPlatformService.KYB_CHECKLIST) checklist.put(item, true);

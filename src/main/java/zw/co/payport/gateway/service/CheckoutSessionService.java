@@ -114,6 +114,12 @@ public class CheckoutSessionService {
      * sessions, payment links (creation and every visit), dashboard checkouts and the hosted
      * page's pay step (an enablement can be withdrawn after a session was created).
      */
+    /** Currencies the merchant can take live money in now (enabled for it, and live on the platform). */
+    public java.util.List<String> liveCurrenciesFor(Long merchantId) {
+        return jdbc.queryForList("SELECT currency FROM merchant_enablements WHERE merchant_id = ? AND status = 'ENABLED' ORDER BY currency", String.class, merchantId)
+                .stream().filter(markets::liveCurrency).distinct().toList();
+    }
+
     public boolean isSupportedCurrency(String currency) {
         return markets.supportedCurrency(currency);
     }
@@ -315,6 +321,11 @@ public class CheckoutSessionService {
             throw new RuntimeException("This merchant account is not currently active");
         }
         if (!isTestMode) requireLiveCurrency(merchant.getId(), session.getCurrency());
+        // Merchant limits set in ops (per currency and channel) apply to live collections.
+        if (!isTestMode && partyRules != null) {
+            partyRules.check("MERCHANT", java.util.List.of("COLLECTION"), session.getCurrency(), channelOf(session), session.getAmountCents(),
+                    partyRules.recorded("MERCHANT", String.valueOf(merchant.getId()), session.getCurrency()));
+        }
 
         String productTypeCode = markets.checkoutProductType(session.getCurrency());
         String txReference = generateTransactionReference();
@@ -454,7 +465,27 @@ public class CheckoutSessionService {
             session.setCommissionBpsApplied(result.bpsApplied());
             session.setCommissionAmountCents(result.commissionAmountCents());
             session.setNetAmountCents(result.netAmountCents());
+            // A merchant charge set in ops for this currency and channel replaces the commission rate.
+            if (partyRules != null && Boolean.TRUE.equals(session.getLivemode())) {
+                var rule = partyRules.match("MERCHANT", java.util.List.of("COLLECTION"), session.getCurrency(), channelOf(session));
+                zw.co.payport.gateway.rules.PartyRules.Charge c = zw.co.payport.gateway.rules.PartyRules.charge(rule, session.getAmountCents());
+                if (rule.isPresent()) {
+                    long fee = Math.min(c.total(), session.getAmountCents());
+                    session.setCommissionBpsApplied(session.getAmountCents() == 0 ? 0 : (int) (fee * 10_000 / session.getAmountCents()));
+                    session.setCommissionAmountCents(fee);
+                    session.setNetAmountCents(session.getAmountCents() - fee);
+                }
+                partyRules.record("MERCHANT", String.valueOf(merchant.getId()), "COLLECTION", session.getCurrency(), channelOf(session),
+                        session.getAmountCents(), c, "cs:" + session.getId());
+            }
         });
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.rules.PartyRules partyRules;
+
+    private static String channelOf(CheckoutSession s) {
+        return s.getChannel() == null || s.getChannel().isBlank() ? "API" : s.getChannel();
     }
 
     private void sendConfirmationEmail(CheckoutSession session) {

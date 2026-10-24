@@ -141,14 +141,6 @@ public class AgentController {
         return Web.run(() -> agents.cashIn(me().agentId(), b.customer(), b.currency(), b.amountMinor(), b.clientRef(), actor()), req);
     }
 
-    public record CashOutBody(String customerPhone, String code) {}
-
-    @PostMapping("/api/v1/agent/cash-out")
-    @PreAuthorize("hasRole('AGENT')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> cashOut(@RequestBody CashOutBody b, HttpServletRequest req) {
-        return Web.run(() -> agents.cashOut(me().agentId(), b.customerPhone(), b.code(), actor()), req);
-    }
-
     @GetMapping("/api/v1/agent/transactions")
     @PreAuthorize("hasRole('AGENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> transactions(HttpServletRequest req) {

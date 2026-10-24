@@ -67,7 +67,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
         boolean isAssistantPath = path.equals("/api/v1/assistant/chat");
         // Phase 5: public bill-account lookups return a customer's name, so they are limited per IP
         // against enumeration; merchant portal login/signup likewise.
-        boolean isLookupPath = path.equals("/api/v1/bills/customer-info") || path.matches("/api/v1/billers/[^/]+/lookup");
+        boolean isLookupPath = path.equals("/api/v1/bills/customer-info") || path.matches("/api/v1/billers/[^/]+/lookup")
+                || path.startsWith("/api/v1/merchants/by-code/") || path.startsWith("/api/v1/wallet/agents/") || path.startsWith("/api/v1/wallet/merchants/");
         if (path.equals("/api/v1/merchant-portal/login") || path.equals("/api/v1/merchant-portal/signup")
                 || path.equals("/api/v1/merchant-portal/forgot-password") || path.equals("/api/v1/merchant-portal/reset-password")
                 || path.startsWith("/api/v1/agent-portal/")) isAuthPath = true;

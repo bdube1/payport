@@ -57,6 +57,10 @@ public class CheckoutSession {
     /** The underlying Transaction's reference, once payment is actually attempted. */
     private String transactionReference;
 
+    /** The channel a pay-by-merchant-code payment came through (MOB, WEB, USD); null for API and payment links. */
+    @Column(length = 10)
+    private String channel;
+
     private Long apiKeyId;
 
     /**

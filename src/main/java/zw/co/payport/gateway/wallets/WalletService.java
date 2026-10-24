@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import zw.co.payport.gateway.rules.PartyRules;
 
 /**
  * Customer stored-value wallets (Phase 8). The balance IS the ledger balance of the wallet's
@@ -93,6 +94,42 @@ public class WalletService {
 
     public void requireOn() {
         lines.require(LINE, "PayPort wallets");
+    }
+
+    /** Limits, charges and tax set in ops (optional so focused tests can build the service without it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.rules.PartyRules rules;
+
+    public static AccountKey feeAccount(String entity, String ccy) {
+        return AccountKey.of(entity, Book.LIVE, LedgerCategory.FEE_REVENUE, "WALLET", ccy);
+    }
+
+    public static AccountKey taxAccount(String entity, String ccy) {
+        return AccountKey.of(entity, Book.LIVE, LedgerCategory.TAX_PAYABLE, "WALLET", ccy);
+    }
+
+    /** Credits the charge to fee revenue and the tax to tax payable (the caller debits amount + both). */
+    public static JournalRequest.Builder withCharge(JournalRequest.Builder b, String entity, String ccy, PartyRules.Charge c) {
+        if (c != null && c.charge() > 0) b.credit(feeAccount(entity, ccy), c.charge(), "charge");
+        if (c != null && c.tax() > 0) b.credit(taxAccount(entity, ccy), c.tax(), "tax");
+        return b;
+    }
+
+    /** Checks a wallet operation against the WALLET limits and returns its charge (none when no rule applies). */
+    public PartyRules.Charge walletCharge(long userId, String product, String ccy, String channel, long amount) {
+        if (rules == null) return PartyRules.Charge.NONE;
+        return rules.check("WALLET", List.of(product), ccy, channel, amount, rules.recorded("WALLET", String.valueOf(userId), ccy));
+    }
+
+    /** Counts a completed wallet operation towards the period limits. */
+    public void recordUsage(long userId, String product, String ccy, String channel, long amount, PartyRules.Charge c, String opRef) {
+        if (rules != null) rules.record("WALLET", String.valueOf(userId), product, ccy, channel, amount, c, opRef);
+    }
+
+    /** Charge and tax for a wallet operation, without checking limits (shown before the customer confirms). */
+    public PartyRules.Charge quoteCharge(List<String> products, String ccy, String channel, long amount) {
+        if (rules == null) return PartyRules.Charge.NONE;
+        return zw.co.payport.gateway.rules.PartyRules.charge(rules.match("WALLET", products, ccy, channel), amount);
     }
 
     // ─── wallets ─────────────────────────────────────────────────────────────
@@ -271,12 +308,20 @@ public class WalletService {
 
     /** Records the PIN-confirmed consent to take this payment from this wallet. */
     public void authorizePayment(Wallet w, String reference, long amount, String currency, String by) {
+        authorizePayment(w, reference, amount, currency, PartyRules.Charge.NONE, by);
+    }
+
+    /** As above, with the charge and tax that are taken together with the payment. */
+    public void authorizePayment(Wallet w, String reference, long amount, String currency, PartyRules.Charge charge, String by) {
         int ttl = (int) params.number("WALLET.PAYMENT_AUTH_TTL_MINUTES");
         Timestamp now = now();
-        jdbc.update("INSERT INTO wallet_payment_authorizations (reference, wallet_id, amount_minor, currency, authorized_by, authorized_at, expires_at) VALUES (?,?,?,?,?,?,?) "
+        jdbc.update("INSERT INTO wallet_payment_authorizations (reference, wallet_id, amount_minor, currency, charge_minor, tax_minor, authorized_by, authorized_at, expires_at) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?) "
                         + "ON DUPLICATE KEY UPDATE wallet_id = VALUES(wallet_id), amount_minor = VALUES(amount_minor), currency = VALUES(currency), "
+                        + "charge_minor = VALUES(charge_minor), tax_minor = VALUES(tax_minor), "
                         + "authorized_by = VALUES(authorized_by), authorized_at = VALUES(authorized_at), expires_at = VALUES(expires_at)",
-                reference, w.id(), amount, upper(currency), by, now, Timestamp.valueOf(now.toLocalDateTime().plusMinutes(ttl)));
+                reference, w.id(), amount, upper(currency), charge == null ? 0 : charge.charge(), charge == null ? 0 : charge.tax(),
+                by, now, Timestamp.valueOf(now.toLocalDateTime().plusMinutes(ttl)));
     }
 
     /** The payment adaptor's submit: only with a live, matching PIN authorisation. */
@@ -297,10 +342,12 @@ public class WalletService {
             throw new IllegalStateException("The confirmed amount does not match the payment");
         }
         Wallet w = get(((Number) auth.get("wallet_id")).longValue());
-        JournalRequest j = journal("WALLET_PAY:" + intentReference, w.entity(), "WALLET_PAYMENT", "Wallet payment " + intentReference, "transaction", intentReference, "SYSTEM:wallet")
-                .debit(w.account(), amount, "paid from wallet")
-                .credit(receivable(w.entity(), RAIL, w.currency()), amount, "collected by wallet").build();
-        return apply(intentReference, j, List.of(new Leg(w.id(), "PAYMENT", "DR", amount, "PAYPORT", intentReference)), "SYSTEM:wallet",
+        PartyRules.Charge charge = new PartyRules.Charge(auth.get("charge_minor") == null ? 0 : ((Number) auth.get("charge_minor")).longValue(),
+                auth.get("tax_minor") == null ? 0 : ((Number) auth.get("tax_minor")).longValue());
+        JournalRequest j = withCharge(journal("WALLET_PAY:" + intentReference, w.entity(), "WALLET_PAYMENT", "Wallet payment " + intentReference, "transaction", intentReference, "SYSTEM:wallet")
+                .debit(w.account(), amount + charge.total(), "paid from wallet")
+                .credit(receivable(w.entity(), RAIL, w.currency()), amount, "collected by wallet"), w.entity(), w.currency(), charge).build();
+        return apply(intentReference, j, List.of(new Leg(w.id(), "PAYMENT", "DR", amount + charge.total(), "PAYPORT", intentReference)), "SYSTEM:wallet",
                 "Not enough money in your wallet");
     }
 
@@ -323,6 +370,10 @@ public class WalletService {
     // ─── transfers ───────────────────────────────────────────────────────────
 
     public Map<String, Object> transfer(long senderUserId, String toPhoneOrRef, String currency, long amount, String clientRef, String by) {
+        return transfer(senderUserId, toPhoneOrRef, currency, amount, clientRef, by, "WEB");
+    }
+
+    public Map<String, Object> transfer(long senderUserId, String toPhoneOrRef, String currency, long amount, String clientRef, String by, String channel) {
         requireOn();
         if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
         String ccy = upper(currency);
@@ -330,16 +381,22 @@ public class WalletService {
         Wallet to = recipient(toPhoneOrRef, ccy);
         if (from.id() == to.id()) throw new IllegalArgumentException("You cannot send money to the same wallet");
         String opRef = "P2P:" + senderUserId + ":" + (clientRef == null || clientRef.isBlank() ? token() : clip(clientRef.trim(), 50));
-        JournalRequest j = journal(opRef, from.entity(), "WALLET_P2P", "Transfer " + from.ref() + " to " + to.ref(), "wallet_transfer", opRef, by)
-                .debit(from.account(), amount, "sent to " + to.ref())
-                .credit(to.account(), amount, "received from " + from.ref()).build();
-        String entry = apply(opRef, j, List.of(new Leg(from.id(), "P2P_OUT", "DR", amount, to.ref(), opRef),
+        boolean replay = !jdbc.queryForList("SELECT entry_ref FROM wallet_operations WHERE op_ref = ? AND wallet_id = ?", String.class, opRef, from.id()).isEmpty();
+        PartyRules.Charge charge = replay ? PartyRules.Charge.NONE : walletCharge(senderUserId, "P2P_TRANSFER", ccy, channel, amount);
+        JournalRequest j = withCharge(journal(opRef, from.entity(), "WALLET_P2P", "Transfer " + from.ref() + " to " + to.ref(), "wallet_transfer", opRef, by)
+                .debit(from.account(), amount + charge.total(), "sent to " + to.ref())
+                .credit(to.account(), amount, "received from " + from.ref()), from.entity(), ccy, charge).build();
+        String entry = apply(opRef, j, List.of(new Leg(from.id(), "P2P_OUT", "DR", amount + charge.total(), to.ref(), opRef),
                 new Leg(to.id(), "P2P_IN", "CR", amount, from.ref(), opRef)), by, "Not enough money in your wallet");
+        if (!replay) recordUsage(senderUserId, "P2P_TRANSFER", ccy, channel, amount, charge, opRef);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("transferRef", opRef);
         out.put("entryRef", entry);
         out.put("to", to.ref());
+        out.put("toName", jdbc.queryForList("SELECT full_name FROM users WHERE id = ?", String.class, to.userId()).stream().findFirst().orElse(""));
         out.put("amountMinor", amount);
+        out.put("chargeMinor", charge.charge());
+        out.put("taxMinor", charge.tax());
         out.put("currency", ccy);
         out.put("balanceMinor", balance(from));
         return out;

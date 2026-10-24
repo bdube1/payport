@@ -77,6 +77,7 @@ class FinancialIntegrityScenarioTest {
     @Autowired WalletService wallets;
     @Autowired WalletPaymentService walletPayments;
     @Autowired AgentService agents;
+    @Autowired zw.co.payport.gateway.repository.UserRepository users;
     @Autowired LedgerClient ledger;
     @Autowired ChannelService channels;
     @Autowired MarketRegistry markets;
@@ -245,13 +246,15 @@ class FinancialIntegrityScenarioTest {
     }
 
     @Test
-    void cashOutCode_redeemedByManyAgentsAtOnce_paysOutOnce() throws Exception {
+    void cashOutAtAgent_sameRequestSentManyTimesAtOnce_paysOutOnce() throws Exception {
         Holder c = holder(5_000);
         long agentId = agent(10_000);
-        String code = (String) agents.issueCashOutCode(c.phone(), PIN, "USD", 2_000).get("code");
-        List<Object> results = race(10, () -> agents.cashOut(agentId, c.phone(), code, "agent:" + agentId));
+        String code = (String) agents.get(agentId).get("code");
+        assertTrue(code.matches("[1-9]\\d{5}"), code);
+        zw.co.payport.gateway.entity.User u = users.findByPhone(c.phone()).orElseThrow();
+        List<Object> results = race(10, () -> agents.customerCashOut(u, code, "USD", 2_000, "same-request", "MOB"));
         onlyBusinessRefusals(results);
-        assertEquals(1, ok(results), "a code is single-use");
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM agent_transactions WHERE agent_id = ? AND kind = 'CASH_OUT'", Integer.class, agentId), "one cash-out");
         assertEquals(3_000, balance(c.usd()));
         long expectedFloat = 10_000 + 2_000 + 2_000 * 100 / 10_000;
         assertEquals(expectedFloat, ((Map<?, ?>) agents.view(agents.get(agentId)).get("float")).get("USD"));

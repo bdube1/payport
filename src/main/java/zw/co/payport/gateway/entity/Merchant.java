@@ -21,6 +21,14 @@ public class Merchant {
     /** Public, non-guessable, given to the applicant at signup so they can track their own application without logging in anywhere. Never the internal id. */
     private String applicationReference;
 
+    /** Six-digit code customers type to pay this merchant (PartyCodes; unique across agents and merchants). */
+    @Column(name = "merchant_code", length = 6)
+    private String merchantCode;
+
+    /** Where the business operates. */
+    @Column(length = 300)
+    private String address;
+
     @Column(nullable = false)
     private String businessName;
 

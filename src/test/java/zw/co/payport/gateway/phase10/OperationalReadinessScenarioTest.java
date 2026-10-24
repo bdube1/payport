@@ -149,7 +149,7 @@ class OperationalReadinessScenarioTest {
         String emailAddr = "owner" + n + "@phase10.test";
         Res signup = call("POST", "/api/v1/merchant-portal/signup", null, Map.of("businessName", name + " " + n, "registrationNumber", "REG-P10-" + n,
                 "businessCategory", "RETAIL", "contactEmail", emailAddr, "contactPhone", "+263772" + String.format("%06d", n % 1_000_000),
-                "ownerFullName", "Owner " + n, "password", "Str0ng!Pass"));
+                "address", "12 Samora Machel Ave, Harare", "ownerFullName", "Owner " + n, "password", "Str0ng!Pass"));
         assertEquals(201, signup.status(), signup.raw());
         long id = signup.data().path("id").asLong();
         jdbc.update("UPDATE merchants SET status = 'ACTIVE' WHERE id = ?", id);

@@ -57,6 +57,7 @@ public class AdminMerchantController {
             merchants = merchants.stream().filter(m ->
                     (m.getBusinessName() != null && m.getBusinessName().toLowerCase().contains(needle)) ||
                     (m.getApplicationReference() != null && m.getApplicationReference().toLowerCase().contains(needle)) ||
+                    (m.getMerchantCode() != null && m.getMerchantCode().contains(needle)) ||
                     (m.getRegistrationNumber() != null && m.getRegistrationNumber().toLowerCase().contains(needle)) ||
                     (m.getContactEmail() != null && m.getContactEmail().toLowerCase().contains(needle)) ||
                     (m.getContactPhone() != null && m.getContactPhone().contains(needle))
@@ -195,14 +196,14 @@ public class AdminMerchantController {
         }
     }
 
-    public record UpdateDetailsBody(String businessName, String businessCategory, String contactEmail, String contactPhone) {}
+    public record UpdateDetailsBody(String businessName, String businessCategory, String contactEmail, String contactPhone, String address) {}
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> updateDetails(
             @PathVariable Long id, @RequestBody UpdateDetailsBody body, HttpServletRequest req) {
         try {
             Merchant merchant = merchantService.updateDetails(id, new zw.co.payport.gateway.service.MerchantService.UpdateDetailsRequest(
-                    body.businessName(), body.businessCategory(), body.contactEmail(), body.contactPhone()));
+                    body.businessName(), body.businessCategory(), body.contactEmail(), body.contactPhone(), body.address()));
             return ResponseEntity.ok(ApiResponse.success(toMap(merchant), requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("UPDATE_FAILED", e.getMessage(), requestId(req)));
@@ -255,6 +256,8 @@ public class AdminMerchantController {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", m.getId());
         map.put("applicationReference", m.getApplicationReference());
+        map.put("merchantCode", m.getMerchantCode());
+        map.put("address", m.getAddress());
         map.put("businessName", m.getBusinessName());
         map.put("registrationNumber", m.getRegistrationNumber());
         map.put("businessCategory", m.getBusinessCategory());
