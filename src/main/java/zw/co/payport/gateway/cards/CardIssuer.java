@@ -21,7 +21,14 @@ public interface CardIssuer {
     /** The issuer's current view of the card. */
     Optional<Issued> fetch(Map<String, Object> card);
 
+    /** The full card number, expiry and CVV, fetched from the issuer for the holder only, never stored. */
+    default Sensitive reveal(Map<String, Object> card) {
+        throw new IllegalStateException("Card details are shown once the card is issued");
+    }
+
     record Issued(String issuerRef, String status, String maskedPan, String last4, String expiry, String note) {}
+
+    record Sensitive(String pan, String expiry, String cvv) {}
 
     /** The issuer for a scheme with no issuing contract yet: requests are recorded and wait. */
     static CardIssuer unconnected(String scheme) {

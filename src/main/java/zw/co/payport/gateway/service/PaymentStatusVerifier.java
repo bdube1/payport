@@ -128,7 +128,7 @@ public class PaymentStatusVerifier {
         if ("SUCCESS".equals(v.status())) {
             if (isAmountMismatch(tx, v)) {
                 log.error("[VERIFY] AMOUNT MISMATCH for {}: expected {} cents, provider confirmed {} cents -- not applying; needs review",
-                        tx.getReference(), tx.getAmountCents(), v.amountCents());
+                        tx.getReference(), tx.collectCents(), v.amountCents());
                 return null;
             }
             if (v.amountCents() == null) {
@@ -155,7 +155,7 @@ public class PaymentStatusVerifier {
 
     /** A definite SUCCESS for a different amount than we asked for: never applied automatically. */
     public boolean isAmountMismatch(Transaction tx, Verified v) {
-        return "SUCCESS".equals(v.status()) && v.amountCents() != null && !v.amountCents().equals(tx.getAmountCents());
+        return "SUCCESS".equals(v.status()) && v.amountCents() != null && v.amountCents().longValue() != tx.collectCents();
     }
 
     static String normalise(String s) {

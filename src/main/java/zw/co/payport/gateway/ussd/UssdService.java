@@ -385,6 +385,9 @@ public class UssdService {
     @org.springframework.beans.factory.annotation.Autowired
     private zw.co.payport.gateway.merchant.MerchantCodePayments merchantCodes;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.rules.ChargeQuoteController chargeQuotes;
+
     private String merchant(Ctx c, In in) {
         if (!in.has()) return "CON Enter the merchant code:";
         String code = in.next().replaceAll("[^0-9]", "");
@@ -555,7 +558,11 @@ public class UssdService {
             if (!in.has()) return "CON Enter your " + methodName(method) + " number:";
             payer = "+" + phone(in.next(), c.market());
         }
-        if (!in.has()) return "CON " + summary + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
+        if (!in.has()) {
+            var ch = chargeQuotes == null ? zw.co.payport.gateway.rules.PartyRules.Charge.NONE : chargeQuotes.quote(product, ccy, amount, c.channel());
+            String fee = ch.total() > 0 ? " + charge " + ccy + " " + major(ch.total()) + " = " + ccy + " " + major(amount + ch.total()) : "";
+            return "CON " + summary + fee + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
+        }
         if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());
         final String from = payer;
@@ -585,7 +592,7 @@ public class UssdService {
             if (r.getStatus() == TransactionStatus.PAYMENT_FAILED) {
                 return "END " + clip(r.getFailureReason() == null ? "The payment was declined. No money was taken." : r.getFailureReason(), 130) + " Ref " + ref;
             }
-            return afterSubmit(ref, method, payer, ccy, amount, what, r.getPaymentCode());
+            return afterSubmit(ref, method, payer, ccy, r.getTotalCents() != null ? r.getTotalCents() : amount, what, r.getPaymentCode());
         } catch (Exception e) {
             return "END " + clip(e.getMessage() == null ? "Payment could not be started. No money was taken." : e.getMessage(), 140) + " Ref " + ref;
         }

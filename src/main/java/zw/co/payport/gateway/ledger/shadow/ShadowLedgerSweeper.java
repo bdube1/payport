@@ -153,7 +153,7 @@ public class ShadowLedgerSweeper {
             "SELECT s.id, s.merchant_id, s.currency, s.net_amount_cents, s.status, s.created_at, s.paid_at, "
             + "GREATEST(s.created_at, IFNULL(s.paid_at, s.created_at)) AS changed_at FROM settlements s";
     static final String SQL_CONSUMER =
-            "SELECT t.id, t.reference, t.currency, t.amount_cents, t.payment_provider_code, "
+            "SELECT t.id, t.reference, t.currency, t.amount_cents, t.charge_cents, t.tax_cents, t.payment_provider_code, "
             + "COALESCE(t.fulfilment_provider_code, pt.provider_code) AS vendor, t.status, t.payment_confirmed_at, t.completed_at, "
             + "t.refunded_at, t.updated_at AS changed_at "
             + "FROM transactions t JOIN product_types pt ON pt.id = t.product_type_id "
@@ -194,21 +194,22 @@ public class ShadowLedgerSweeper {
         String ref = rs.getString("reference");
         String ccy = rs.getString("currency");
         long amt = rs.getLong("amount_cents");
+        long charge = rs.getLong("charge_cents"), tax = rs.getLong("tax_cents");
         String rail = rs.getString("payment_provider_code");
         String vendor = rs.getString("vendor");
         List<JournalRequest> out = new ArrayList<>();
-        out.add(PostingTemplates.consumerPayment(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, date(rs, "payment_confirmed_at"))));
+        out.add(PostingTemplates.consumerPayment(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, date(rs, "payment_confirmed_at"), charge, tax)));
         if ("COMPLETED".equals(status)) {
             LocalDate on = rs.getTimestamp("completed_at") != null ? date(rs, "completed_at") : date(rs, "changed_at");
             Integer bps = vendorCommissionBps.apply(vendor == null ? "" : vendor.toUpperCase());
             out.add(PostingTemplates.consumerFulfilment(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, on), bps == null ? 0 : bps));
         }
         if ("REFUND_PENDING".equals(status) || "REFUNDED".equals(status)) {
-            out.add(PostingTemplates.consumerRefundDue(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, date(rs, "changed_at"))));
+            out.add(PostingTemplates.consumerRefundDue(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, date(rs, "changed_at"), charge, tax)));
         }
         if ("REFUNDED".equals(status)) {
             LocalDate on = rs.getTimestamp("refunded_at") != null ? date(rs, "refunded_at") : date(rs, "changed_at");
-            out.add(PostingTemplates.consumerRefundPaid(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, on)));
+            out.add(PostingTemplates.consumerRefundPaid(entity, new ConsumerPurchase(ref, ccy, amt, rail, vendor, on, charge, tax)));
         }
         return new Item(ts(rs, "changed_at"), rs.getLong("id"), out);
     }

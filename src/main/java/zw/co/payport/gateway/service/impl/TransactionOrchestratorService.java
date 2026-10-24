@@ -127,12 +127,19 @@ public class TransactionOrchestratorService {
             walletService.validateTopUp(dto.getRecipientIdentifier(), payCcy, dto.getAmountCents() == null ? 0 : dto.getAmountCents());
         }
 
-        // Limits set in ops for wallet customers (per product, currency and channel), for every payer phone.
-        if (partyRules != null && !"API".equals(channel) && dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()) {
-            String payer = dto.getCustomerPhone().replaceAll("[^0-9]", "");
+        // Customer limits and the customer charge set in ops (per product, currency and channel). The charge and
+        // its tax are collected on top of the face value on every payment method.
+        zw.co.payport.gateway.rules.PartyRules.Charge customerCharge = zw.co.payport.gateway.rules.PartyRules.Charge.NONE;
+        if (partyRules != null && !"API".equals(channel) && !"MERCHANT".equalsIgnoreCase(product.getCategory())) {
             String txChannel = TransactionChannel.fromString(dto.getChannel()).name();
-            partyRules.check("WALLET", java.util.List.of(product.getCode(), productGroup(product)), payCcy, txChannel,
-                    dto.getAmountCents() == null ? 0 : dto.getAmountCents(), customerUsage(payer, payCcy));
+            java.util.List<String> products = java.util.List.of(product.getCode(), productGroup(product));
+            long face = dto.getAmountCents() == null ? 0 : dto.getAmountCents();
+            if (dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()) {
+                String payer = dto.getCustomerPhone().replaceAll("[^0-9]", "");
+                customerCharge = partyRules.check("WALLET", products, payCcy, txChannel, face, customerUsage(payer, payCcy));
+            } else {
+                customerCharge = zw.co.payport.gateway.rules.PartyRules.charge(partyRules.match("WALLET", products, payCcy, txChannel), face);
+            }
         }
 
         Transaction tx = Transaction.builder()
@@ -142,6 +149,8 @@ public class TransactionOrchestratorService {
                 .productType(product)
                 .recipientIdentifier(dto.getRecipientIdentifier())
                 .amountCents(dto.getAmountCents())
+                .chargeCents(customerCharge.charge())
+                .taxCents(customerCharge.tax())
                 .currency(dto.getCurrency() != null ? dto.getCurrency() : "USD")
                 .customerPhone(dto.getCustomerPhone())
                 .customerEmail(dto.getCustomerEmail())
@@ -200,7 +209,7 @@ public class TransactionOrchestratorService {
                 .payportReference(tx.getReference())
                 .providerReference("TEST_SIM_" + System.currentTimeMillis())
                 .status(simulateSuccess ? "SUCCESS" : "FAILED")
-                .amountCents(toInt(tx.getAmountCents()))
+                .amountCents(toInt(tx.collectCents()))
                 .currency(tx.getCurrency())
                 .rawPayload("{\"status\":\"TEST_MODE\",\"message\":\"Simulated by merchant test API key, no real provider was called\"}")
                 .failureMessage(simulateSuccess ? null : failureMessage)
@@ -388,7 +397,7 @@ public class TransactionOrchestratorService {
 
         PaymentProviderAdaptor.PaymentRequest req = PaymentProviderAdaptor.PaymentRequest.builder()
                 .payportReference(attemptReference)
-                .amountCents(toInt(tx.getAmountCents()))
+                .amountCents(toInt(tx.collectCents()))
                 .currency(tx.getCurrency())
                 .customerPhone(tx.getCustomerPhone())
                 .description("Payport " + tx.getProductType().getName())
@@ -582,7 +591,7 @@ public class TransactionOrchestratorService {
                 .payportReference(PaymentStatusVerifier.attemptReference(tx))
                 .providerReference(omariResponse.getPaymentReference() != null ? omariResponse.getPaymentReference() : tx.getProviderReference())
                 .status(omariResponse.isError() ? "FAILED" : "SUCCESS")
-                .amountCents(toInt(tx.getAmountCents()))
+                .amountCents(toInt(tx.collectCents()))
                 .currency(tx.getCurrency())
                 .timestamp(java.time.LocalDateTime.now().toString())
                 .rawPayload(rawPayload)
@@ -648,7 +657,7 @@ public class TransactionOrchestratorService {
                 && !sentReference.equals(currentAttempt)) {
             if (success) {
                 reconExceptions.raise("PAID_ON_SUPERSEDED_ATTEMPT", provider, tx.getReference(), event.getProviderReference(),
-                        tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        tx.collectCents(), event.getAmountCents(), tx.getCurrency(),
                         "Provider confirmed attempt " + sentReference + " but the current attempt is " + currentAttempt, "LIFECYCLE");
                 log.error("[ORCHESTRATOR] CONFLICT for {}: success for superseded attempt {} (current {})", reference, sentReference, currentAttempt);
                 return CallbackOutcome.CONFLICT;
@@ -665,7 +674,7 @@ public class TransactionOrchestratorService {
                     || current == TransactionStatus.CANCELLED);
             if ((success && !paid && current != TransactionStatus.INITIATED) || (failed && paid)) {
                 reconExceptions.raise(success ? "PAID_AFTER_FAILURE" : "FAILED_AFTER_PAID", provider, tx.getReference(),
-                        event.getProviderReference(), tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
+                        event.getProviderReference(), tx.collectCents(), event.getAmountCents(), tx.getCurrency(),
                         "Provider says " + event.getStatus() + " but the payment is " + current, "LIFECYCLE");
                 log.error("[ORCHESTRATOR] CONFLICT for {}: provider says {} but the payment is {} -- not changed; needs review",
                         tx.getReference(), event.getStatus(), current);
@@ -675,12 +684,12 @@ public class TransactionOrchestratorService {
             return CallbackOutcome.NO_CHANGE;
         }
 
-        if (event.getAmountCents() > 0 && event.getAmountCents() != toInt(tx.getAmountCents())) {
+        if (event.getAmountCents() > 0 && event.getAmountCents() != toInt(tx.collectCents())) {
             reconExceptions.raise("AMOUNT_MISMATCH", provider, tx.getReference(), event.getProviderReference(),
-                    tx.getAmountCents(), event.getAmountCents(), tx.getCurrency(),
-                    "Provider reported " + event.getAmountCents() + " for a payment of " + tx.getAmountCents(), "LIFECYCLE");
+                    tx.collectCents(), event.getAmountCents(), tx.getCurrency(),
+                    "Provider reported " + event.getAmountCents() + " for a payment of " + tx.collectCents(), "LIFECYCLE");
             log.error("[ORCHESTRATOR] AMOUNT MISMATCH for {} - expected {} cents got {} cents - rejecting callback",
-                    tx.getReference(), tx.getAmountCents(), event.getAmountCents());
+                    tx.getReference(), tx.collectCents(), event.getAmountCents());
             return CallbackOutcome.CONFLICT;
         }
 
@@ -688,7 +697,7 @@ public class TransactionOrchestratorService {
             // Owner rule: once the customer has been told the transaction timed out, it is NEVER fulfilled -- not
             // automatically and not by a person. The money the provider took must be refunded.
             reconExceptions.raise("PAID_AFTER_TIMEOUT", provider, tx.getReference(), event.getProviderReference(),
-                    tx.getAmountCents(), event.getAmountCents() > 0 ? event.getAmountCents() : tx.getAmountCents(), tx.getCurrency(),
+                    tx.collectCents(), event.getAmountCents() > 0 ? event.getAmountCents() : tx.collectCents(), tx.getCurrency(),
                     "Provider confirmed payment after the customer was told " + tx.getPaymentOutcome() + ": refund required", "LIFECYCLE");
             log.error("[ORCHESTRATOR] LATE PAYMENT for {}: provider confirmed after the customer was told {} -- not fulfilled; refund required",
                     tx.getReference(), tx.getPaymentOutcome());

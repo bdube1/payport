@@ -42,7 +42,7 @@ public class CardController {
         }, req);
     }
 
-    public record RequestBody(String walletRef, String currency, String scheme, String form, String nameOnCard, String deliveryAddress, String pin) {}
+    public record RequestBody(String walletRef, String currency, String scheme, String form, String nameOnCard, String nickname, String deliveryAddress, String pin) {}
 
     @PostMapping("/api/v1/wallet/cards")
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -50,7 +50,8 @@ public class CardController {
         return Web.run(() -> {
             wallets.requireOn();
             User u = payments.verifyPin(Web.principal(), b.pin());
-            return cards.request(u.getId(), b.walletRef(), b.currency(), b.scheme(), b.form(), b.nameOnCard(), b.deliveryAddress(), u.getPhone());
+            String name = b.nameOnCard() == null || b.nameOnCard().isBlank() ? u.getFullName() : b.nameOnCard();
+            return cards.request(u.getId(), b.walletRef(), b.currency(), b.scheme(), b.form(), name, b.nickname(), b.deliveryAddress(), u.getPhone());
         }, req);
     }
 
@@ -63,6 +64,14 @@ public class CardController {
             User u = payments.verifyPin(Web.principal(), b.pin());
             return cards.customerAction(u.getId(), ref, b.action(), u.getPhone());
         }, req);
+    }
+
+    public record PinBody(String pin) {}
+
+    @PostMapping("/api/v1/wallet/cards/{ref}/reveal")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> reveal(@PathVariable String ref, @org.springframework.web.bind.annotation.RequestBody PinBody b, HttpServletRequest req) {
+        return Web.run(() -> cards.reveal(payments.verifyPin(Web.principal(), b.pin()).getId(), ref), req);
     }
 
     @PostMapping("/api/v1/wallet/cards/{ref}/refresh")
