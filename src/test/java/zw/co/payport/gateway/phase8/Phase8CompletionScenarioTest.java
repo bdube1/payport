@@ -308,8 +308,10 @@ class Phase8CompletionScenarioTest {
         Res none = call("GET", "/api/v1/wallet/cards", dee.token(), null);
         assertEquals(200, none.status(), none.body().toString());
         assertEquals(0, none.data().path("cards").size());
-        assertEquals(400, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "ZIMSWITCH", "form", "VIRTUAL", "nameOnCard", "DEE RULES", "pin", PIN)).status(),
-                "ZimSwitch cards are for ZWG wallets");
+        Res zim = call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("scheme", "ZIMSWITCH", "form", "VIRTUAL", "nickname", "Dual", "pin", PIN));
+        assertEquals(200, zim.status(), "a ZimSwitch card links the holder's USD and ZWG wallets: " + zim.body());
+        assertEquals("USD", zim.data().path("currencies").get(0).asText());
+        assertEquals(409, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("scheme", "ZIMSWITCH", "form", "VIRTUAL", "pin", PIN)).status(), "one of a kind");
         Res card = call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "VIRTUAL", "nameOnCard", "Dee Rules", "pin", PIN));
         assertEquals(200, card.status(), card.body().toString());
         assertEquals("REQUESTED", card.data().path("status").asText());
