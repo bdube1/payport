@@ -220,6 +220,7 @@ class Phase8CompletionScenarioTest {
     void merchantCodes_uniqueSixDigits_payByCode_andWalletRulesChargeAndLimit() throws Exception {
         ensureOn("WALLETS", null);
         jdbc.update("UPDATE payment_methods SET is_active = TRUE WHERE code = 'WALLET'");
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
         long m1 = activeMerchantWithLogin("Code Shop"), m2 = activeMerchantWithLogin("Other Shop");
         String c1 = jdbc.queryForObject("SELECT merchant_code FROM merchants WHERE id = ?", String.class, m1);
         String c2 = jdbc.queryForObject("SELECT merchant_code FROM merchants WHERE id = ?", String.class, m2);
