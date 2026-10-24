@@ -69,7 +69,11 @@ public class WalletPaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("You have no " + tx.getCurrency() + " wallet"));
         if ("WALLET".equalsIgnoreCase(tx.getProductType().getCategory())) throw new IllegalArgumentException("A wallet cannot be topped up from a wallet");
         if (tx.getCustomerPhone() != null && !samePhone(tx.getCustomerPhone(), phone)) throw new IllegalArgumentException("No such payment");
-        wallets.authorizePayment(w, reference, tx.getAmountCents(), tx.getCurrency(), "customer:" + phone);
+        // Limits were checked when the payment was started; the wallet charge for the product is taken with it.
+        zw.co.payport.gateway.rules.PartyRules.Charge charge = wallets.quoteCharge(
+                java.util.List.of(tx.getProductType().getCode(), TransactionOrchestratorService.productGroup(tx.getProductType())),
+                tx.getCurrency(), tx.getChannel() == null ? "WEB" : tx.getChannel().name(), tx.getAmountCents());
+        wallets.authorizePayment(w, reference, tx.getAmountCents(), tx.getCurrency(), charge, "customer:" + phone);
         PayTransactionRequest pay = new PayTransactionRequest();
         pay.setReference(reference);
         pay.setPaymentMethodCode(WalletService.RAIL);
@@ -87,15 +91,21 @@ public class WalletPaymentService {
 
     /** For a holder whose PIN was already checked in this session (USSD wallet login). */
     public Map<String, Object> payCheckoutAs(User u, long sessionId, String ip) throws Exception {
+        return payCheckoutAs(u, sessionId, ip, "WEB");
+    }
+
+    public Map<String, Object> payCheckoutAs(User u, long sessionId, String ip, String channel) throws Exception {
         wallets.requireOn();
         String phone = u.getPhone();
         CheckoutSession s = checkout.getPublic(sessionId);
         WalletService.Wallet w = wallets.forUser(u.getId(), s.getCurrency())
                 .orElseThrow(() -> new IllegalArgumentException("You have no " + s.getCurrency() + " wallet"));
-        wallets.authorizePayment(w, "cs:" + sessionId, s.getAmountCents(), s.getCurrency(), "customer:" + phone);
+        zw.co.payport.gateway.rules.PartyRules.Charge charge = wallets.walletCharge(u.getId(), "MERCHANT_PAYMENT", s.getCurrency(), channel, s.getAmountCents());
+        wallets.authorizePayment(w, "cs:" + sessionId, s.getAmountCents(), s.getCurrency(), charge, "customer:" + phone);
         CheckoutSessionService.PaymentSubmissionResult r = checkout.submitPayment(sessionId, phone, null, WalletService.RAIL, ip);
         String ref = r.session().getTransactionReference();
         if (ref != null) settle(ref);
+        if (ref != null) wallets.recordUsage(u.getId(), "MERCHANT_PAYMENT", s.getCurrency(), channel, s.getAmountCents(), charge, "cs:" + sessionId);
         return result(ref, r.session().getStatus(), w);
     }
 

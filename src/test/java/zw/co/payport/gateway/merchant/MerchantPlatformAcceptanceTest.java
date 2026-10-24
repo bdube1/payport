@@ -192,7 +192,7 @@ class MerchantPlatformAcceptanceTest {
         // 1. Signup (public).
         Res signup = call("POST", "/api/v1/merchant-portal/signup", null, Map.of("businessName", "Acme Stores " + n, "registrationNumber", "REG-" + n,
                 "businessCategory", "RETAIL", "contactEmail", email, "contactPhone", "+263772" + String.format("%06d", n % 1_000_000),
-                "ownerFullName", "Ada Owner", "password", password));
+                "address", "12 Samora Machel Ave, Harare", "ownerFullName", "Ada Owner", "password", password));
         assertEquals(201, signup.status(), signup.body().toString());
         long merchantId = signup.data().path("id").asLong();
 

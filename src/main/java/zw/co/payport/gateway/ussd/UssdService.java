@@ -380,31 +380,33 @@ public class UssdService {
         return codes.stream().findFirst();
     }
 
-    // ─── merchant (hosted checkout code) ─────────────────────────────────────
+    // ─── merchant (six-digit merchant code) ──────────────────────────────────
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private zw.co.payport.gateway.merchant.MerchantCodePayments merchantCodes;
 
     private String merchant(Ctx c, In in) {
-        if (!in.has()) return "CON Enter the merchant payment code:";
-        long id;
+        if (!in.has()) return "CON Enter the merchant code:";
+        String code = in.next().replaceAll("[^0-9]", "");
+        Map<String, Object> m;
         try {
-            id = Long.parseLong(in.next().replaceAll("[^0-9]", ""));
-        } catch (NumberFormatException e) {
-            return "END Invalid payment code.";
-        }
-        CheckoutSession s;
-        try {
-            s = checkout.getPublic(id);
+            m = merchantCodes.lookup(code);
         } catch (RuntimeException e) {
-            return "END No payment with that code.";
+            return "END " + clip(e.getMessage() == null ? "No merchant with that code." : e.getMessage(), 150);
         }
-        if (!"CREATED".equals(s.getStatus())) return "END This payment is " + s.getStatus().toLowerCase(Locale.ROOT) + ".";
-        List<String> names = jdbc.queryForList("SELECT business_name FROM merchants WHERE id = ?", String.class, s.getMerchantId());
-        String merchant = names.isEmpty() ? "the merchant" : clip(names.get(0), 30);
-        long amount = s.getAmountCents();
-        String ccy = s.getCurrency();
-        return payMerchant(c, in, id, merchant, amount, ccy);
+        String name = clip(String.valueOf(m.get("name")), 30);
+        if (!in.has()) return "CON Pay " + name + (m.get("address") == null ? "" : ", " + clip(String.valueOf(m.get("address")), 40)) + "?\n1. Yes\n2. No";
+        if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
+        @SuppressWarnings("unchecked") List<String> ccys = (List<String>) m.get("currencies");
+        if (ccys == null || ccys.isEmpty()) return "END " + name + " cannot take payments at the moment.";
+        if (!in.has()) return "CON Currency:\n" + numbered(ccys);
+        String ccy = pick(ccys, in.next());
+        if (!in.has()) return "CON Amount (" + ccy + "):";
+        long amount = minor(in.next());
+        return payMerchant(c, in, code, name, amount, ccy);
     }
 
-    private String payMerchant(Ctx c, In in, long sessionId, String merchant, long amount, String ccy) {
+    private String payMerchant(Ctx c, In in, String code, String merchant, long amount, String ccy) {
         List<String> methods = methods(c.wallet());
         if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(amount) + " with:\n" + numbered(methods.stream().map(this::methodName).toList());
         String method = pick(methods, in.next());
@@ -413,18 +415,20 @@ public class UssdService {
             if (!in.has()) return "CON Enter your " + methodName(method) + " number:";
             payer = "+" + phone(in.next(), c.market());
         }
-        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(amount) + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
+        String fee = WalletService.RAIL.equals(method) ? chargeNote(List.of("MERCHANT_PAYMENT"), ccy, amount) : "";
+        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(amount) + fee + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());
         final String from = payer;
         return once(c, () -> {
             try {
+                var s = merchantCodes.start(code, amount, ccy, "USD", WalletService.RAIL.equals(method) ? c.holder().getPhone() : from, null);
                 if (WalletService.RAIL.equals(method)) {
-                    Map<String, Object> r = walletPayments.payCheckoutAs(c.holder(), sessionId, "ussd");
+                    Map<String, Object> r = walletPayments.payCheckoutAs(c.holder(), s.getId(), "ussd", "USD");
                     record(c, (String) r.get("reference"));
                     return walletResult(r, merchant);
                 }
-                CheckoutSessionService.PaymentSubmissionResult r = checkout.submitPayment(sessionId, from, null, method, "ussd");
+                CheckoutSessionService.PaymentSubmissionResult r = checkout.submitPayment(s.getId(), from, null, method, "ussd");
                 String ref = r.session().getTransactionReference();
                 record(c, ref);
                 return afterSubmit(ref, method, from, ccy, amount, merchant, null);
@@ -432,6 +436,12 @@ public class UssdService {
                 return "END " + clip(e.getMessage() == null ? "Payment could not be started. No money was taken." : e.getMessage(), 150);
             }
         });
+    }
+
+    /** " + charge CCY x.xx" when a wallet charge applies, for the confirmation screen. */
+    private String chargeNote(List<String> products, String ccy, long amount) {
+        var ch = wallets.quoteCharge(products, ccy, "USD", amount);
+        return ch.total() > 0 ? " + charge " + ccy + " " + major(ch.total()) : "";
     }
 
     // ─── wallet services ─────────────────────────────────────────────────────
@@ -445,12 +455,12 @@ public class UssdService {
         WalletService.Wallet w = pick(mine, in.next());
         if (!in.has()) return "CON Amount (" + w.currency() + "):";
         long amount = minor(in.next());
-        if (!in.has()) return "CON Send " + w.currency() + " " + major(amount) + " to " + to + "?\n1. Confirm\n2. Cancel";
+        if (!in.has()) return "CON Send " + w.currency() + " " + major(amount) + chargeNote(List.of("P2P_TRANSFER"), w.currency(), amount) + " to " + to + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled. No money was sent.";
         final String recipient = to;
         return once(c, () -> {
             try {
-                Map<String, Object> r = wallets.transfer(c.holder().getId(), recipient, w.currency(), amount, "ussd:" + c.session(), "customer:" + c.holder().getPhone());
+                Map<String, Object> r = wallets.transfer(c.holder().getId(), recipient, w.currency(), amount, "ussd:" + c.session(), "customer:" + c.holder().getPhone(), "USD");
                 return "END Sent " + w.currency() + " " + major(amount) + " to " + r.get("to") + ". Balance " + w.currency() + " " + major(((Number) r.get("balanceMinor")).longValue()) + ".";
             } catch (RuntimeException e) {
                 return "END " + clip(e.getMessage() == null ? "The transfer could not be made." : e.getMessage(), 150);
@@ -467,22 +477,33 @@ public class UssdService {
         return pay(c, in, "WALLET_TOPUP", w.ref(), amount, w.currency(), "Top up " + w.currency() + " " + major(amount) + " to your wallet", "wallet top-up", false);
     }
 
+    /** Cash-out at an agent: the customer enters the agent's code, checks the agent's name, then the amount. */
     private String cashOut(Ctx c, In in) {
+        if (!in.has()) return "CON Enter the agent code:";
+        String code = in.next().replaceAll("[^0-9]", "");
+        Map<String, Object> a;
+        try {
+            a = agents.lookup(code);
+        } catch (RuntimeException e) {
+            return "END " + clip(e.getMessage() == null ? "No agent with that code." : e.getMessage(), 150);
+        }
+        String name = clip(String.valueOf(a.get("name")), 30);
+        if (!in.has()) return "CON Agent: " + name + (a.get("location") == null ? "" : ", " + clip(String.valueOf(a.get("location")), 40)) + "\nIs this correct?\n1. Yes\n2. No";
+        if (!"1".equals(in.next())) return "END Cancelled. Check the agent code and try again.";
         List<WalletService.Wallet> mine = mine(c);
         if (!in.has()) return "CON Cash out from which wallet?\n" + numbered(mine.stream().map(w -> w.currency() + " " + major(wallets.balance(w))).toList());
         WalletService.Wallet w = pick(mine, in.next());
         if (!in.has()) return "CON Amount (" + w.currency() + "):";
         long amount = minor(in.next());
-        if (!in.has()) return "CON Get a code to cash out " + w.currency() + " " + major(amount) + " at a PayPort agent?\n1. Confirm\n2. Cancel";
+        if (!in.has()) return "CON Cash out " + w.currency() + " " + major(amount) + chargeNote(List.of("CASH_OUT"), w.currency(), amount) + " at " + name + "?\n1. Confirm\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled.";
         return once(c, () -> {
             try {
-                Map<String, Object> r = agents.issueCashOutCodeFor(c.holder(), w.currency(), amount);
-                return "END Cash-out code " + r.get("code") + " for " + w.currency() + " " + major(amount)
-                        + ". Show it with your phone number to a PayPort agent. It works once and expires at "
-                        + String.valueOf(r.get("expiresAt")).replace('T', ' ').substring(0, 16) + ".";
+                Map<String, Object> r = agents.customerCashOut(c.holder(), code, w.currency(), amount, "ussd:" + c.session(), "USD");
+                return "END Done. Collect " + w.currency() + " " + major(amount) + " cash from " + name + ". Balance " + w.currency() + " "
+                        + major(((Number) r.get("balanceMinor")).longValue()) + ". Ref " + r.get("opRef");
             } catch (RuntimeException e) {
-                return "END " + clip(e.getMessage() == null ? "A code could not be issued." : e.getMessage(), 150);
+                return "END " + clip(e.getMessage() == null ? "The cash-out could not be made." : e.getMessage(), 150);
             }
         });
     }

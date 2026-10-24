@@ -21,12 +21,21 @@ public class WalletController {
     private final WalletPaymentService payments;
     private final AgentService agents;
     private final UserRepository users;
+    private final zw.co.payport.gateway.merchant.MerchantCodePayments merchantCodes;
 
-    public WalletController(WalletService wallets, WalletPaymentService payments, AgentService agents, UserRepository users) {
+    public WalletController(WalletService wallets, WalletPaymentService payments, AgentService agents, UserRepository users,
+                            zw.co.payport.gateway.merchant.MerchantCodePayments merchantCodes) {
         this.wallets = wallets;
         this.payments = payments;
         this.agents = agents;
         this.users = users;
+        this.merchantCodes = merchantCodes;
+    }
+
+    /** The app tells PayPort which channel it is (X-PayPort-Channel: MOB for the mobile app, WEB for the website). */
+    static String channel(HttpServletRequest req) {
+        String c = req.getHeader("X-PayPort-Channel");
+        return zw.co.payport.gateway.rules.PartyRules.channel(c == null || c.isBlank() ? "WEB" : c);
     }
 
     private User me() {
@@ -83,7 +92,7 @@ public class WalletController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> transfer(@RequestBody TransferBody b, HttpServletRequest req) {
         return Web.run(() -> {
             User u = payments.verifyPin(Web.principal(), b.pin());
-            return wallets.transfer(u.getId(), b.to(), b.currency(), b.amountMinor(), b.clientRef(), "customer:" + u.getPhone());
+            return wallets.transfer(u.getId(), b.to(), b.currency(), b.amountMinor(), b.clientRef(), "customer:" + u.getPhone(), channel(req));
         }, req);
     }
 
@@ -118,22 +127,61 @@ public class WalletController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> convert(@RequestBody ConvertBody b, HttpServletRequest req) {
         return Web.run(() -> {
             User u = payments.verifyPin(Web.principal(), b.pin());
-            return wallets.convert(u.getId(), b.quoteRef(), "customer:" + u.getPhone());
+            return wallets.convert(u.getId(), b.quoteRef(), "customer:" + u.getPhone(), channel(req));
         }, req);
     }
 
-    public record CashOutBody(String currency, long amountMinor, String pin) {}
-
-    @PostMapping("/api/v1/wallet/cash-out-codes")
+    /** The agent behind a six-digit agent code, so the customer can check the name before cashing out. */
+    @GetMapping("/api/v1/wallet/agents/{code}")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> cashOutCode(@RequestBody CashOutBody b, HttpServletRequest req) {
-        return Web.run(() -> agents.issueCashOutCode(Web.principal(), b.pin(), b.currency(), b.amountMinor()), req);
+    public ResponseEntity<ApiResponse<Map<String, Object>>> agent(@PathVariable String code, HttpServletRequest req) {
+        return Web.run(() -> agents.lookup(code), req);
     }
 
-    @GetMapping("/api/v1/wallet/cash-out-codes")
+    public record CashOutBody(String agentCode, String currency, long amountMinor, String pin, String clientRef) {}
+
+    /** Cash-out at an agent: wallet to the agent's float at once (PIN-confirmed); the agent pays out the cash. */
+    @PostMapping("/api/v1/wallet/cash-out")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> cashOutCodes(HttpServletRequest req) {
-        return Web.run(() -> agents.cashOutCodes(me().getPhone()), req);
+    public ResponseEntity<ApiResponse<Map<String, Object>>> cashOut(@RequestBody CashOutBody b, HttpServletRequest req) {
+        return Web.run(() -> {
+            User u = payments.verifyPin(Web.principal(), b.pin());
+            return agents.customerCashOut(u, b.agentCode(), b.currency(), b.amountMinor(), b.clientRef(), channel(req));
+        }, req);
+    }
+
+    /** The merchant behind a six-digit merchant code. */
+    @GetMapping("/api/v1/wallet/merchants/{code}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> merchant(@PathVariable String code, HttpServletRequest req) {
+        return Web.run(() -> merchantCodes.lookup(code), req);
+    }
+
+    public record PayMerchantBody(String merchantCode, String currency, long amountMinor, String pin, String description) {}
+
+    /** Pay a merchant by its code from the wallet. */
+    @PostMapping("/api/v1/wallet/pay-merchant")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> payMerchant(@RequestBody PayMerchantBody b, HttpServletRequest req) {
+        return Web.call(() -> {
+            User u = payments.verifyPin(Web.principal(), b.pin());
+            var s = merchantCodes.start(b.merchantCode(), b.amountMinor(), b.currency(), channel(req), u.getPhone(), b.description());
+            Map<String, Object> out = new java.util.LinkedHashMap<>(payments.payCheckoutAs(u, s.getId(), req.getRemoteAddr(), channel(req)));
+            out.put("merchantName", merchantCodes.merchant(b.merchantCode()).getBusinessName());
+            out.put("merchantCode", b.merchantCode());
+            return out;
+        }, req);
+    }
+
+    /** The charge and tax for a wallet operation, shown before the customer confirms. */
+    @GetMapping("/api/v1/wallet/charges")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> charges(@RequestParam String product, @RequestParam String currency, @RequestParam long amountMinor,
+                                                                    HttpServletRequest req) {
+        return Web.run(() -> {
+            var c = wallets.quoteCharge(List.of(product.toUpperCase(java.util.Locale.ROOT)), currency.toUpperCase(java.util.Locale.ROOT), channel(req), amountMinor);
+            return Map.<String, Object>of("chargeMinor", c.charge(), "taxMinor", c.tax(), "totalMinor", amountMinor + c.total());
+        }, req);
     }
 
     // ─── ops console ─────────────────────────────────────────────────────────

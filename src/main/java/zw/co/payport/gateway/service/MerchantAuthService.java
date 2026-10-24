@@ -99,6 +99,7 @@ public class MerchantAuthService {
         userMap.put("merchantId", merchant.getId());
         userMap.put("merchantName", merchant.getBusinessName());
         userMap.put("merchantStatus", merchant.getStatus());
+        userMap.put("merchantCode", merchant.getMerchantCode());
 
         Map<String, Object> response = new HashMap<>();
         response.put("token", token);

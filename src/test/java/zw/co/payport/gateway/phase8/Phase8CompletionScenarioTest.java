@@ -204,7 +204,7 @@ class Phase8CompletionScenarioTest {
         String emailAddr = "owner" + n + "@phase8.test";
         Res signup = call("POST", "/api/v1/merchant-portal/signup", null, Map.of("businessName", name + " " + n, "registrationNumber", "REG-P8-" + n,
                 "businessCategory", "RETAIL", "contactEmail", emailAddr, "contactPhone", "+263772" + String.format("%06d", n % 1_000_000),
-                "ownerFullName", "Owner " + n, "password", "Str0ng!Pass"));
+                "address", "12 Samora Machel Ave, Harare", "ownerFullName", "Owner " + n, "password", "Str0ng!Pass"));
         assertEquals(201, signup.status(), signup.body().toString());
         long id = signup.data().path("id").asLong();
         jdbc.update("UPDATE merchants SET status = 'ACTIVE' WHERE id = ?", id);
@@ -215,6 +215,96 @@ class Phase8CompletionScenarioTest {
     }
 
     String lastLogin;
+
+    @Test
+    void merchantCodes_uniqueSixDigits_payByCode_andWalletRulesChargeAndLimit() throws Exception {
+        ensureOn("WALLETS", null);
+        jdbc.update("UPDATE payment_methods SET is_active = TRUE WHERE code = 'WALLET'");
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
+        long m1 = activeMerchantWithLogin("Code Shop"), m2 = activeMerchantWithLogin("Other Shop");
+        String c1 = jdbc.queryForObject("SELECT merchant_code FROM merchants WHERE id = ?", String.class, m1);
+        String c2 = jdbc.queryForObject("SELECT merchant_code FROM merchants WHERE id = ?", String.class, m2);
+        assertTrue(c1.matches("[1-9]\\d{5}") && c2.matches("[1-9]\\d{5}"), c1 + " " + c2);
+        assertNotEquals(c1, c2);
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT code FROM party_codes GROUP BY code HAVING COUNT(*) > 1) d", Integer.class));
+        assertEquals("12 Samora Machel Ave, Harare", jdbc.queryForObject("SELECT address FROM merchants WHERE id = ?", String.class, m1));
+
+        Res who = call("GET", "/api/v1/merchants/by-code/" + c1, null, null);
+        assertEquals(200, who.status(), who.body().toString());
+        assertTrue(who.data().path("name").asText().startsWith("Code Shop"));
+        assertEquals(400, call("GET", "/api/v1/merchants/by-code/000000", null, null).status());
+        Res guest = call("POST", "/api/v1/merchants/by-code/" + c1 + "/payments", null, Map.of("amountMinor", 700, "currency", "USD", "channel", "WEB"));
+        assertEquals(200, guest.status(), guest.body().toString());
+        assertTrue(guest.data().path("sessionId").asLong() > 0);
+
+        Customer dee = customer("Dee Rules"), eve = customer("Eve Rules");
+        String deeRef = openWallet(dee, "USD");
+        openWallet(eve, "USD");
+        topUp(deeRef, 20_000);
+        Res paid = call("POST", "/api/v1/wallet/pay-merchant", dee.token(), Map.of("merchantCode", c1, "currency", "USD", "amountMinor", 1_000, "pin", PIN));
+        assertEquals(200, paid.status(), paid.body().toString());
+        assertEquals(19_000, balance(dee, "USD"));
+
+        // Wallet rule for P2P on the mobile app only: 0.50 flat, 20% tax on the charge, at most 50.00 per transfer.
+        String fin = staff("Fin Rules", "FINANCE");
+        assertEquals(403, call("POST", "/api/v1/admin/rules/WALLET", staff("Ops Rules", "OPS"), Map.of("product", "P2P_TRANSFER", "currency", "USD")).status());
+        Res rule = call("POST", "/api/v1/admin/rules/WALLET", fin, Map.of("product", "P2P_TRANSFER", "currency", "USD", "channel", "MOB",
+                "maxAmount", "50.00", "chargeFlat", "0.50", "taxChargeable", true, "taxPercent", "20", "taxBase", "CHARGE"));
+        assertEquals(200, rule.status(), rule.body().toString());
+        assertTrue(call("GET", "/api/v1/admin/rules/WALLET", fin, null).body().toString().contains("P2P_TRANSFER"));
+        assertEquals(409, call("POST", "/api/v1/admin/rules/WALLET", fin, Map.of("product", "P2P_TRANSFER", "currency", "USD", "channel", "MOB")).status(), "one rule per scope");
+        Map<String, String> mob = Map.of("X-PayPort-Channel", "MOB");
+        Res q = call("GET", "/api/v1/wallet/charges?product=P2P_TRANSFER&currency=USD&amountMinor=1000", dee.token(), null, mob);
+        assertEquals(200, q.status(), q.body().toString());
+        Res big = call("POST", "/api/v1/wallet/transfers", dee.token(), Map.of("to", eve.phone(), "currency", "USD", "amountMinor", 6_000, "pin", PIN), mob);
+        assertEquals(400, big.status(), big.body().toString());
+        Res sent = call("POST", "/api/v1/wallet/transfers", dee.token(), Map.of("to", eve.phone(), "currency", "USD", "amountMinor", 1_000, "pin", PIN, "clientRef", "rule-1"), mob);
+        assertEquals(200, sent.status(), sent.body().toString());
+        assertEquals(50, sent.data().path("chargeMinor").asLong());
+        assertEquals(10, sent.data().path("taxMinor").asLong());
+        assertEquals(19_000 - 1_000 - 60, balance(dee, "USD"));
+        assertEquals(1_000, balance(eve, "USD"));
+        Res web = call("POST", "/api/v1/wallet/transfers", dee.token(), Map.of("to", eve.phone(), "currency", "USD", "amountMinor", 6_000, "pin", PIN));
+        assertEquals(200, web.status(), "the mobile-only rule does not apply to the web: " + web.body());
+        assertEquals(19_000 - 1_000 - 60 - 6_000, balance(dee, "USD"));
+        long ruleId = rule.data().path("id").asLong();
+        assertEquals(200, call("DELETE", "/api/v1/admin/rules/WALLET/" + ruleId, fin, null).status());
+
+        // Raw wallet report: filtered, with the charge and tax, exported to Excel and PDF.
+        Res report = call("GET", "/api/v1/admin/wallets/report?q=" + deeRef + "&kind=P2P_OUT", fin, null);
+        assertEquals(200, report.status(), report.body().toString());
+        assertEquals(2, report.data().path("total").asLong());
+        assertTrue(report.body().toString().contains("\"charge_minor\":50"), report.body().toString());
+        assertEquals(400, call("GET", "/api/v1/admin/wallets/report?from=yesterday", fin, null).status());
+        assertEquals(403, call("GET", "/api/v1/admin/wallets/report", dee.token(), null).status());
+        Res pdf = call("GET", "/api/v1/admin/wallets/report/export?format=pdf&q=" + deeRef, fin, null);
+        assertEquals(200, pdf.status());
+        assertTrue(pdf.body().path("text").asText().startsWith("%PDF"), "a PDF");
+        Res xlsx = call("GET", "/api/v1/admin/wallets/report/export?format=xlsx&q=" + deeRef, fin, null);
+        assertEquals(200, xlsx.status());
+        assertTrue(xlsx.body().path("text").asText().startsWith("PK"), "an Excel workbook");
+
+        // Cards: requested against the wallet; they wait for the issuer; one of a kind per wallet; cancel.
+        Res none = call("GET", "/api/v1/wallet/cards", dee.token(), null);
+        assertEquals(200, none.status(), none.body().toString());
+        assertEquals(0, none.data().path("cards").size());
+        assertEquals(400, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "ZIMSWITCH", "form", "VIRTUAL", "nameOnCard", "DEE RULES", "pin", PIN)).status(),
+                "ZimSwitch cards are for ZWG wallets");
+        Res card = call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "VIRTUAL", "nameOnCard", "Dee Rules", "pin", PIN));
+        assertEquals(200, card.status(), card.body().toString());
+        assertEquals("REQUESTED", card.data().path("status").asText());
+        assertFalse(card.data().path("issuerConnected").asBoolean());
+        String cardRef = card.data().path("cardRef").asText();
+        assertEquals(409, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "VIRTUAL", "nameOnCard", "Dee Rules", "pin", PIN)).status());
+        assertEquals(400, call("POST", "/api/v1/wallet/cards", eve.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "PHYSICAL", "nameOnCard", "Eve", "deliveryAddress", "1 Main St", "pin", PIN)).status(),
+                "not someone else's wallet");
+        assertEquals(409, call("POST", "/api/v1/wallet/cards/" + cardRef + "/action", dee.token(), Map.of("action", "FREEZE", "pin", PIN)).status(), "not issued yet");
+        assertTrue(call("GET", "/api/v1/admin/cards?q=" + cardRef, fin, null).body().toString().contains(cardRef));
+        Res cancelled = call("POST", "/api/v1/wallet/cards/" + cardRef + "/action", dee.token(), Map.of("action", "CANCEL", "pin", PIN));
+        assertEquals(200, cancelled.status(), cancelled.body().toString());
+        assertEquals("CANCELLED", cancelled.data().path("status").asText());
+        assertTrue(ledger.integrityReport().isEmpty(), ledger.integrityReport().toString());
+    }
 
     @Test
     void merchantPasswords_opsResetToTemporary_andForgotPasswordByLink() throws Exception {
@@ -480,16 +570,21 @@ class Phase8CompletionScenarioTest {
         assertEquals(402, call("POST", "/api/v1/agent/cash-in", agentToken, Map.of("customer", cara.phone(), "currency", "USD", "amountMinor", 9_000)).status(),
                 "an agent cannot hand out more e-value than its float");
 
-        // Cash-out: the holder's one-time code; wrong code refused; redeemed once.
-        Res code = call("POST", "/api/v1/wallet/cash-out-codes", cara.token(), Map.of("currency", "USD", "amountMinor", 1_000, "pin", PIN));
-        assertEquals(200, code.status(), code.body().toString());
-        String c = code.data().path("code").asText();
-        assertEquals(400, call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", "00000000")).status());
-        Res out = call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c));
+        // Cash-out: the customer enters the agent's six-digit code, sees the agent's name, confirms with the PIN.
+        String agentCode = approved.data().path("code").asText();
+        assertTrue(agentCode.matches("[1-9]\\d{5}"), approved.body().toString());
+        Res agentWho = call("GET", "/api/v1/wallet/agents/" + agentCode, cara.token(), null);
+        assertEquals(200, agentWho.status(), agentWho.body().toString());
+        assertEquals("Corner Agent", agentWho.data().path("name").asText());
+        assertEquals(400, call("GET", "/api/v1/wallet/agents/000000", cara.token(), null).status());
+        assertEquals(400, call("POST", "/api/v1/wallet/cash-out", cara.token(), Map.of("agentCode", agentCode, "currency", "USD", "amountMinor", 1_000, "pin", "0000", "clientRef", "co-1")).status(), "wrong PIN");
+        Res out = call("POST", "/api/v1/wallet/cash-out", cara.token(), Map.of("agentCode", agentCode, "currency", "USD", "amountMinor", 1_000, "pin", PIN, "clientRef", "co-1"));
         assertEquals(200, out.status(), out.body().toString());
+        assertEquals("Corner Agent", out.data().path("agentName").asText());
         assertEquals(2_000, balance(cara, "USD"));
-        assertEquals(7_015 + 1_000 + 10, out.data().path("floatMinor").asLong());
-        assertEquals(400, call("POST", "/api/v1/agent/cash-out", agentToken, Map.of("customerPhone", cara.phone(), "code", c)).status(), "single use");
+        assertEquals(7_015 + 1_000 + 10, call("GET", "/api/v1/agent/me", agentToken, null).data().path("agent").path("float").path("USD").asLong());
+        assertEquals(200, call("POST", "/api/v1/wallet/cash-out", cara.token(), Map.of("agentCode", agentCode, "currency", "USD", "amountMinor", 1_000, "pin", PIN, "clientRef", "co-1")).status());
+        assertEquals(2_000, balance(cara, "USD"), "the same request twice cashes out once");
         assertEquals(2, call("GET", "/api/v1/agent/transactions", agentToken, null).data().size());
         assertTrue(call("GET", "/api/v1/agent/commissions", agentToken, null).data().size() >= 2);
 

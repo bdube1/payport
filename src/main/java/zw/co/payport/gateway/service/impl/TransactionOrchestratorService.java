@@ -127,6 +127,14 @@ public class TransactionOrchestratorService {
             walletService.validateTopUp(dto.getRecipientIdentifier(), payCcy, dto.getAmountCents() == null ? 0 : dto.getAmountCents());
         }
 
+        // Limits set in ops for wallet customers (per product, currency and channel), for every payer phone.
+        if (partyRules != null && !"API".equals(channel) && dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()) {
+            String payer = dto.getCustomerPhone().replaceAll("[^0-9]", "");
+            String txChannel = TransactionChannel.fromString(dto.getChannel()).name();
+            partyRules.check("WALLET", java.util.List.of(product.getCode(), productGroup(product)), payCcy, txChannel,
+                    dto.getAmountCents() == null ? 0 : dto.getAmountCents(), customerUsage(payer, payCcy));
+        }
+
         Transaction tx = Transaction.builder()
                 .reference(dto.getReference())
                 .status(TransactionStatus.INITIATED)
@@ -293,6 +301,32 @@ public class TransactionOrchestratorService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.wallets.WalletService walletService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.rules.PartyRules partyRules;
+
+    /** The rule group of a product: AIRTIME, DATA, BILLS, WALLET_TOPUP (wallet top-ups), or its category. */
+    public static String productGroup(ProductType product) {
+        String c = product.getCategory() == null ? "" : product.getCategory().toUpperCase(java.util.Locale.ROOT);
+        return "WALLET".equals(c) ? "WALLET_TOPUP" : c;
+    }
+
+    /** What a payer phone already paid for, for the period limits (failed, cancelled and unpaid attempts do not count). */
+    private zw.co.payport.gateway.rules.PartyRules.Usage customerUsage(String payerDigits, String currency) {
+        return (prod, ch, from) -> {
+            StringBuilder sql = new StringBuilder("SELECT COALESCE(SUM(t.amount_cents), 0) AS v, COUNT(*) AS c FROM transactions t JOIN product_types p ON p.id = t.product_type_id "
+                    + "WHERE REPLACE(t.customer_phone, '+', '') = ? AND t.currency = ? AND t.initiated_at >= ? "
+                    + "AND t.status NOT IN ('INITIATED', 'PAYMENT_FAILED', 'PAYMENT_TIMEOUT', 'CANCELLED', 'REFUNDED')");
+            java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(payerDigits, currency, java.sql.Timestamp.valueOf(from)));
+            if (!"ALL".equals(prod)) {
+                sql.append(" AND (p.code = ? OR p.category = ? OR (? = 'WALLET_TOPUP' AND p.category = 'WALLET'))");
+                args.add(prod); args.add(prod); args.add(prod);
+            }
+            if (!"ALL".equals(ch)) { sql.append(" AND t.channel = ?"); args.add(ch); }
+            java.util.Map<String, Object> m = jdbcTemplate.queryForMap(sql.toString(), args.toArray());
+            return new zw.co.payport.gateway.rules.PartyRules.Totals(((Number) m.get("v")).longValue(), ((Number) m.get("c")).longValue());
+        };
+    }
 
     private org.springframework.transaction.support.TransactionTemplate requiresNew() {
         org.springframework.transaction.support.TransactionTemplate t =

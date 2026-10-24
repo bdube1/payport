@@ -23,6 +23,10 @@ public class MerchantRequests {
         @NotBlank(message = "Contact phone is required")
         private String contactPhone;
 
+        /** Where the business operates (street, suburb, town), so PayPort can visit it. */
+        @NotBlank(message = "The business address is required")
+        private String address;
+
         /** The first Merchant User (the applicant themselves) -- becomes OWNER on approval. */
         @NotBlank(message = "Your full name is required")
         private String ownerFullName;

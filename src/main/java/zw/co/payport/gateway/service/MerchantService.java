@@ -39,6 +39,7 @@ public class MerchantService {
     private zw.co.payport.gateway.risk.RiskEngine riskEngine;
     private final MerchantReviewNoteRepository reviewNoteRepository;
     private final EmailService emailService;
+    private final zw.co.payport.gateway.platform.PartyCodes partyCodes;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private final java.security.SecureRandom secureRandom = new java.security.SecureRandom();
 
@@ -69,11 +70,13 @@ public class MerchantService {
                 .businessCategory(req.getBusinessCategory())
                 .contactEmail(email)
                 .contactPhone(req.getContactPhone().trim())
+                .address(req.getAddress().trim())
                 .status("PENDING")
                 .riskScore(risk.score())
                 .riskFlags(String.join(", ", risk.flags()))
                 .build();
         merchant = merchantRepository.save(merchant);
+        merchant.setMerchantCode(partyCodes.allocate(zw.co.payport.gateway.platform.PartyCodes.MERCHANT, merchant.getId()));
 
         MerchantUser owner = MerchantUser.builder()
                 .merchantId(merchant.getId())
@@ -259,7 +262,7 @@ public class MerchantService {
         return reviewNoteRepository.findByMerchantIdOrderByCreatedAtDesc(merchantId);
     }
 
-    public record UpdateDetailsRequest(String businessName, String businessCategory, String contactEmail, String contactPhone) {}
+    public record UpdateDetailsRequest(String businessName, String businessCategory, String contactEmail, String contactPhone, String address) {}
 
     /** Ops-only correction of merchant-provided details -- e.g. a typo in the business name, or a phone number that changed. Does not touch status, risk score, or commission. */
     public Merchant updateDetails(Long merchantId, UpdateDetailsRequest req) {
@@ -275,6 +278,9 @@ public class MerchantService {
         }
         if (req.contactPhone() != null && !req.contactPhone().isBlank()) {
             merchant.setContactPhone(req.contactPhone().trim());
+        }
+        if (req.address() != null && !req.address().isBlank()) {
+            merchant.setAddress(req.address().trim());
         }
         merchant = merchantRepository.save(merchant);
         log.info("[MERCHANT] Details updated by ops: {} (id {})", merchant.getBusinessName(), merchant.getId());
