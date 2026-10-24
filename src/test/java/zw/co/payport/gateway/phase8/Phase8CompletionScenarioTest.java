@@ -572,9 +572,9 @@ class Phase8CompletionScenarioTest {
         // Cash-out: the customer enters the agent's six-digit code, sees the agent's name, confirms with the PIN.
         String agentCode = approved.data().path("code").asText();
         assertTrue(agentCode.matches("[1-9]\\d{5}"), approved.body().toString());
-        Res who = call("GET", "/api/v1/wallet/agents/" + agentCode, cara.token(), null);
-        assertEquals(200, who.status(), who.body().toString());
-        assertEquals("Corner Agent", who.data().path("name").asText());
+        Res agentWho = call("GET", "/api/v1/wallet/agents/" + agentCode, cara.token(), null);
+        assertEquals(200, agentWho.status(), agentWho.body().toString());
+        assertEquals("Corner Agent", agentWho.data().path("name").asText());
         assertEquals(400, call("GET", "/api/v1/wallet/agents/000000", cara.token(), null).status());
         assertEquals(400, call("POST", "/api/v1/wallet/cash-out", cara.token(), Map.of("agentCode", agentCode, "currency", "USD", "amountMinor", 1_000, "pin", "0000", "clientRef", "co-1")).status(), "wrong PIN");
         Res out = call("POST", "/api/v1/wallet/cash-out", cara.token(), Map.of("agentCode", agentCode, "currency", "USD", "amountMinor", 1_000, "pin", PIN, "clientRef", "co-1"));
