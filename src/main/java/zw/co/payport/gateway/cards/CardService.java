@@ -30,11 +30,16 @@ public class CardService {
     private final ComplianceAudit audit;
     private final Map<String, CardIssuer> issuers = new HashMap<>();
 
-    public CardService(JdbcTemplate jdbc, WalletService wallets, ComplianceAudit audit, @Autowired(required = false) List<CardIssuer> connected) {
+    public CardService(JdbcTemplate jdbc, WalletService wallets, ComplianceAudit audit, @Autowired(required = false) List<CardIssuer> connected,
+                       @org.springframework.beans.factory.annotation.Value("${payport.environment:production}") String environment,
+                       @org.springframework.beans.factory.annotation.Value("${payport.cards.sandbox:auto}") String sandbox) {
         this.jdbc = jdbc;
         this.wallets = wallets;
         this.audit = audit;
-        for (String s : SCHEMES) issuers.put(s, CardIssuer.unconnected(s));
+        boolean test = !zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment)
+                && ("true".equalsIgnoreCase(sandbox) || ("auto".equalsIgnoreCase(sandbox)
+                && Set.of("staging", "sandbox", "local", "dev", "development").contains(String.valueOf(environment).trim().toLowerCase(Locale.ROOT))));
+        for (String s : SCHEMES) issuers.put(s, test ? new SandboxCardIssuer(s) : CardIssuer.unconnected(s));
         if (connected != null) for (CardIssuer i : connected) issuers.put(i.scheme(), i);
     }
 
@@ -51,6 +56,17 @@ public class CardService {
     }
 
     public List<Map<String, Object>> forUser(long userId) {
+        // Requests waiting for an issuer that is now connected are sent to it.
+        for (Map<String, Object> w : jdbc.queryForList("SELECT c.card_ref, c.scheme FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id "
+                + "WHERE w.user_id = ? AND c.status = 'REQUESTED' AND c.issuer_ref IS NULL", userId)) {
+            CardIssuer issuer = issuer((String) w.get("scheme"));
+            if (!issuer.connected()) continue;
+            try {
+                apply((String) w.get("card_ref"), issuer.issue(row((String) w.get("card_ref"))));
+            } catch (RuntimeException e) {
+                jdbc.update("UPDATE wallet_cards SET status_note = ? WHERE card_ref = ?", "Issuer: " + trim(e.getMessage()), w.get("card_ref"));
+            }
+        }
         return jdbc.queryForList("SELECT c.*, w.wallet_ref, w.currency FROM wallet_cards c JOIN wallets w ON w.id = c.wallet_id "
                 + "WHERE w.user_id = ? ORDER BY c.id DESC", userId).stream().map(this::view).toList();
     }

@@ -133,12 +133,12 @@ public class AgentController {
         return Web.run(() -> agents.deposits(me().agentId(), null), req);
     }
 
-    public record CashInBody(String customer, String currency, long amountMinor, String clientRef) {}
+    public record CashInBody(String customer, String currency, long amountMinor, String clientRef, String code) {}
 
     @PostMapping("/api/v1/agent/cash-in")
     @PreAuthorize("hasRole('AGENT')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> cashIn(@RequestBody CashInBody b, HttpServletRequest req) {
-        return Web.run(() -> agents.cashIn(me().agentId(), b.customer(), b.currency(), b.amountMinor(), b.clientRef(), actor()), req);
+        return Web.run(() -> agents.cashIn(me().agentId(), b.customer(), b.currency(), b.amountMinor(), b.clientRef(), actor(), "AGENT", b.code()), req);
     }
 
     @GetMapping("/api/v1/agent/transactions")

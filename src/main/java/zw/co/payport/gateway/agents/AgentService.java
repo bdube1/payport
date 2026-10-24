@@ -382,6 +382,13 @@ public class AgentService {
 
     /** Cash-in: the customer gives the agent cash and the agent sends the same value from its float to the customer's wallet. */
     public Map<String, Object> cashIn(long agentId, String customer, String currency, long amount, String clientRef, String by, String channel) {
+        return cashIn(agentId, customer, currency, amount, clientRef, by, channel, null);
+    }
+
+    /** Cash-in through one of the agent's codes (a branch); the main code when none is given. */
+    public Map<String, Object> cashIn(long agentId, String customer, String currency, long amount, String clientRef, String by, String channel, String branchCode) {
+        String via = branchCode == null || branchCode.isBlank() ? codes.codeOf(PartyCodes.AGENT, agentId).orElse(null) : branchCode.trim();
+        if (via != null && !codes.owns(PartyCodes.AGENT, agentId, via)) throw new IllegalArgumentException("That code is not one of your agent codes");
         requireOn();
         wallets.requireOn();
         Map<String, Object> a = activeAgent(agentId);
@@ -404,7 +411,7 @@ public class AgentService {
         Map<String, Object> done = tx.execute(s -> {
             String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_IN", "CR", amount, agentLabel(a), opRef)), by,
                     "Not enough agent float. Buy more float first.");
-            record(opRef, a, "CASH_IN", w, amount, ccy, commission, entry, by);
+            record(opRef, a, "CASH_IN", w, amount, ccy, commission, entry, by, via);
             return result(opRef, a, w, amount, ccy, commission, entry);
         });
         if (!replay && rules != null) rules.record("AGENT", String.valueOf(agentId), "CASH_IN", ccy, channel, amount, agentCharge, opRef);
@@ -417,10 +424,12 @@ public class AgentService {
         long id = codes.resolve(PartyCodes.AGENT, agentCode).orElseThrow(() -> new IllegalArgumentException("No agent with code " + agentCode));
         Map<String, Object> a = get(id);
         if (!"ACTIVE".equals(a.get("status"))) throw new IllegalStateException("This agent cannot serve customers at the moment");
+        Map<String, Object> c = codes.row(agentCode.replaceAll("[^0-9]", "")).orElse(Map.of());
+        boolean branch = c.get("label") != null && !Boolean.TRUE.equals(c.get("is_primary"));
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("code", a.get("code"));
-        out.put("name", a.get("name"));
-        out.put("location", a.get("location"));
+        out.put("code", c.getOrDefault("code", a.get("code")));
+        out.put("name", branch ? a.get("name") + " – " + c.get("label") : a.get("name"));
+        out.put("location", c.get("address") != null ? c.get("address") : a.get("location"));
         return out;
     }
 
@@ -460,7 +469,7 @@ public class AgentService {
         Map<String, Object> done = tx.execute(s -> {
             String entry = wallets.apply(opRef, b.build(), List.of(new WalletService.Leg(w.id(), "CASH_OUT", "DR", amount + customerCharge.total(), agentLabel(a), opRef)), by,
                     "Not enough money in your wallet");
-            record(opRef, a, "CASH_OUT", w, amount, ccy, commission, entry, by);
+            record(opRef, a, "CASH_OUT", w, amount, ccy, commission, entry, by, agentCode.replaceAll("[^0-9]", ""));
             return result(opRef, a, w, amount, ccy, commission, entry);
         });
         if (!replay) {
@@ -538,10 +547,10 @@ public class AgentService {
         return amount * bps / 10_000;
     }
 
-    private void record(String opRef, Map<String, Object> a, String kind, WalletService.Wallet w, long amount, String ccy, long commission, String entry, String by) {
-        jdbc.update("INSERT INTO agent_transactions (op_ref, agent_id, kind, wallet_id, amount_minor, currency, commission_minor, entry_ref, commission_entry_ref, created_by, created_at) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE op_ref = op_ref",
-                opRef, a.get("id"), kind, w.id(), amount, ccy, commission, entry, commission > 0 ? entry : null, by, now());
+    private void record(String opRef, Map<String, Object> a, String kind, WalletService.Wallet w, long amount, String ccy, long commission, String entry, String by, String partyCode) {
+        jdbc.update("INSERT INTO agent_transactions (op_ref, agent_id, kind, wallet_id, amount_minor, currency, commission_minor, entry_ref, commission_entry_ref, created_by, created_at, party_code) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE op_ref = op_ref",
+                opRef, a.get("id"), kind, w.id(), amount, ccy, commission, entry, commission > 0 ? entry : null, by, now(), partyCode);
     }
 
     private Map<String, Object> result(String opRef, Map<String, Object> a, WalletService.Wallet w, long amount, String ccy, long commission, String entry) {

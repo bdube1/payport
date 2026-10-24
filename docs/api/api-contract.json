@@ -83,6 +83,34 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/codes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/report"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/requests/{id}/decide"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/{code}/status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/{type}/{partyId}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/{type}/{partyId}"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/compliance-authorities"
   },
   {
@@ -987,6 +1015,22 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/agent/codes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/codes/report"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/codes/requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/codes/{code}/qr"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/agent/commissions"
   },
   {
@@ -1151,6 +1195,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/codes/scan"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/econet/admin/balance"
   },
   {
@@ -1268,6 +1316,22 @@
   {
    "method": "POST",
    "path": "/api/v1/merchant/checkout-sessions/{sessionId}/refunds"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/codes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/codes/report"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/codes/requests"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/codes/{code}/qr"
   },
   {
    "method": "GET",

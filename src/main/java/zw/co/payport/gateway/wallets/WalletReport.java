@@ -126,8 +126,11 @@ public class WalletReport {
         if (present(f.maxAmount())) { w.append(" AND o.amount_minor <= ?"); args.add(minor(f.maxAmount())); }
         if (present(f.q())) {
             String like = "%" + f.q().trim() + "%";
-            w.append(" AND (w.wallet_ref LIKE ? OR w.phone LIKE ? OR u.full_name LIKE ? OR o.op_ref LIKE ? OR o.reference LIKE ? OR o.counterparty LIKE ?)");
+            String phone = WalletService.phoneKey(f.q());
+            w.append(" AND (w.wallet_ref LIKE ? OR w.phone LIKE ? OR u.full_name LIKE ? OR o.op_ref LIKE ? OR o.reference LIKE ? OR o.counterparty LIKE ?");
             for (int i = 0; i < 6; i++) args.add(like);
+            if (phone != null) { w.append(" OR REPLACE(REPLACE(w.phone, '+', ''), ' ', '') LIKE ?"); args.add("%" + phone); }
+            w.append(")");
         }
         return w.toString();
     }

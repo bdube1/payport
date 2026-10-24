@@ -323,7 +323,72 @@ class Phase8CompletionScenarioTest {
         Res cancelled = call("POST", "/api/v1/wallet/cards/" + cardRef + "/action", dee.token(), Map.of("action", "CANCEL", "pin", PIN));
         assertEquals(200, cancelled.status(), cancelled.body().toString());
         assertEquals("CANCELLED", cancelled.data().path("status").asText());
+
+        // Wallets are found by wallet number or by the mobile number in any form.
+        String local = "0" + dee.phone().substring(dee.phone().length() - 9);
+        assertTrue(call("GET", "/api/v1/admin/wallets?q=" + local, fin, null).body().toString().contains(deeRef), "found by 07… number");
+        assertTrue(call("GET", "/api/v1/admin/wallets?q=" + deeRef.toLowerCase(), fin, null).body().toString().contains(deeRef), "found by wallet number");
+        assertTrue(call("GET", "/api/v1/admin/wallets/report?q=" + local, fin, null).body().toString().contains(deeRef), "report found by 07… number");
         assertTrue(ledger.integrityReport().isEmpty(), ledger.integrityReport().toString());
+    }
+
+    @Test
+    void merchantCodes_branchCodesByApplication_staticQrReissued_reportPerCode() throws Exception {
+        long m = activeMerchantWithLogin("Branch Shop");
+        String mt = lastLogin;
+        String main = jdbc.queryForObject("SELECT merchant_code FROM merchants WHERE id = ?", String.class, m);
+
+        Res mine = call("GET", "/api/v1/merchant/codes", mt, null);
+        assertEquals(200, mine.status(), mine.body().toString());
+        assertEquals(1, mine.data().path("codes").size());
+        assertEquals(main, mine.data().path("codes").get(0).path("code").asText());
+        String qr1 = mine.data().path("codes").get(0).path("qrPayload").asText();
+        assertTrue(qr1.startsWith("PAYPORT-QR:"), qr1);
+        assertEquals(qr1, call("GET", "/api/v1/merchant/codes", mt, null).data().path("codes").get(0).path("qrPayload").asText(), "the QR is static");
+        Res scan = call("GET", "/api/v1/codes/scan?payload=" + java.net.URLEncoder.encode(qr1, StandardCharsets.UTF_8), null, null);
+        assertEquals(200, scan.status(), scan.body().toString());
+        assertEquals("MERCHANT", scan.data().path("type").asText());
+        assertEquals(main, scan.data().path("code").asText());
+
+        Res reissued = call("POST", "/api/v1/merchant/codes/" + main + "/qr", mt, null);
+        assertEquals(200, reissued.status(), reissued.body().toString());
+        String qr2 = reissued.data().path("codes").get(0).path("qrPayload").asText();
+        assertNotEquals(qr1, qr2);
+        assertEquals(400, call("GET", "/api/v1/codes/scan?payload=" + java.net.URLEncoder.encode(qr1, StandardCharsets.UTF_8), null, null).status(), "the old QR stops working");
+        assertEquals(main, call("GET", "/api/v1/codes/scan?payload=" + java.net.URLEncoder.encode(qr2, StandardCharsets.UTF_8), null, null).data().path("code").asText(), "same code");
+
+        // A branch code: applied for in the portal, approved in the admin portal.
+        Res applied = call("POST", "/api/v1/merchant/codes/requests", mt, Map.of("label", "Avondale branch", "address", "1 King George Rd, Avondale"));
+        assertEquals(200, applied.status(), applied.body().toString());
+        long reqId = applied.data().path("id").asLong();
+        String ops = staff("Ops Codes", "OPS");
+        assertTrue(call("GET", "/api/v1/admin/codes/requests?status=PENDING", ops, null).body().toString().contains("Avondale branch"));
+        assertEquals(403, call("POST", "/api/v1/admin/codes/requests/" + reqId + "/decide", staff("Fin Codes", "FINANCE"), Map.of("approve", true)).status());
+        Res decided = call("POST", "/api/v1/admin/codes/requests/" + reqId + "/decide", ops, Map.of("approve", true));
+        assertEquals(200, decided.status(), decided.body().toString());
+        String branch = decided.data().path("code").asText();
+        assertTrue(branch.matches("[1-9]\\d{5}") && !branch.equals(main), branch);
+        assertEquals(409, call("POST", "/api/v1/admin/codes/requests/" + reqId + "/decide", ops, Map.of("approve", true)).status(), "decided once");
+        assertEquals(2, call("GET", "/api/v1/merchant/codes", mt, null).data().path("codes").size());
+        assertTrue(call("GET", "/api/v1/admin/codes?q=" + branch, ops, null).body().toString().contains("Avondale branch"));
+
+        Res who = call("GET", "/api/v1/merchants/by-code/" + branch, null, null);
+        assertEquals(200, who.status(), who.body().toString());
+        assertTrue(who.data().path("name").asText().endsWith("Avondale branch"), who.body().toString());
+        Res started = call("POST", "/api/v1/merchants/by-code/" + branch + "/payments", null, Map.of("amountMinor", 900, "currency", "USD", "channel", "WEB"));
+        assertEquals(200, started.status(), started.body().toString());
+        assertEquals(branch, jdbc.queryForObject("SELECT party_code FROM checkout_sessions WHERE id = ?", String.class, started.data().path("sessionId").asLong()));
+        Res rep = call("GET", "/api/v1/merchant/codes/report?code=" + branch, mt, null);
+        assertEquals(200, rep.status(), rep.body().toString());
+        assertEquals(1, rep.data().path("rows").size());
+        assertEquals(0, call("GET", "/api/v1/merchant/codes/report?code=" + main, mt, null).data().path("rows").size());
+        assertEquals(400, call("GET", "/api/v1/merchant/codes/report?code=000000", mt, null).status());
+        assertEquals(200, call("GET", "/api/v1/admin/codes/report?type=MERCHANT&code=" + branch, ops, null).status());
+
+        // A suspended branch code takes no payments; the main code cannot be suspended.
+        assertEquals(200, call("POST", "/api/v1/admin/codes/" + branch + "/status", ops, Map.of("status", "SUSPENDED")).status());
+        assertEquals(400, call("GET", "/api/v1/merchants/by-code/" + branch, null, null).status());
+        assertEquals(409, call("POST", "/api/v1/admin/codes/" + main + "/status", ops, Map.of("status", "SUSPENDED")).status());
     }
 
     @Test
@@ -592,6 +657,19 @@ class Phase8CompletionScenarioTest {
 
         // Cash-out: the customer enters the agent's six-digit code, sees the agent's name, confirms with the PIN.
         String agentCode = approved.data().path("code").asText();
+        // A further agent code (a second outlet), added by ops; customers see which outlet they are at.
+        Res outlet = call("POST", "/api/v1/admin/codes/AGENT/" + agentId, comp, Map.of("label", "Mbare outlet", "address", "Mbare Musika"));
+        assertEquals(200, outlet.status(), outlet.body().toString());
+        assertEquals(2, outlet.data().path("codes").size());
+        String outletCode = outlet.data().path("codes").get(1).path("code").asText();
+        Res mineCodes = call("GET", "/api/v1/agent/codes", agentToken, null);
+        assertEquals(200, mineCodes.status(), mineCodes.body().toString());
+        assertEquals(2, mineCodes.data().path("codes").size());
+        assertTrue(mineCodes.data().path("codes").get(0).path("qrPayload").asText().startsWith("PAYPORT-QR:"));
+        Res atOutlet = call("GET", "/api/v1/wallet/agents/" + outletCode, cara.token(), null);
+        assertEquals(200, atOutlet.status(), atOutlet.body().toString());
+        assertEquals("Corner Agent – Mbare outlet", atOutlet.data().path("name").asText());
+        assertEquals(200, call("GET", "/api/v1/agent/codes/report", agentToken, null).status());
         assertTrue(agentCode.matches("[1-9]\\d{5}"), approved.body().toString());
         Res agentWho = call("GET", "/api/v1/wallet/agents/" + agentCode, cara.token(), null);
         assertEquals(200, agentWho.status(), agentWho.body().toString());

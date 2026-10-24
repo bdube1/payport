@@ -61,6 +61,10 @@ public class CheckoutSession {
     @Column(length = 10)
     private String channel;
 
+    /** The merchant code (main or branch) the payment came through, when paid by code. */
+    @Column(name = "party_code", length = 6)
+    private String partyCode;
+
     private Long apiKeyId;
 
     /**
