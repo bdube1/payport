@@ -127,7 +127,7 @@ public class WalletController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> convert(@RequestBody ConvertBody b, HttpServletRequest req) {
         return Web.run(() -> {
             User u = payments.verifyPin(Web.principal(), b.pin());
-            return wallets.convert(u.getId(), b.quoteRef(), "customer:" + u.getPhone());
+            return wallets.convert(u.getId(), b.quoteRef(), "customer:" + u.getPhone(), channel(req));
         }, req);
     }
 

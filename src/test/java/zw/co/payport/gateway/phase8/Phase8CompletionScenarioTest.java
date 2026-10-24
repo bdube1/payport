@@ -268,6 +268,40 @@ class Phase8CompletionScenarioTest {
         assertEquals(19_000 - 1_000 - 60 - 6_000, balance(dee, "USD"));
         long ruleId = rule.data().path("id").asLong();
         assertEquals(200, call("DELETE", "/api/v1/admin/rules/WALLET/" + ruleId, fin, null).status());
+
+        // Raw wallet report: filtered, with the charge and tax, exported to Excel and PDF.
+        Res report = call("GET", "/api/v1/admin/wallets/report?q=" + deeRef + "&kind=P2P_OUT", fin, null);
+        assertEquals(200, report.status(), report.body().toString());
+        assertEquals(2, report.data().path("total").asLong());
+        assertTrue(report.body().toString().contains("\"charge_minor\":50"), report.body().toString());
+        assertEquals(400, call("GET", "/api/v1/admin/wallets/report?from=yesterday", fin, null).status());
+        assertEquals(403, call("GET", "/api/v1/admin/wallets/report", dee.token(), null).status());
+        Res pdf = call("GET", "/api/v1/admin/wallets/report/export?format=pdf&q=" + deeRef, fin, null);
+        assertEquals(200, pdf.status());
+        assertTrue(pdf.body().path("text").asText().startsWith("%PDF"), "a PDF");
+        Res xlsx = call("GET", "/api/v1/admin/wallets/report/export?format=xlsx&q=" + deeRef, fin, null);
+        assertEquals(200, xlsx.status());
+        assertTrue(xlsx.body().path("text").asText().startsWith("PK"), "an Excel workbook");
+
+        // Cards: requested against the wallet; they wait for the issuer; one of a kind per wallet; cancel.
+        Res none = call("GET", "/api/v1/wallet/cards", dee.token(), null);
+        assertEquals(200, none.status(), none.body().toString());
+        assertEquals(0, none.data().path("cards").size());
+        assertEquals(400, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "ZIMSWITCH", "form", "VIRTUAL", "nameOnCard", "DEE RULES", "pin", PIN)).status(),
+                "ZimSwitch cards are for ZWG wallets");
+        Res card = call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "VIRTUAL", "nameOnCard", "Dee Rules", "pin", PIN));
+        assertEquals(200, card.status(), card.body().toString());
+        assertEquals("REQUESTED", card.data().path("status").asText());
+        assertFalse(card.data().path("issuerConnected").asBoolean());
+        String cardRef = card.data().path("cardRef").asText();
+        assertEquals(409, call("POST", "/api/v1/wallet/cards", dee.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "VIRTUAL", "nameOnCard", "Dee Rules", "pin", PIN)).status());
+        assertEquals(400, call("POST", "/api/v1/wallet/cards", eve.token(), Map.of("walletRef", deeRef, "scheme", "VISA", "form", "PHYSICAL", "nameOnCard", "Eve", "deliveryAddress", "1 Main St", "pin", PIN)).status(),
+                "not someone else's wallet");
+        assertEquals(409, call("POST", "/api/v1/wallet/cards/" + cardRef + "/action", dee.token(), Map.of("action", "FREEZE", "pin", PIN)).status(), "not issued yet");
+        assertTrue(call("GET", "/api/v1/admin/cards?q=" + cardRef, fin, null).body().toString().contains(cardRef));
+        Res cancelled = call("POST", "/api/v1/wallet/cards/" + cardRef + "/action", dee.token(), Map.of("action", "CANCEL", "pin", PIN));
+        assertEquals(200, cancelled.status(), cancelled.body().toString());
+        assertEquals("CANCELLED", cancelled.data().path("status").asText());
         assertTrue(ledger.integrityReport().isEmpty(), ledger.integrityReport().toString());
     }
 

@@ -425,13 +425,18 @@ public class WalletService {
     }
 
     public Map<String, Object> convert(long userId, String quoteRef, String by) {
+        return convert(userId, quoteRef, by, "WEB");
+    }
+
+    public Map<String, Object> convert(long userId, String quoteRef, String by, String channel) {
         requireOn();
         lines.require("FX_CONVERSION", "Currency conversion");
         // Open the four accounts before the quote is locked (see apply).
         jdbc.queryForList("SELECT from_wallet_id, to_wallet_id FROM fx_quotes WHERE quote_ref = ? AND user_id = ?", quoteRef, userId).stream().findFirst().ifPresent(pre -> {
             Wallet a0 = get(((Number) pre.get("from_wallet_id")).longValue()), b0 = get(((Number) pre.get("to_wallet_id")).longValue());
             prepareAccounts(a0.account(), b0.account(), AccountKey.of(a0.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", a0.currency()),
-                    AccountKey.of(b0.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", b0.currency()));
+                    AccountKey.of(b0.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", b0.currency()),
+                    feeAccount(a0.entity(), a0.currency()), taxAccount(a0.entity(), a0.currency()));
         });
         return tx.execute(s -> {
             Map<String, Object> q = jdbc.queryForList("SELECT * FROM fx_quotes WHERE quote_ref = ? FOR UPDATE", quoteRef).stream().findFirst()
@@ -447,21 +452,25 @@ public class WalletService {
             Wallet b = get(((Number) q.get("to_wallet_id")).longValue());
             long amount = ((Number) q.get("amount_minor")).longValue();
             long converted = ((Number) q.get("converted_minor")).longValue();
-            JournalRequest j = journal("WALLET_FX:" + quoteRef, a.entity(), "WALLET_FX", "Conversion " + a.currency() + "->" + b.currency() + " at " + q.get("rate"),
+            PartyRules.Charge charge = walletCharge(userId, "FX_CONVERSION", a.currency(), channel, amount);
+            JournalRequest j = withCharge(journal("WALLET_FX:" + quoteRef, a.entity(), "WALLET_FX", "Conversion " + a.currency() + "->" + b.currency() + " at " + q.get("rate"),
                     "fx_quote", quoteRef, by)
-                    .debit(a.account(), amount, "converted out")
+                    .debit(a.account(), amount + charge.total(), "converted out")
                     .credit(AccountKey.of(a.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", a.currency()), amount, "conversion in")
                     .debit(AccountKey.of(b.entity(), Book.LIVE, LedgerCategory.FX_CLEARING, "FX", b.currency()), converted, "conversion out")
-                    .credit(b.account(), converted, "converted in").build();
-            String entry = apply("FX:" + quoteRef, j, List.of(new Leg(a.id(), "FX_OUT", "DR", amount, b.ref(), quoteRef),
+                    .credit(b.account(), converted, "converted in"), a.entity(), a.currency(), charge).build();
+            String entry = apply("FX:" + quoteRef, j, List.of(new Leg(a.id(), "FX_OUT", "DR", amount + charge.total(), b.ref(), quoteRef),
                     new Leg(b.id(), "FX_IN", "CR", converted, a.ref(), quoteRef)), by, "Not enough money in your " + a.currency() + " wallet");
             jdbc.update("UPDATE fx_quotes SET status = 'EXECUTED', executed_at = ?, entry_ref_out = ?, entry_ref_in = ? WHERE quote_ref = ?", now(), entry, entry, quoteRef);
+            recordUsage(userId, "FX_CONVERSION", a.currency(), channel, amount, charge, "FX:" + quoteRef);
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("quoteRef", quoteRef);
             out.put("status", "EXECUTED");
             out.put("entryRef", entry);
             out.put("debitedMinor", amount);
             out.put("creditedMinor", converted);
+            out.put("chargeMinor", charge.charge());
+            out.put("taxMinor", charge.tax());
             return out;
         });
     }

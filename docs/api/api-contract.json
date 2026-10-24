@@ -63,6 +63,18 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/cards"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/cards/{ref}/refresh"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/cards/{ref}/status"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/channels"
   },
   {
@@ -911,6 +923,14 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/wallets/report"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/report/export"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/wallets/totals"
   },
   {
@@ -1544,6 +1564,22 @@
   {
    "method": "GET",
    "path": "/api/v1/wallet/agents/{code}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/cards"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/action"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/refresh"
   },
   {
    "method": "POST",
