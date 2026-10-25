@@ -30,15 +30,16 @@ public class VendorBalanceService {
 
         if (currency == null || currency.isBlank()) {
             // Get both USD and ZWG balances with UNIQUE references
-            Map<String, Object> usdBalance = getBalanceForCurrency("USD");
-            Map<String, Object> zwgBalance = getBalanceForCurrency("ZWG");
-
-            result.put("USD", usdBalance.get("balance"));
-            result.put("ZWG", zwgBalance.get("balance"));
+            for (String c : new String[] { "USD", "ZWG" }) {
+                try {
+                    result.put(c, getBalanceForCurrency(c).get("balance"));
+                } catch (IllegalStateException e) {
+                    result.put(c, null);
+                    result.put(c + "_error", e.getMessage());
+                }
+            }
             result.put("currency", "MULTI");
             result.put("timestamp", LocalDateTime.now().toString());
-            log.info("[BALANCE] Retrieved both balances - USD: {}, ZWG: {}",
-                    usdBalance.get("balance"), zwgBalance.get("balance"));
         } else {
             // Get balance for specific currency
             Map<String, Object> balanceData = getBalanceForCurrency(currency.toUpperCase());
@@ -66,53 +67,35 @@ public class VendorBalanceService {
         ESolutionsResponse resp = esolutionsClient.balanceEnquiry(
                 esolutionsClient.getVendorNumber(), currency, vendorRef);
 
-        Map<String, Object> result = new LinkedHashMap<>();
-
+        // A balance is shown only when eSolutions returned one; anything else is an error, never a $0.00.
         if (resp == null) {
             log.error("[BALANCE] Received null response from eSolutions for currency: {}", currency);
-            result.put("success", false);
-            result.put("balance", 0.0);
-            result.put("currency", currency);
-            result.put("error", "Null response from eSolutions");
-            return result;
+            throw new IllegalStateException("eSolutions " + currency + ": no response");
         }
-
         log.info("[BALANCE] Response code: {}, narrative: {}", resp.getResponseCode(), resp.getNarrative());
-
-        if (resp.isSuccess()) {
-            String vendorBalance = resp.getVendorBalance();
-
-            if (vendorBalance != null && !vendorBalance.isBlank()) {
-                String[] parts = vendorBalance.split("\\|");
-                if (parts.length >= 4) {
-                    result.put("accountName", parts[0]);
-                    result.put("accountNumber", parts[1]);
-                    result.put("currency", parts[2]);
-                    result.put("balance", Double.parseDouble(parts[3]) / 100.0);
-                    result.put("balanceCents", parts[3]);
-                    log.info("[BALANCE] {} balance: {} ({} cents)", currency, result.get("balance"), parts[3]);
-                } else {
-                    result.put("balance", 0.0);
-                    result.put("balanceCents", "0");
-                    result.put("currency", currency);
-                    log.warn("[BALANCE] Invalid vendor balance format for {}: {}", currency, vendorBalance);
-                }
-            } else {
-                result.put("balance", 0.0);
-                result.put("balanceCents", "0");
-                result.put("currency", currency);
-                log.warn("[BALANCE] No vendor balance data in response for {}", currency);
-            }
-            result.put("success", true);
-            result.put("message", resp.getNarrative());
-        } else {
-            result.put("success", false);
-            result.put("balance", 0.0);
-            result.put("currency", currency);
-            result.put("error", resp.getFailureMessage());
+        if (!resp.isSuccess()) {
             log.warn("[BALANCE] Failed to get {} balance: {}", currency, resp.getFailureMessage());
+            throw new IllegalStateException("eSolutions " + currency + ": " + resp.getFailureMessage());
         }
-
+        String vendorBalance = resp.getVendorBalance();
+        String[] parts = vendorBalance == null ? new String[0] : vendorBalance.split("\\|");
+        if (parts.length < 4) {
+            log.warn("[BALANCE] Invalid vendor balance format for {}: {}", currency, vendorBalance);
+            throw new IllegalStateException("eSolutions " + currency + ": no balance in the response");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("accountName", parts[0]);
+        result.put("accountNumber", parts[1]);
+        result.put("currency", parts[2]);
+        try {
+            result.put("balance", Double.parseDouble(parts[3].trim()) / 100.0);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("eSolutions " + currency + ": unreadable balance");
+        }
+        result.put("balanceCents", parts[3].trim());
+        result.put("success", true);
+        result.put("message", resp.getNarrative());
+        log.info("[BALANCE] {} balance: {} ({} cents)", currency, result.get("balance"), parts[3]);
         return result;
     }
 

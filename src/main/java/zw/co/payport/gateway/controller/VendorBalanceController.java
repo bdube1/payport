@@ -33,6 +33,9 @@ public class VendorBalanceController {
         try {
             Map<String, Object> balance = vendorBalanceService.getBalance(currency);
             return ResponseEntity.ok(ApiResponse.success(balance, null));
+        } catch (IllegalStateException e) {
+            log.warn("[BALANCE] {}", e.getMessage());
+            return ResponseEntity.status(502).body(ApiResponse.error("BALANCE_UNAVAILABLE", e.getMessage(), null));
         } catch (Exception e) {
             log.error("[BALANCE] Failed to get balance: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
