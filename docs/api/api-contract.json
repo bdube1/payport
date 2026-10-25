@@ -827,6 +827,34 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/roles"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/roles"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/roles/catalog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/roles/me"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/roles/{code}"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/roles/{code}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/roles/{code}/reset"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/rules/{party}"
   },
   {
@@ -934,6 +962,10 @@
    "path": "/api/v1/admin/ussd/networks/{code}/access-key"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/admin/ussd/simulate"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/admin/wallet-balances"
   },
@@ -980,6 +1012,10 @@
   {
    "method": "PUT",
    "path": "/api/v1/admin/whatsapp/settings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/whatsapp/simulate"
   },
   {
    "method": "POST",

@@ -34,6 +34,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final UserRepository userRepository;
+    private final zw.co.payport.gateway.roles.StaffRoles staffRoles;
 
     @org.springframework.beans.factory.annotation.Value("${payport.environment:production}")
     private String environment = "production";
@@ -156,6 +157,7 @@ public class SecurityConfig {
                         // Phase 9 defence in depth: staff consoles and merchant APIs are closed by URL as well as by
                         // each controller's @PreAuthorize, so a route added without a guard is still not open to
                         // customers (three admin controllers were found unguarded by the authorization matrix test).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/roles/me").hasRole("STAFF")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "OPS", "FINANCE", "COMPLIANCE", "OPS_MANAGER")
                         .requestMatchers("/api/v1/merchant/**").hasAnyRole("MERCHANT", "MERCHANT_PENDING")
                         .requestMatchers("/api/v1/agent/**").hasRole("AGENT")
@@ -171,6 +173,8 @@ public class SecurityConfig {
                 .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(merchantJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(agentJwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // Roles & permissions: configured roles only reach the staff APIs their permissions allow.
+                .addFilterAfter(new zw.co.payport.gateway.roles.PermissionFilter(staffRoles, userRepository), UsernamePasswordAuthenticationFilter.class)
                 // Phase 9: an API serves JSON only, so the strictest policy applies: nothing may be loaded,
                 // framed or referred from a response. HSTS and nosniff are Spring Security defaults.
                 .headers(headers -> headers
@@ -252,7 +256,7 @@ public class SecurityConfig {
                     .map(user -> org.springframework.security.core.userdetails.User.builder()
                             .username(user.getPhone())
                             .password(user.getPinHash())
-                            .roles(user.getRole())
+                            .authorities(staffRoles.authorities(user))
                             .disabled(!user.getIsActive())
                             .build())
                     .orElseThrow(() -> new UsernameNotFoundException("User not found: " + finalPhone));

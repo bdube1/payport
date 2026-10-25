@@ -60,6 +60,14 @@ public class User {
     @Column(nullable = false, length = 20)
     private String role;               // CUSTOMER | OPS | ADMIN | FINANCE
 
+    /** A configurable staff role (Roles & permissions); null = the built-in role above. */
+    @Column(name = "custom_role", length = 40)
+    private String customRole;
+
+    /** National ID (or passport) number given at wallet registration. */
+    @Column(name = "id_number", length = 40)
+    private String idNumber;
+
     @Column(nullable = false)
     private Boolean isActive;
 

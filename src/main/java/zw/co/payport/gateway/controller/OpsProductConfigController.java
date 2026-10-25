@@ -79,6 +79,7 @@ public class OpsProductConfigController {
     private final TransactionAuditLogRepository auditLogRepository;
     private final NotificationLogRepository notificationLogRepository;
     private final AuthService               authService;
+    private final zw.co.payport.gateway.roles.StaffRoles staffRoles;
     private final zw.co.payport.gateway.service.SmsNotificationService smsNotificationService;
 
     /** Product, currency and payment-method switches go to the hash-chained audit log. */
@@ -360,7 +361,10 @@ public class OpsProductConfigController {
             throw new IllegalArgumentException("User with phone " + phone + " already exists");
         }
 
-        String role = body.getOrDefault("role", "CUSTOMER").toString();
+        String[] assigned = staffRoles.assignment(body.getOrDefault("role", "CUSTOMER").toString());
+        if (assigned == null) throw new IllegalArgumentException("Unknown role");
+        String role = assigned[0];
+        String customRole = assigned[1];
         boolean isStaff = !"CUSTOMER".equals(role);
 
         String email = str(body, "email").trim().toLowerCase();
@@ -383,6 +387,8 @@ public class OpsProductConfigController {
                 .phone(phone)
                 .pinHash(enc.encode(str(body, "pin")))
                 .role(role)
+                .customRole(customRole)
+                .idNumber(AuthService.cleanIdNumber(str(body, "idNumber")))
                 .isActive(true)
                 .isVerified(true)
                 .failedPinAttempts(0);
@@ -402,7 +408,13 @@ public class OpsProductConfigController {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found: " + id));
         if (body.containsKey("fullName")) user.setFullName(str(body, "fullName"));
-        if (body.containsKey("role")) user.setRole(str(body, "role"));
+        if (body.containsKey("role")) {
+            String[] assigned = staffRoles.assignment(str(body, "role"));
+            if (assigned == null) throw new IllegalArgumentException("Unknown role");
+            user.setRole(assigned[0]);
+            user.setCustomRole(assigned[1]);
+        }
+        if (body.containsKey("idNumber")) user.setIdNumber(AuthService.cleanIdNumber(str(body, "idNumber")));
         if (body.containsKey("isActive")) user.setIsActive((Boolean) body.get("isActive"));
         if (body.containsKey("email")) {
             String newEmail = str(body, "email").trim().toLowerCase();
@@ -679,6 +691,10 @@ public class OpsProductConfigController {
         m.put("phone", u.getPhone());
         m.put("email", u.getEmail());
         m.put("role", u.getRole());
+        m.put("customRole", u.getCustomRole());
+        var staff = staffRoles.of(u);
+        m.put("roleName", staff == null ? "Customer" : staff.name());
+        m.put("idNumber", u.getIdNumber());
         m.put("isActive", u.getIsActive());
         m.put("isVerified", u.getIsVerified());
         m.put("accountLocked", Boolean.TRUE.equals(u.getAccountLocked()));

@@ -29,6 +29,7 @@ public class OpsController {
     private final TransactionAuditLogRepository auditLogRepository;
     private final ProviderHealthRepository providerHealthRepository;
     private final TransactionOrchestratorService orchestratorService;
+    private final zw.co.payport.gateway.repository.UserRepository userRepository;
 
     // ─── DASHBOARD KPIs ───────────────────────────────────────────────────────
 
@@ -192,6 +193,11 @@ public class OpsController {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("phone", normalizedPhone);
+        userRepository.findByPhone(normalizedPhone).ifPresent(u -> {
+            result.put("customerName", u.getFullName());
+            result.put("idNumber", u.getIdNumber());
+            result.put("registeredAt", u.getRegisteredAt());
+        });
         result.put("generatedAt", LocalDateTime.now().toString());
         result.put("totalTransactions", totalTx);
         result.put("completedTransactions", completed);

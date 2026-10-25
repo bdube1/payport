@@ -18,6 +18,11 @@ public class AuthRequests {
         @NotBlank(message = "PIN is required")
         @Pattern(regexp = "^\\d{4}$", message = "PIN must be exactly 4 digits")
         private String pin;
+
+        /** National ID / passport number (the apps require it; kept optional here so older builds still register). */
+        @Size(max = 40, message = "ID number is too long")
+        @Pattern(regexp = "^$|^[A-Za-z0-9][A-Za-z0-9 /-]{3,39}$", message = "Enter a valid ID number")
+        private String idNumber;
     }
 
     @Data

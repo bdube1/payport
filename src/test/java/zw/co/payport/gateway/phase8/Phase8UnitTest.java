@@ -128,7 +128,7 @@ class Phase8UnitTest {
     }
 
     private static boolean allows(String env, String extra, String origin) {
-        SecurityConfig c = new SecurityConfig(null);
+        SecurityConfig c = new SecurityConfig(null, null);
         org.springframework.test.util.ReflectionTestUtils.setField(c, "environment", env);
         org.springframework.test.util.ReflectionTestUtils.setField(c, "extraOrigins", extra);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/products");
