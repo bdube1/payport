@@ -38,19 +38,45 @@ public class BillerController {
 
     public record LookupBody(String accountNumber, String currency, String sourcePhone) {}
 
+    /** Thrown when the biller did not answer (transport): the customer is told to try again shortly. */
+    public static class BillerUnavailableException extends RuntimeException {
+        public BillerUnavailableException(String m) { super(m); }
+    }
+
+    /**
+     * The one account lookup every channel uses (web, app, USSD, WhatsApp): format check, provider health, the
+     * biller's own answer. IllegalArgumentException = the account is wrong; BillerUnavailableException = no answer;
+     * any other RuntimeException carries the biller's words.
+     */
+    public BillerAdaptor.Account lookupAccount(String code, String accountNumber, String currency, String sourcePhone) {
+        BillerAdaptor biller = billers.find(code).orElseThrow(() -> new IllegalArgumentException("Unknown biller " + code));
+        String invalid = biller.validateAccount(accountNumber);
+        if (invalid != null) throw new IllegalArgumentException(invalid);
+        long started = System.currentTimeMillis();
+        health.acquire(biller.profile().code(), biller.profile().name());
+        try {
+            BillerAdaptor.Account a = biller.lookup(accountNumber.trim().replaceAll("\\s+", ""), currency, sourcePhone);
+            health.success(biller.profile().code(), System.currentTimeMillis() - started);
+            return a;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            boolean transport = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e) || e instanceof java.io.IOException;
+            if (transport) health.failure(biller.profile().code(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
+            else health.success(biller.profile().code(), System.currentTimeMillis() - started);
+            log.warn("[BILLERS] {} lookup failed: {}", code, e.getMessage());
+            if (transport) throw new BillerUnavailableException(biller.profile().name() + " is not responding. Please try again shortly.");
+            throw e instanceof RuntimeException r ? r : new IllegalStateException(e.getMessage());
+        }
+    }
+
     @PostMapping("/{code}/lookup")
     public ResponseEntity<ApiResponse<Map<String, Object>>> lookup(@PathVariable String code, @RequestBody LookupBody b, HttpServletRequest req) {
-        BillerAdaptor biller = billers.find(code).orElse(null);
-        if (biller == null) return ResponseEntity.status(404).body(ApiResponse.error("UNKNOWN_BILLER", "Unknown biller " + code, rid(req)));
-        String invalid = biller.validateAccount(b == null ? null : b.accountNumber());
-        if (invalid != null) return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_ACCOUNT", invalid, rid(req)));
-        long started = System.currentTimeMillis();
+        if (billers.find(code).isEmpty()) return ResponseEntity.status(404).body(ApiResponse.error("UNKNOWN_BILLER", "Unknown biller " + code, rid(req)));
         try {
-            health.acquire(biller.profile().code(), biller.profile().name());
-            BillerAdaptor.Account a = biller.lookup(b.accountNumber().trim().replaceAll("\\s+", ""), b.currency(), b.sourcePhone());
-            health.success(biller.profile().code(), System.currentTimeMillis() - started);
+            BillerAdaptor.Account a = lookupAccount(code, b == null ? null : b.accountNumber(), b == null ? null : b.currency(), b == null ? null : b.sourcePhone());
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("biller", biller.profile().code());
+            m.put("biller", billers.find(code).get().profile().code());
             m.put("accountNumber", a.accountNumber());
             m.put("holderName", a.holderName());
             m.put("currency", a.currency());
@@ -63,14 +89,10 @@ public class BillerController {
             throw e;
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_ACCOUNT", e.getMessage(), rid(req)));
-        } catch (Exception e) {
-            // The biller answered "not found"/declined (a RuntimeException with its words) or the call failed.
-            boolean transport = zw.co.payport.gateway.payments.SubmissionErrors.isOutcomeUnknown(e) || e instanceof java.io.IOException;
-            if (transport) health.failure(biller.profile().code(), System.currentTimeMillis() - started, e.getClass().getSimpleName());
-            else health.success(biller.profile().code(), System.currentTimeMillis() - started);
-            log.warn("[BILLERS] {} lookup failed: {}", code, e.getMessage());
-            return ResponseEntity.status(transport ? 503 : 422).body(ApiResponse.error(transport ? "BILLER_UNAVAILABLE" : "LOOKUP_FAILED",
-                    transport ? biller.profile().name() + " is not responding. Please try again shortly." : e.getMessage(), rid(req)));
+        } catch (BillerUnavailableException e) {
+            return ResponseEntity.status(503).body(ApiResponse.error("BILLER_UNAVAILABLE", e.getMessage(), rid(req)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(422).body(ApiResponse.error("LOOKUP_FAILED", e.getMessage(), rid(req)));
         }
     }
 
