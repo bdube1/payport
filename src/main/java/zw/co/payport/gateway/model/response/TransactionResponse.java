@@ -41,6 +41,8 @@ public class TransactionResponse {
     private String outcomeMessage;
     /** Payment attempts made on this transaction (a new attempt is allowed after a definite failure). */
     private Integer paymentAttempts;
+    /** Who it was paid to: merchant, agent or provider (ZESA, Econet …). */
+    private String toName;
     private LocalDateTime initiatedAt;
     private LocalDateTime paymentConfirmedAt;
     private LocalDateTime completedAt;

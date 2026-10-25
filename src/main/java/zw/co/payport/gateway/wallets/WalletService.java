@@ -79,6 +79,7 @@ public class WalletService {
     private final ComplianceAudit audit;
     private final FxService fx;
     private final TransactionTemplate tx;
+    private final zw.co.payport.gateway.service.Counterparties counterparties;
 
     public WalletService(JdbcTemplate jdbc, LedgerClient ledger, MarketRegistry markets, ServiceLineService lines, ComplianceParameters params,
                          ComplianceAudit audit, FxService fx, PlatformTransactionManager tm) {
@@ -90,6 +91,7 @@ public class WalletService {
         this.audit = audit;
         this.fx = fx;
         this.tx = new TransactionTemplate(tm);
+        this.counterparties = new zw.co.payport.gateway.service.Counterparties(jdbc);
     }
 
     public void requireOn() {
@@ -202,8 +204,22 @@ public class WalletService {
     }
 
     public List<Map<String, Object>> statement(Wallet w, int limit) {
-        return jdbc.queryForList("SELECT op_ref, kind, direction, amount_minor, currency, counterparty, reference, entry_ref, created_at "
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT op_ref, kind, direction, amount_minor, currency, counterparty, reference, entry_ref, created_at "
                 + "FROM wallet_operations WHERE wallet_id = ? ORDER BY id DESC LIMIT ?", w.id(), Math.max(1, Math.min(limit, 500)));
+        for (Map<String, Object> r : rows) r.put("to_name", toName((String) r.get("kind"), (String) r.get("counterparty"), (String) r.get("reference")));
+        return rows;
+    }
+
+    /** Who the other side was, as the customer sees it (merchant, agent, provider or the other wallet's holder). */
+    public String toName(String kind, String counterparty, String reference) {
+        if (kind == null) return counterparty;
+        return switch (kind) {
+            case "CASH_IN", "CASH_OUT" -> zw.co.payport.gateway.service.Counterparties.agentName(counterparty);
+            case "PAYMENT", "REFUND" -> java.util.Optional.ofNullable(counterparties.forReference(reference)).orElse(counterparty);
+            case "P2P_OUT", "P2P_IN" -> jdbc.queryForList("SELECT u.full_name FROM wallets w JOIN users u ON u.id = w.user_id WHERE w.wallet_ref = ?",
+                    String.class, counterparty).stream().findFirst().orElse(counterparty);
+            default -> counterparty;
+        };
     }
 
     // ─── the one way money moves ────────────────────────────────────────────

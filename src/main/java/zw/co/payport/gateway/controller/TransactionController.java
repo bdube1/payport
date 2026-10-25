@@ -50,6 +50,7 @@ public class TransactionController {
     private final TransactionAccessService accessService;
     private final zw.co.payport.gateway.payments.TransactionOutcomeService outcomes;
     private final zw.co.payport.gateway.scheduler.PaymentTimeoutWatchdog paymentWindows;
+    private final zw.co.payport.gateway.service.Counterparties counterparties;
 
     /**
      * One-session channels: wait for the final outcome; if the customer-facing wait ends while the
@@ -226,6 +227,7 @@ public class TransactionController {
             r.setOutcome(o.outcome().name());
             r.setOutcomeMessage(o.message());
             r.setPaymentAttempts(o.attempts());
+            r.setToName(counterparties.forTransaction(t));
             return r;
         }).toList());
         result.put("totalElements", txPage.getTotalElements());

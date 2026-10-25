@@ -70,6 +70,9 @@ class RolesPermissionsScenarioTest {
     @Autowired JwtService jwt;
     @Autowired UserDetailsService users;
     @Autowired DataSource dataSource;
+    @Autowired zw.co.payport.gateway.wallets.WalletService wallets;
+    @Autowired zw.co.payport.gateway.channels.ChannelService channels;
+    @Autowired zw.co.payport.gateway.markets.MarketRegistry markets;
     @Value("${local.server.port}") int port;
 
     static final ObjectMapper JSON = new ObjectMapper();
@@ -224,6 +227,68 @@ class RolesPermissionsScenarioTest {
         Res w = call("POST", "/api/v1/admin/whatsapp/simulate", ops, Map.of("phone", "263771234567", "text", "hi"));
         assertEquals(200, w.status(), w.body().toString());
         assertTrue(w.data().path("reply").asText().contains("MENU"), w.body().toString());
+    }
+
+    long walletHolder(String name) {
+        String phone = phone();
+        jdbc.update("INSERT INTO users (full_name, phone, pin_hash, role, is_active, is_verified, id_number) VALUES (?, ?, 'x', 'CUSTOMER', TRUE, TRUE, ?)",
+                name, phone, "63-" + SEQ.incrementAndGet() + "A42");
+        return jdbc.queryForObject("SELECT id FROM users WHERE phone = ?", Long.class, phone);
+    }
+
+    @Test
+    void walletStatement_runningBalanceMatchesTheLedger_andBalancesReportIsLargestFirst() throws Exception {
+        markets.reload();
+        jdbc.update("UPDATE service_lines SET licence_status = 'NOT_REQUIRED', enabled = TRUE WHERE code IN ('WALLETS','AGENTS','FX_CONVERSION')");
+        jdbc.update("UPDATE payment_methods SET is_active = TRUE WHERE code = 'WALLET'");
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
+        channels.refresh();
+        String ops = staff("OPS", null);
+
+        long aId = walletHolder("Anesu Statement"), bId = walletHolder("Bongi Statement");
+        String aPhone = jdbc.queryForObject("SELECT phone FROM users WHERE id = ?", String.class, aId);
+        String bPhone = jdbc.queryForObject("SELECT phone FROM users WHERE id = ?", String.class, bId);
+        var a = wallets.open(aId, aPhone, "USD", "test");
+        var b = wallets.open(bId, bPhone, "USD", "test");
+        wallets.creditTopUp("PP-WEB-20261025-7" + String.format("%05d", SEQ.incrementAndGet() % 100_000), a.ref(), "USD", 10_000, "ECOCASH", "test");
+        wallets.creditTopUp("PP-WEB-20261025-7" + String.format("%05d", SEQ.incrementAndGet() % 100_000), a.ref(), "USD", 5_000, "ECOCASH", "test");
+        wallets.creditTopUp("PP-WEB-20261025-7" + String.format("%05d", SEQ.incrementAndGet() % 100_000), b.ref(), "USD", 1_000, "ECOCASH", "test");
+        wallets.transfer(aId, b.ref(), "USD", 3_000, "T" + SEQ.incrementAndGet(), "test");
+
+        Res st = call("GET", "/api/v1/admin/wallets/" + a.ref() + "/statement-report", ops, null);
+        assertEquals(200, st.status(), st.body().toString());
+        JsonNode d = st.data();
+        long ledgerBalance = wallets.balance(a);
+        assertEquals(0, d.path("openingBalanceMinor").asLong());
+        assertEquals(15_000, d.path("totalCreditsMinor").asLong());
+        assertEquals(ledgerBalance, d.path("closingBalanceMinor").asLong());
+        assertEquals(ledgerBalance, d.path("currentBalanceMinor").asLong());
+        assertTrue(d.path("reconciled").asBoolean());
+        assertTrue(d.path("rows").size() >= 3);
+        long run = d.path("openingBalanceMinor").asLong();
+        for (JsonNode r : d.path("rows")) {
+            run += r.path("creditMinor").asLong(0) - r.path("debitMinor").asLong(0);
+            assertEquals(run, r.path("balanceMinor").asLong(), "running balance on " + r);
+        }
+        assertEquals(ledgerBalance, run);
+        assertTrue(d.path("rows").get(d.path("rows").size() - 1).path("details").asText().contains("Bongi"), d.path("rows").toString());
+        assertTrue(d.path("wallet").path("id_number").asText().startsWith("63-"));
+
+        String tomorrow = java.time.LocalDate.now().plusDays(1).toString();
+        JsonNode later = call("GET", "/api/v1/admin/wallets/" + a.ref() + "/statement-report?from=" + tomorrow, ops, null).data();
+        assertEquals(ledgerBalance, later.path("openingBalanceMinor").asLong(), "opening = everything before the period");
+        assertEquals(0, later.path("rows").size());
+
+        Res bal = call("GET", "/api/v1/admin/wallets/balances?currency=USD", ops, null);
+        assertEquals(200, bal.status(), bal.body().toString());
+        long prev = Long.MAX_VALUE;
+        boolean seenA = false;
+        for (JsonNode r : bal.data().path("rows")) {
+            assertTrue(r.path("balance_minor").asLong() <= prev, "largest first");
+            prev = r.path("balance_minor").asLong();
+            if (a.ref().equals(r.path("wallet_ref").asText())) { seenA = true; assertEquals(ledgerBalance, r.path("balance_minor").asLong()); }
+        }
+        assertTrue(seenA);
     }
 
     @Test

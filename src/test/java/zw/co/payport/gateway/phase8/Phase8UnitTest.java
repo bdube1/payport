@@ -120,6 +120,10 @@ class Phase8UnitTest {
         assertFalse(allows("production", "", "http://localhost:3000"));
         assertTrue(allows("production", "", "https://admin.payport.africa"));
         assertTrue(allows("staging", "", "http://localhost:3000"));
+        assertTrue(allows("staging", "", "https://admin-staging.payport.africa"));
+        assertTrue(allows("staging", "", "https://app-staging.payport.africa"));
+        assertTrue(allows("staging", "", "https://merchant-staging.payport.africa"));
+        assertFalse(allows("production", "", "https://app-staging.payport.africa"), "staging portals never reach production");
         assertTrue(allows("production", "https://ops.partner.example, http://insecure.example", "https://ops.partner.example"));
         assertFalse(allows("production", "https://ops.partner.example, http://insecure.example", "http://insecure.example"), "only https extras");
         assertTrue(allows("staging", "http://68.183.134.5:4001", "http://68.183.134.5:4001"), "staging may list an http origin");

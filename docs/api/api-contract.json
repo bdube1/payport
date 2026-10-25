@@ -978,6 +978,10 @@
    "path": "/api/v1/admin/wallets"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/balances"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/admin/wallets/refunds/{reference}"
   },
@@ -996,6 +1000,10 @@
   {
    "method": "GET",
    "path": "/api/v1/admin/wallets/{ref}/statement"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/{ref}/statement-report"
   },
   {
    "method": "POST",

@@ -200,3 +200,19 @@ explained).
 | Settlement parallel run | §7 | Ready | Finance | Agreed run length; every discrepancy explained |
 
 Production activation, live payouts, LIVE settlement mode and settlement automation all stay **off**.
+
+## Staging addresses (https)
+
+| Address | What | Local port |
+|---|---|---|
+| https://admin-staging.payport.africa | Ops portal | 4000 |
+| https://app-staging.payport.africa | Consumer portal | 4001 |
+| https://merchant-staging.payport.africa | Merchant and agent portal | 4002 |
+| https://api-staging.payport.africa | Gateway | 8085 |
+
+1. DNS: four A records (admin-staging, app-staging, merchant-staging, api-staging) → the staging server.
+2. `sudo EMAIL=<you> scripts/staging/setup-staging-domains.sh` (nginx + Let's Encrypt, renews itself).
+3. `.env.staging`: `GATEWAY_BASE_URL`, `OPS_PORTAL_URL`, `CONSUMER_BASE_URL`, `MERCHANT_PORTAL_URL` and
+   `FORWARD_HEADERS_STRATEGY=native` as in `env.staging.example`. The three portal addresses are allowed by CORS
+   outside production without listing them.
+4. Portals: `npm run build -- --mode staging` (reads `.env.staging`: `VITE_API_URL=https://api-staging.payport.africa`).
