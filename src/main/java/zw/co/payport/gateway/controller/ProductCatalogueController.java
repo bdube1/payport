@@ -182,7 +182,7 @@ public class ProductCatalogueController {
             @RequestParam(defaultValue = "USD") String currency,
             HttpServletRequest req) {
 
-        // The same bundles every channel shows: the ones switched on in Platform setup → Bundles.
+        // The same bundles every channel shows: NetOne's live list, or the ones switched on in Platform setup → Bundles.
         String ccy = currency.toUpperCase();
         List<Map<String, Object>> bundles = bundleService.getActiveBundles(provider.toUpperCase(), ccy, null).stream().map(b -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();

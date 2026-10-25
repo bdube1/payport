@@ -34,18 +34,11 @@ public class BundleService {
     private volatile long netOneSyncedAt = 0;
     private static final long NETONE_SYNC_EVERY_MS = 30 * 60 * 1000L;
 
-    @Cacheable(value = "bundles", key = "#provider + '-' + #currency + '-' + #category")
+    @Cacheable(value = "bundles", key = "#provider + '-' + #currency + '-' + #category", condition = "!'NETONE'.equalsIgnoreCase(#provider)")
     public List<BundleResponse> getActiveBundles(String provider, String currency, String category) {
-        // NetOne: its live catalogue is copied into the bundle table (new bundles start switched off); customers on
-        // every channel see only the bundles switched on in Platform setup → Bundles, priced in the currency asked for.
+        // NetOne (owner, 2026-10-25): customers on every channel see exactly what NetOne returns, asked live.
         if ("NETONE".equalsIgnoreCase(provider)) {
-            syncNetOneIfDue();
-            String ccy = currency == null ? "USD" : currency.toUpperCase();
-            return bundleRepository.findByProviderCodeAndIsActiveTrueOrderByDisplayOrder("NETONE").stream()
-                    .filter(b -> "ZWG".equals(ccy) || "ZWL".equals(ccy) ? b.getPriceZwgCents() != null : b.getPriceUsdCents() != null)
-                    .filter(b -> category == null || category.isEmpty() || category.equals(b.getCategory()))
-                    .map(b -> BundleResponse.from(b, ccy))
-                    .toList();
+            return netOneLive(currency);
         }
         
         // For ECONET, TELECEL - from database
@@ -61,6 +54,31 @@ public class BundleService {
         return bundles.stream()
                 .map(b -> BundleResponse.from(b, currency))
                 .toList();
+    }
+
+    private final Map<String, Object[]> netOneLiveCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long NETONE_LIVE_TTL_MS = 2 * 60 * 1000L;
+
+    /** NetOne's live list, kept for two minutes when it has bundles in it (an empty answer is asked again next time). */
+    public List<BundleResponse> netOneLive(String currency) {
+        String ccy = currency == null || currency.isBlank() ? "USD" : currency.toUpperCase();
+        if ("ZWL".equals(ccy)) ccy = "ZWG";
+        Object[] hit = netOneLiveCache.get(ccy);
+        if (hit != null && System.currentTimeMillis() - (Long) hit[0] < NETONE_LIVE_TTL_MS) {
+            @SuppressWarnings("unchecked") List<BundleResponse> cached = (List<BundleResponse>) hit[1];
+            return cached;
+        }
+        List<BundleResponse> live = getNetOneBundlesFromApi(ccy);
+        final String c = ccy;
+        live.forEach(b -> {
+            b.setIsActive(true);
+            b.setProviderCode("NETONE");
+            if (b.getCurrency() == null) b.setCurrency(c);
+            if (b.getPrice() == null && b.getPriceValue() != null)
+                b.setPrice("USD".equals(c) ? String.format("$%.2f", b.getPriceValue()) : String.format("ZiG %.2f", b.getPriceValue()));
+        });
+        if (!live.isEmpty()) netOneLiveCache.put(ccy, new Object[] { System.currentTimeMillis(), live });
+        return live;
     }
 
     /**
@@ -605,9 +623,8 @@ public class BundleService {
     public List<BundleResponse> getAllBundles(String provider, String currency) {
         String p = provider.toUpperCase();
         String ccy = currency == null ? "USD" : currency.toUpperCase();
-        // The list always loads from the table; NetOne is asked at most every 30 minutes and a failure there never
-        // stops the page (Refresh from NetOne asks now and reports what happened).
-        if ("NETONE".equals(p)) syncNetOneIfDue();
+        // NetOne: the bundle manager shows NetOne's live list, the same one customers see.
+        if ("NETONE".equals(p)) { netOneLiveCache.remove("ZWG".equals(ccy) || "ZWL".equals(ccy) ? "ZWG" : "USD"); return netOneLive(ccy); }
         return bundleRepository.findAll().stream()
                 .filter(b -> p.equals(b.getProviderCode()))
                 .filter(b -> !"NETONE".equals(p) || ("ZWG".equals(ccy) ? b.getPriceZwgCents() != null : b.getPriceUsdCents() != null))
