@@ -882,6 +882,10 @@
    "path": "/api/v1/admin/service-lines/{code}"
   },
   {
+   "method": "PUT",
+   "path": "/api/v1/admin/session-timeouts"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/admin/settlements"
   },
@@ -1624,6 +1628,10 @@
   {
    "method": "POST",
    "path": "/api/v1/qr/resolve"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/session-timeouts"
   },
   {
    "method": "POST",

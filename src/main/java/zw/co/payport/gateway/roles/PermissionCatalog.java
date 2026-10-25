@@ -99,6 +99,7 @@ public final class PermissionCatalog {
             f("markets", "Platform setup", "Markets, currencies & FX", List.of("/markets"), List.of(A + "markets", A + "fx"), ADMIN, OPS, FINANCE, COMPLIANCE),
             f("ussd_whatsapp", "Platform setup", "USSD & WhatsApp", List.of("/ussd-whatsapp"), List.of(A + "ussd", A + "whatsapp"), ADMIN, OPS, COMPLIANCE),
             f("config", "Platform setup", "Payment methods & configuration", List.of("/config"), List.of(A + "config"), ADMIN, OPS),
+            f("session_timeouts", "Platform setup", "Session time-outs", List.of("/session-timeouts"), List.of(A + "session-timeouts"), ADMIN),
 
             f("compliance", "Compliance", "Compliance console", List.of("/compliance"), List.of(A + "compliance"), COMPLIANCE),
             f("compliance_authorities", "Compliance", "Compliance authorities", List.of("/compliance-authorities"),
