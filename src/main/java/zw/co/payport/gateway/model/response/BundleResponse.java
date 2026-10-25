@@ -42,6 +42,8 @@ public class BundleResponse {
     // Display
     private String popularTag;
     private Integer displayOrder;
+    /** Switched on in Platform setup → Bundles (customers see only these). */
+    private Boolean isActive;
 
     // Additional features map
     private Map<String, Object> features;
@@ -61,7 +63,8 @@ public class BundleResponse {
                 .includesSms(bundle.getIncludesSms())
                 .includesVoiceMinutes(bundle.getIncludesVoiceMinutes())
                 .popularTag(bundle.getPopularTag())
-                .displayOrder(bundle.getDisplayOrder());
+                .displayOrder(bundle.getDisplayOrder())
+                .isActive(Boolean.TRUE.equals(bundle.getIsActive()));
 
         // Set price based on currency
         if ("USD".equalsIgnoreCase(currency) && bundle.getPriceUsdCents() != null) {

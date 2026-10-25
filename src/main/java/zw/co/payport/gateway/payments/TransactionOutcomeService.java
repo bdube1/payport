@@ -36,6 +36,32 @@ public class TransactionOutcomeService {
 
     private final TransactionRepository transactions;
     private final FulfilmentQueueService jobs;
+    /** Payment windows (same settings as PaymentTimeoutWatchdog); null in unit tests = no safety net. */
+    private org.springframework.core.env.Environment env;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setEnvironment(org.springframework.core.env.Environment env) {
+        this.env = env;
+    }
+
+    /** Extra seconds after a window before the customer is answered regardless (the watchdog runs every 5s). */
+    static final long GRACE_SECONDS = 30;
+
+    long windowSeconds(Transaction tx) {
+        if (env == null) return Long.MAX_VALUE / 4;
+        String p = tx.getPaymentProviderCode() == null ? null : tx.getPaymentProviderCode().toUpperCase();
+        String c = tx.getChannel() == null ? null : tx.getChannel().name();
+        Integer v = null;
+        if (c != null && p != null) v = env.getProperty("payport.payments.window-seconds." + c + "." + p, Integer.class);
+        if (v == null && c != null) v = env.getProperty("payport.payments.window-seconds." + c, Integer.class);
+        if (v == null && p != null) v = env.getProperty("payport.payments.provider-timeout-seconds." + p, Integer.class);
+        if (v == null) v = env.getProperty("payport.payments.timeout-seconds", Integer.class, 180);
+        return v;
+    }
+
+    private static long age(java.time.LocalDateTime from) {
+        return from == null ? 0 : java.time.Duration.between(from, java.time.LocalDateTime.now()).getSeconds();
+    }
 
     public TransactionOutcomeService(TransactionRepository transactions, FulfilmentQueueService jobs) {
         this.transactions = transactions;
@@ -52,8 +78,21 @@ public class TransactionOutcomeService {
         String msg = tx.getFailureReason();
         switch (s) {
             case INITIATED -> { o = Outcome.REQUIRES_PAYMENT; msg = null; }
-            case PAYMENT_PENDING -> { o = Outcome.PROCESSING; msg = null; }
-            case PAYMENT_CONFIRMED, FULFILMENT_RETRY -> { o = Outcome.PROCESSING; msg = DELIVERING; }
+            case PAYMENT_PENDING -> {
+                // Agreed timelines: once the payment window (plus a short grace) has passed, the customer gets an
+                // answer even if the expiry job has not closed the payment yet; it closes it within seconds.
+                java.time.LocalDateTime from = tx.getPaymentSubmittedAt() != null ? tx.getPaymentSubmittedAt() : tx.getInitiatedAt();
+                if (age(from) > windowSeconds(tx) + GRACE_SECONDS) {
+                    o = Outcome.NO_RESPONSE;
+                    msg = "No response from the provider. The transaction timed out.";
+                } else { o = Outcome.PROCESSING; msg = null; }
+            }
+            case PAYMENT_CONFIRMED, FULFILMENT_RETRY -> {
+                if (age(tx.getPaymentConfirmedAt()) > windowSeconds(tx) + GRACE_SECONDS) {
+                    o = Outcome.NO_RESPONSE;
+                    msg = "Payment received. Delivery is taking longer than usual; you will get an SMS when it is complete.";
+                } else { o = Outcome.PROCESSING; msg = DELIVERING; }
+            }
             case PAYMENT_TIMEOUT -> {
                 o = "NO_RESPONSE".equals(tx.getPaymentOutcome()) ? Outcome.NO_RESPONSE : Outcome.TIMED_OUT;
                 if (msg == null) msg = o == Outcome.NO_RESPONSE ? "No response from the provider. The transaction timed out." : "The transaction timed out.";
@@ -61,7 +100,8 @@ public class TransactionOutcomeService {
             case PAYMENT_FAILED, FULFILMENT_FAILED, MANUAL_FULFILMENT -> o = Outcome.FAILED;
             case FULFILMENT_PENDING -> {
                 FulfilmentQueueService.JobStatus job = jobs.find(tx.getReference()).map(FulfilmentQueueService.Job::status).orElse(null);
-                if (job == FulfilmentQueueService.JobStatus.UNKNOWN || job == FulfilmentQueueService.JobStatus.MANUAL) {
+                if (job == FulfilmentQueueService.JobStatus.UNKNOWN || job == FulfilmentQueueService.JobStatus.MANUAL
+                        || age(tx.getPaymentConfirmedAt()) > windowSeconds(tx) + GRACE_SECONDS) {
                     o = Outcome.NO_RESPONSE;
                     msg = "No response from the service provider. We are confirming whether it was delivered.";
                 } else {

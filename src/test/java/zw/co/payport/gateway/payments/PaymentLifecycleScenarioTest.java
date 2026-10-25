@@ -527,6 +527,18 @@ class PaymentLifecycleScenarioTest {
     }
 
     @Test
+    void windowPassed_customerGetsAnAnswerEvenBeforeTheExpiryJobRuns() throws Exception {
+        String ref = newPayment(2075);
+        pay(ref, "SIM");
+        jdbc.update("UPDATE transactions SET payment_submitted_at = ? WHERE reference = ?",
+                java.sql.Timestamp.valueOf(LocalDateTime.now().minusMinutes(10)), ref);
+        assertEquals(TransactionStatus.PAYMENT_PENDING, tx(ref).getStatus());
+        TransactionOutcomeService.Result o = outcomes.current(ref).orElseThrow();
+        assertEquals(TransactionOutcomeService.Outcome.NO_RESPONSE, o.outcome(), "agreed timeline: answered after the window");
+        assertTrue(o.outcome().isFinal());
+    }
+
+    @Test
     void windowNotYetClosed_staysProcessing() throws Exception {
         String ref = newPayment(2070);
         pay(ref, "SIM");

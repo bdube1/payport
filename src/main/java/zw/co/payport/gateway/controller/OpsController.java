@@ -360,27 +360,6 @@ public class OpsController {
         return ResponseEntity.ok(ApiResponse.success(result, requestId(req)));
     }
 
-    // ─── FLOAT THRESHOLDS ─────────────────────────────────────────────────────
-
-    // In-memory thresholds (in production would be DB-persisted)
-    private static final java.util.concurrent.ConcurrentHashMap<String, Double> FLOAT_THRESHOLDS
-        = new java.util.concurrent.ConcurrentHashMap<>(Map.of(
-            "NETONE", 100.0, "ECONET", 500.0, "TELECEL", 100.0));
-
-    @GetMapping("/float-thresholds")
-    public ResponseEntity<ApiResponse<Map<String, Double>>> getFloatThresholds(HttpServletRequest req) {
-        return ResponseEntity.ok(ApiResponse.success(new LinkedHashMap<>(FLOAT_THRESHOLDS), requestId(req)));
-    }
-
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('OPS','ADMIN','FINANCE')")
-    @PutMapping("/float-thresholds")
-    public ResponseEntity<ApiResponse<Map<String, Double>>> updateFloatThresholds(
-            @RequestBody Map<String, Double> thresholds, HttpServletRequest req) {
-        thresholds.forEach((k, v) -> FLOAT_THRESHOLDS.put(k.toUpperCase(), v));
-        log.info("[OPS] Float thresholds updated: {}", thresholds);
-        return ResponseEntity.ok(ApiResponse.success(new LinkedHashMap<>(FLOAT_THRESHOLDS), requestId(req)));
-    }
-
     private String quote(String s) {
         if (s == null) return "\"\"";
         return "\"" + s.replace("\"", "\"\"") + "\"";

@@ -54,6 +54,21 @@ public class BundleController {
         return ResponseEntity.ok(bundleService.getCategories(provider));
     }
 
+    /** Every bundle of a provider, on and off, for Platform setup → Bundles. */
+    @GetMapping("/admin/{provider}/all")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS')")
+    public ResponseEntity<List<BundleResponse>> allBundles(@PathVariable String provider,
+                                                           @RequestParam(required = false, defaultValue = "USD") String currency) {
+        return ResponseEntity.ok(bundleService.getAllBundles(provider, currency));
+    }
+
+    /** Copies NetOne's live catalogue now (new bundles arrive switched off). */
+    @PostMapping("/admin/NETONE/sync")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> syncNetOne() {
+        return ResponseEntity.ok(bundleService.syncNetOne());
+    }
+
     @PostMapping("/admin/upload")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> uploadBundles(@ModelAttribute BundleUploadRequest request) {

@@ -28,12 +28,24 @@ public class BundleService {
 
     private final BundleProductRepository bundleRepository;
     private final NetOneAirtimeAdaptor netOneAdaptor;
+    private final zw.co.payport.gateway.service.adaptor.netone.NetOneDataBundleService netOneData;
+
+    /** When NetOne's catalogue was last copied into the bundle table. */
+    private volatile long netOneSyncedAt = 0;
+    private static final long NETONE_SYNC_EVERY_MS = 30 * 60 * 1000L;
 
     @Cacheable(value = "bundles", key = "#provider + '-' + #currency + '-' + #category")
     public List<BundleResponse> getActiveBundles(String provider, String currency, String category) {
-        // Handle NetOne separately - they come from external API
+        // NetOne: its live catalogue is copied into the bundle table (new bundles start switched off); customers on
+        // every channel see only the bundles switched on in Platform setup → Bundles, priced in the currency asked for.
         if ("NETONE".equalsIgnoreCase(provider)) {
-            return getNetOneBundlesFromApi(currency);
+            syncNetOneIfDue();
+            String ccy = currency == null ? "USD" : currency.toUpperCase();
+            return bundleRepository.findByProviderCodeAndIsActiveTrueOrderByDisplayOrder("NETONE").stream()
+                    .filter(b -> "ZWG".equals(ccy) || "ZWL".equals(ccy) ? b.getPriceZwgCents() != null : b.getPriceUsdCents() != null)
+                    .filter(b -> category == null || category.isEmpty() || category.equals(b.getCategory()))
+                    .map(b -> BundleResponse.from(b, ccy))
+                    .toList();
         }
         
         // For ECONET, TELECEL - from database
@@ -587,6 +599,92 @@ public class BundleService {
         log.info("[BUNDLE] Bulk status update for provider: {} - {} bundles set to active={}",
                 provider, count, request.isActive());
         return count;
+    }
+
+    /** Every bundle of a provider, switched on or off, for Platform setup → Bundles (NetOne refreshed first). */
+    public List<BundleResponse> getAllBundles(String provider, String currency) {
+        String p = provider.toUpperCase();
+        String ccy = currency == null ? "USD" : currency.toUpperCase();
+        if ("NETONE".equals(p)) syncNetOne();
+        return bundleRepository.findAll().stream()
+                .filter(b -> p.equals(b.getProviderCode()))
+                .filter(b -> !"NETONE".equals(p) || ("ZWG".equals(ccy) ? b.getPriceZwgCents() != null : b.getPriceUsdCents() != null))
+                .sorted(Comparator.comparing((BundleProduct b) -> b.getDisplayOrder() == null ? Integer.MAX_VALUE : b.getDisplayOrder())
+                        .thenComparing(BundleProduct::getBundleCode))
+                .map(b -> BundleResponse.from(b, ccy))
+                .toList();
+    }
+
+    private void syncNetOneIfDue() {
+        if (System.currentTimeMillis() - netOneSyncedAt < NETONE_SYNC_EVERY_MS) return;
+        try { syncNetOne(); } catch (RuntimeException e) { log.warn("[NETONE] Catalogue refresh failed: {}", e.getMessage()); }
+    }
+
+    /**
+     * Copies NetOne's live USD and ZWG data bundle catalogues into the bundle table: prices, names, volumes and
+     * validity are refreshed; a bundle seen for the first time is added switched off; switches are never changed.
+     */
+    @CacheEvict(value = "bundles", allEntries = true)
+    @Transactional
+    public synchronized Map<String, Object> syncNetOne() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        int added = 0, updated = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (String ccy : List.of("USD", "ZWG")) {
+            List<zw.co.payport.gateway.service.adaptor.netone.NetOneDataBundleService.DataBundle> live = netOneData.fetchBundles(ccy);
+            out.put(ccy, live.size());
+            int order = 0;
+            for (var d : live) {
+                order++;
+                if (d.bundleCode() == null || d.bundleCode().isBlank()) continue;
+                Optional<BundleProduct> found = bundleRepository.findByProviderCodeAndBundleCode("NETONE", d.bundleCode());
+                BundleProduct b = found.orElseGet(() -> {
+                    BundleProduct n = new BundleProduct();
+                    n.setProviderCode("NETONE");
+                    n.setProviderName("NetOne");
+                    n.setBundleCode(d.bundleCode());
+                    n.setIsActive(false);
+                    n.setCategory("Data Bundles");
+                    n.setCreatedAt(now);
+                    n.setSourceFile("NETONE_API");
+                    return n;
+                });
+                if (found.isEmpty()) added++; else updated++;
+                b.setBundleName(d.name() == null || d.name().isBlank() ? d.bundleCode() : d.name());
+                if (d.validity() != null && !d.validity().isBlank()) b.setDescription(d.validity());
+                int cents = (int) Math.min(Integer.MAX_VALUE, Math.max(0, d.amountCents()));
+                if ("ZWG".equals(ccy)) b.setPriceZwgCents(cents); else b.setPriceUsdCents(cents);
+                Integer mb = megabytes(d.dataSize());
+                if (mb != null) b.setDataVolumeMb(mb);
+                Integer days = days(d.validity());
+                if (days != null) b.setValidityDays(days);
+                if (b.getDisplayOrder() == null) b.setDisplayOrder(order);
+                b.setUpdatedAt(now);
+                bundleRepository.save(b);
+            }
+        }
+        netOneSyncedAt = System.currentTimeMillis();
+        out.put("added", added);
+        out.put("updated", updated);
+        log.info("[NETONE] Catalogue refreshed: {}", out);
+        return out;
+    }
+
+    static Integer megabytes(String size) {
+        if (size == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("([0-9]+(?:\\.[0-9]+)?)\\s*(GB|MB|G|M)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(size);
+        if (!m.find()) return null;
+        double v = Double.parseDouble(m.group(1));
+        return (int) Math.round(m.group(2).toUpperCase().startsWith("G") ? v * 1024 : v);
+    }
+
+    static Integer days(String validity) {
+        if (validity == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("([0-9]+)\\s*(day|days|d\\b|week|weeks|month|months)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(validity);
+        if (!m.find()) return null;
+        int n = Integer.parseInt(m.group(1));
+        String u = m.group(2).toLowerCase();
+        return u.startsWith("week") ? n * 7 : u.startsWith("month") ? n * 30 : n;
     }
 
     public List<BundleProduct> getActiveBundlesEntity(String provider, String currency, String category) {

@@ -42,6 +42,7 @@ public class ProductCatalogueController {
     private final NetworkPrefixRepository    networkPrefixRepository;
     private final ProductCurrencyRepository  productCurrencyRepository;
     private final NetOneDataBundleService    netOneDataBundleService;
+    private final zw.co.payport.gateway.service.BundleService bundleService;
 
     /** Currencies switched off (or not live) in the portal are not offered to customers. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -181,12 +182,19 @@ public class ProductCatalogueController {
             @RequestParam(defaultValue = "USD") String currency,
             HttpServletRequest req) {
 
-        String p = provider.toUpperCase();
-        List<?> bundles = switch (p) {
-            case "NETONE" -> netOneDataBundleService.fetchBundles(currency.toUpperCase());
-            // Econet and Telecel: return empty until their endpoints are integrated
-            default -> List.of();
-        };
+        // The same bundles every channel shows: the ones switched on in Platform setup → Bundles.
+        String ccy = currency.toUpperCase();
+        List<Map<String, Object>> bundles = bundleService.getActiveBundles(provider.toUpperCase(), ccy, null).stream().map(b -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("bundleCode", b.getBundleCode());
+            m.put("name", b.getBundleName());
+            m.put("dataSize", b.getDataVolume());
+            m.put("validity", b.getValidity() != null ? b.getValidity() : b.getDescription());
+            m.put("amountCents", Math.round((b.getPriceValue() == null ? 0 : b.getPriceValue()) * 100));
+            m.put("currency", b.getCurrency());
+            m.put("category", b.getCategory());
+            return m;
+        }).toList();
 
         return ResponseEntity.ok(ApiResponse.success(bundles, getRequestId(req)));
     }

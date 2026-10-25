@@ -36,6 +36,8 @@ public class WalletBalanceController {
     private final RestTemplate restTemplate;
     private final EconetAirtimeAdaptor econetAdaptor;
     private final TelecelAirtimeAdaptor telecelAdaptor;
+    private final zw.co.payport.gateway.service.adaptor.netone.NetOneAirtimeAdaptor netOneAdaptor;
+    private final FloatThresholds thresholds;
 
     @Value("${payport.netone.base-url}")
     private String netoneBaseUrl;
@@ -69,10 +71,11 @@ public class WalletBalanceController {
         log.info("[WALLET] Fetching all provider balances, requestId: {}", requestId);
 
         Map<String, Object> balances = new LinkedHashMap<>();
-        ExecutorService pool = Executors.newFixedThreadPool(5);
+        ExecutorService pool = Executors.newFixedThreadPool(6);
 
         try {
-            CompletableFuture<Map<String, Object>> netone = CompletableFuture.supplyAsync(this::fetchNetOneBalance, pool);
+            CompletableFuture<Map<String, Object>> netone = CompletableFuture.supplyAsync(() -> fetchNetOne("USD"), pool);
+            CompletableFuture<Map<String, Object>> netoneZwg = CompletableFuture.supplyAsync(() -> fetchNetOne("ZWG"), pool);
             CompletableFuture<Map<String, Object>> econetUsd = CompletableFuture.supplyAsync(() -> fetchEconetBalance("USD"), pool);
             CompletableFuture<Map<String, Object>> econetZwg = CompletableFuture.supplyAsync(() -> fetchEconetBalance("ZWG"), pool);
             CompletableFuture<Map<String, Object>> telecelUsd = CompletableFuture.supplyAsync(() -> fetchTelecelBalance("USD"), pool);
@@ -85,11 +88,22 @@ public class WalletBalanceController {
             // independently, so one slow or failing provider only
             // affects its own entry, not the other four.
             balances.put("NETONE_USD", resolveWithTimeout(netone, "NETONE", "USD"));
+            balances.put("NETONE_ZWG", resolveWithTimeout(netoneZwg, "NETONE", "ZWG"));
             balances.put("ECONET_USD", resolveWithTimeout(econetUsd, "ECONET", "USD"));
             balances.put("ECONET_ZWG", resolveWithTimeout(econetZwg, "ECONET", "ZWG"));
             balances.put("TELECEL_USD", resolveWithTimeout(telecelUsd, "TELECEL", "USD"));
             balances.put("TELECEL_ZWG", resolveWithTimeout(telecelZwg, "TELECEL", "ZWG"));
 
+            // Each account carries its minimum and whether it is below it (Float Balances warnings).
+            Map<String, Double> mins = thresholds.all();
+            for (Map.Entry<String, Object> e : balances.entrySet()) {
+                @SuppressWarnings("unchecked") Map<String, Object> b = new HashMap<>((Map<String, Object>) e.getValue());
+                Double min = mins.get(e.getKey());
+                b.put("threshold", min);
+                Object bal = b.get("balance");
+                b.put("low", min != null && bal instanceof Number n && n.doubleValue() < min);
+                e.setValue(b);
+            }
             log.info("[WALLET] Successfully fetched {} provider balances", balances.size());
             return ResponseEntity.ok(ApiResponse.success(balances, requestId));
 
@@ -234,7 +248,7 @@ public class WalletBalanceController {
 
             switch (provider) {
                 case "NETONE":
-                    balance = fetchNetOneBalance();
+                    balance = fetchNetOne("ZWG".equalsIgnoreCase(currency) ? "ZWG" : "USD");
                     break;
                 case "ECONET":
                     balance = fetchEconetBalance(currency);
@@ -264,6 +278,32 @@ public class WalletBalanceController {
     /**
      * Fetch NetOne wallet balance from their API
      */
+    /** NetOne keeps separate USD and ZWG wallets (wallet-balance-usd and wallet-balance). */
+    private Map<String, Object> fetchNetOne(String currency) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("provider", "NETONE");
+        result.put("currency", currency);
+        result.put("fetchedAt", java.time.LocalDateTime.now().toString());
+        try {
+            String ref = "WALLET-" + currency + "-" + System.currentTimeMillis();
+            var r = "ZWG".equals(currency) ? netOneAdaptor.getWalletBalance(ref) : netOneAdaptor.getWalletBalanceUsd(ref);
+            if (r.getWalletBalance() != null) {
+                result.put("balance", r.getWalletBalance());
+                result.put("status", "OK");
+            } else {
+                result.put("balance", null);
+                result.put("status", "ERROR");
+                result.put("message", r.getReplyMsg() != null ? r.getReplyMsg() : "NetOne returned no balance");
+            }
+        } catch (Exception e) {
+            log.error("[WALLET] NetOne {} balance fetch failed: {}", currency, e.getMessage());
+            result.put("balance", null);
+            result.put("status", "ERROR");
+            result.put("message", e.getMessage());
+        }
+        return result;
+    }
+
     private Map<String, Object> fetchNetOneBalance() {
         log.info("[WALLET] Fetching NetOne balance");
         log.debug("[WALLET] NetOne Base URL: {}", netoneBaseUrl);
