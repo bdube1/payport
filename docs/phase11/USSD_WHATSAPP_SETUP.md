@@ -15,7 +15,7 @@ Each network calls PayPort directly in its own format. The menus, payments and w
 For each network:
 
 1. Switch the **USSD** channel on (top of the page) and the network on.
-2. **Settings**: enter the short code the network gave you (e.g. `*123#`) and, if the network sends from fixed IP addresses, those addresses.
+2. **Settings**: enter the short code the network gave you (PayPort: `*699#`) and, if the network sends from fixed IP addresses, those addresses.
 3. **Create access key** (administrators): the full address with the key is shown once. Give it to the network. A request is accepted when it carries the key **or** comes from an allowed IP address; with neither configured, every request is refused.
 
 What a customer sees when they dial:

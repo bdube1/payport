@@ -24,6 +24,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final zw.co.payport.gateway.roles.StaffRoles staffRoles;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Value("${payport.security.jwt-secret}")
@@ -60,6 +61,7 @@ public class AuthService {
                 .phone(phone)
                 .pinHash(passwordEncoder.encode(req.getPin()))
                 .role("CUSTOMER")
+                .idNumber(cleanIdNumber(req.getIdNumber()))
                 .isActive(true)
                 .isVerified(true) // auto-verify for now; add OTP later
                 .failedPinAttempts(0)
@@ -70,6 +72,13 @@ public class AuthService {
 
         String token = generateToken(user);
         return buildAuthResponse(user, token);
+    }
+
+    /** ID numbers are stored upper-case without spaces (e.g. 63-123456 A 42 -> 63-123456A42). */
+    public static String cleanIdNumber(String raw) {
+        if (raw == null) return null;
+        String s = raw.replace(" ", "").trim().toUpperCase();
+        return s.isEmpty() ? null : s;
     }
 
     /**
@@ -363,6 +372,14 @@ public class AuthService {
         userMap.put("role", user.getRole());
         userMap.put("registeredAt", user.getRegisteredAt());
         userMap.put("mustChangePassword", user.getMustChangePassword());
+        userMap.put("idNumber", user.getIdNumber());
+        zw.co.payport.gateway.roles.StaffRoles.Role staff = staffRoles.of(user);
+        if (staff != null) {
+            userMap.put("customRole", user.getCustomRole());
+            userMap.put("roleName", staff.name());
+            userMap.put("permissions", staff.permissions());
+            userMap.put("routes", zw.co.payport.gateway.roles.StaffRoles.routes(staff));
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("token", token);

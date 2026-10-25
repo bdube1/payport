@@ -52,7 +52,7 @@ public class UssdNetworkService {
     public Map<String, Object> update(String code, Boolean enabled, String shortCode, String allowedIps, String by) {
         String c = code(code);
         get(c);
-        if (shortCode != null && !shortCode.isBlank() && !shortCode.trim().matches("[*#0-9]{2,20}")) throw new IllegalArgumentException("Short code looks wrong, for example *123#");
+        if (shortCode != null && !shortCode.isBlank() && !shortCode.trim().matches("[*#0-9]{2,20}")) throw new IllegalArgumentException("Short code looks wrong, for example *699#");
         String ips = allowedIps == null ? null : String.join(",", Arrays.stream(allowedIps.split("[,\\s]+")).map(String::trim).filter(s -> !s.isEmpty()).toList());
         if (ips != null && ips.length() > 500) throw new IllegalArgumentException("Too many IP addresses");
         jdbc.update("UPDATE ussd_networks SET enabled = COALESCE(?, enabled), short_code = COALESCE(?, short_code), allowed_ips = COALESCE(?, allowed_ips), "

@@ -488,9 +488,9 @@ public class WalletService {
         String text = q == null ? "" : q.trim();
         String like = "%" + text + "%";
         String phone = phoneKey(text);
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT w.*, u.full_name FROM wallets w LEFT JOIN users u ON u.id = w.user_id "
-                + "WHERE w.wallet_ref LIKE ? OR w.phone LIKE ? OR u.full_name LIKE ? OR (? IS NOT NULL AND REPLACE(REPLACE(w.phone, '+', ''), ' ', '') LIKE ?) "
-                + "ORDER BY w.id DESC LIMIT ?", like, like, like, phone, phone == null ? "" : "%" + phone, Math.max(1, Math.min(limit, 200)));
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT w.*, u.full_name, u.id_number FROM wallets w LEFT JOIN users u ON u.id = w.user_id "
+                + "WHERE w.wallet_ref LIKE ? OR w.phone LIKE ? OR u.full_name LIKE ? OR u.id_number LIKE ? OR (? IS NOT NULL AND REPLACE(REPLACE(w.phone, '+', ''), ' ', '') LIKE ?) "
+                + "ORDER BY w.id DESC LIMIT ?", like, like, like, like, phone, phone == null ? "" : "%" + phone, Math.max(1, Math.min(limit, 200)));
         for (Map<String, Object> r : rows) {
             Wallet w = get(((Number) r.get("id")).longValue());
             r.put("balance_minor", balance(w));
