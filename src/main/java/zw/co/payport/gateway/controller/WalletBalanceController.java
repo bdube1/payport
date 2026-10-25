@@ -199,16 +199,15 @@ public class WalletBalanceController {
             if (bal == null) {
                 result.put("balance", null);
                 result.put("status", "NOT_CONFIGURED");
-                result.put("message", "ZWG".equalsIgnoreCase(currency)
-                        ? "Set TELECEL_ZWG_AGENT_CODE / TELECEL_ZWG_MPIN once Telecel issues ZWG credentials"
-                        : "Telecel credentials not configured");
+                result.put("message", "Telecel credentials not configured");
                 return result;
             }
             if (bal.isSuccess() && bal.getBalanceRaw() != null) {
-                try {
-                    result.put("balance", Double.parseDouble(bal.getBalanceRaw()));
+                Double amount = TelecelSoapClient.balanceAmount(bal.getBalanceRaw());
+                if (amount != null) {
+                    result.put("balance", amount);
                     result.put("status", "OK");
-                } catch (NumberFormatException nfe) {
+                } else {
                     result.put("balance", null);
                     result.put("status", "ERROR");
                     result.put("message", "Could not parse Telecel balance: " + bal.getBalanceRaw());
