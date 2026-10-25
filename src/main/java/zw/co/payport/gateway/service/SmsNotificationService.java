@@ -45,7 +45,7 @@ public class SmsNotificationService {
                 "PayPort: %s payment of %s initiated. Please approve the prompt on your phone. Ref: %s",
                 paymentMethod, tx.getAmountFormatted(), tx.getReference()
         );
-        send(tx.getCustomerPhone(), message, tx.getReference(), "PAYMENT_PENDING");
+        notify(tx, message, "PAYMENT_PENDING");
     }
 
     @Async
@@ -56,7 +56,7 @@ public class SmsNotificationService {
                 tx.getProductType() != null ? tx.getProductType().getName() : "service",
                 tx.getReference()
         );
-        send(tx.getCustomerPhone(), message, tx.getReference(), "PAYMENT_CONFIRMED");
+        notify(tx, message, "PAYMENT_CONFIRMED");
     }
 
     @Async
@@ -65,7 +65,7 @@ public class SmsNotificationService {
                 "PayPort: Payment of %s was not successful. No money was deducted. Ref: %s. Contact support if needed.",
                 tx.getAmountFormatted(), tx.getReference()
         );
-        send(tx.getCustomerPhone(), message, tx.getReference(), "PAYMENT_FAILED");
+        notify(tx, message, "PAYMENT_FAILED");
     }
 
     @Async
@@ -87,7 +87,7 @@ public class SmsNotificationService {
             );
         }
 
-        send(tx.getCustomerPhone(), message, tx.getReference(), "COMPLETED");
+        notify(tx, message, "COMPLETED");
     }
 
     /**
@@ -298,7 +298,7 @@ public class SmsNotificationService {
                 "PayPort: Your payment was received but delivery is delayed. Our team is on it. Ref: %s. We will update you shortly.",
                 tx.getReference()
         );
-        send(tx.getCustomerPhone(), message, tx.getReference(), "FULFILMENT_DELAYED");
+        notify(tx, message, "FULFILMENT_DELAYED");
     }
 
     @Async
@@ -307,7 +307,7 @@ public class SmsNotificationService {
                 "PayPort: A refund of %s has been initiated to your account. Please allow 24-48 hours. Ref: %s",
                 tx.getAmountFormatted(), tx.getReference()
         );
-        send(tx.getCustomerPhone(), message, tx.getReference(), "REFUND_INITIATED");
+        notify(tx, message, "REFUND_INITIATED");
     }
 
     /** Not tied to a Transaction, unlike everything else in this class -- a PIN reset has no payment context to reference. */
@@ -318,6 +318,41 @@ public class SmsNotificationService {
                 newPin
         );
         send(phone, message, "PIN_RESET", "PIN_RESET");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.beans.factory.ObjectProvider<zw.co.payport.gateway.whatsapp.WhatsAppSender> whatsApp;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /**
+     * Every payment update goes by SMS; a payment made on WhatsApp is also answered in the WhatsApp chat it came
+     * from (the customer is inside WhatsApp's 24-hour reply window, so no template is needed).
+     */
+    private void notify(Transaction tx, String message, String messageType) {
+        send(tx.getCustomerPhone(), message, tx.getReference(), messageType);
+        if (tx.getChannel() != zw.co.payport.gateway.enums.TransactionChannel.WHATSAPP || whatsApp == null) return;
+        try {
+            var sender = whatsApp.getIfAvailable();
+            if (sender == null || !sender.configured()) return;
+            String to = null;
+            if (jdbc != null) {
+                java.util.List<String> m = jdbc.queryForList("SELECT msisdn FROM ussd_sessions WHERE reference = ? ORDER BY updated_at DESC LIMIT 1", String.class, tx.getReference());
+                if (!m.isEmpty()) to = m.get(0);
+            }
+            if (to == null) to = tx.getCustomerPhone();
+            String err = sender.send(to.replaceAll("[^0-9]", ""), message);
+            if (err != null) log.warn("[WHATSAPP] {} update for {} not sent: {}", messageType, tx.getReference(), err);
+        } catch (RuntimeException e) {
+            log.warn("[WHATSAPP] {} update for {} failed: {}", messageType, tx.getReference(), e.getMessage());
+        }
+    }
+
+    /** A plain message (e.g. a card payment link for a USSD customer). */
+    @Async
+    public void sendText(String phone, String message, String reference, String messageType) {
+        send(phone, message, reference, messageType);
     }
 
     private void send(String phone, String message, String reference, String messageType) {

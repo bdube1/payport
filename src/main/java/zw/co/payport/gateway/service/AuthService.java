@@ -300,6 +300,21 @@ public class AuthService {
         log.info("[AUTH] Credential changed by user: {}", isStaff(user) ? user.getEmail() : maskPhone(phone));
     }
 
+    /**
+     * Sets a customer's new PIN after the channel has already checked the current one (USSD and WhatsApp check it
+     * on an earlier step, so the raw current PIN is not available here). Same effects as changeCredential.
+     */
+    public void setCustomerPin(String phone, String newPin) {
+        User user = userRepository.findByPhone(phone).orElseThrow(() -> new RuntimeException("User not found"));
+        if (isStaff(user)) throw new IllegalStateException("Staff change their password in the ops portal");
+        if (newPin == null || !newPin.matches("\\d{4}")) throw new IllegalArgumentException("PIN must be exactly 4 digits");
+        user.setMustChangePassword(false);
+        user.setCredentialsChangedAt(LocalDateTime.now());
+        user.setPinHash(passwordEncoder.encode(newPin));
+        userRepository.save(user);
+        log.info("[AUTH] PIN changed over a session channel: {}", maskPhone(phone));
+    }
+
     private boolean isStaff(User user) {
         return !"CUSTOMER".equals(user.getRole());
     }

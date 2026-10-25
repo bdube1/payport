@@ -51,4 +51,22 @@ public class InitiateTransactionRequest {
      *   - sourcePhone: source phone number
      */
     private Map<String, Object> productConfig;
+
+    /**
+     * The app sends productConfig as a JSON string ("{\"bundleCode\":\"X\"}") and the website and the session channels
+     * as an object: both are read into the same map.
+     */
+    @com.fasterxml.jackson.annotation.JsonSetter("productConfig")
+    @SuppressWarnings("unchecked")
+    public void readProductConfig(Object value) {
+        if (value == null) { this.productConfig = null; return; }
+        if (value instanceof Map<?, ?> m) { this.productConfig = (Map<String, Object>) m; return; }
+        String s = String.valueOf(value).trim();
+        if (s.isEmpty()) { this.productConfig = null; return; }
+        try {
+            this.productConfig = new com.fasterxml.jackson.databind.ObjectMapper().readValue(s, Map.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("productConfig is not valid JSON");
+        }
+    }
 }

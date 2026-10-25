@@ -23,11 +23,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * WhatsApp payments (Phase 8) over the WhatsApp Cloud API webhook. The conversation is the USSD
- * menu engine with channel WHATSAPP: each message the customer sends is the next menu choice;
- * "menu", "hi" or "0" start again. Payments use the same orchestrator, risk checks and switches
- * (channel WHATSAPP, licence line WHATSAPP_CHANNEL); the mobile money prompt still asks the customer
- * for their wallet PIN on their phone, so no PIN is ever typed into WhatsApp.
+ * WhatsApp over the WhatsApp Cloud API webhook. The conversation is the same engine as USSD with channel WHATSAPP
+ * (guest and registered features, the same services as the website and the app): each message the customer sends is
+ * the next answer; "menu", "hi" or "start" start again. A registered customer logs in with the PayPort PIN; PINs are
+ * never stored (the kept path carries "#"). Payment updates are also sent back into the chat.
  *
  * Webhook security: X-Hub-Signature-256 = sha256=HMAC-SHA256(app secret, raw body), checked in
  * constant time; without a configured app secret every delivery is refused (fails closed).
@@ -37,7 +36,8 @@ import java.util.Set;
 @Service
 public class WhatsAppService {
 
-    static final Set<String> RESTART = Set.of("menu", "hi", "hello", "0", "start");
+    // "0" is an answer (continue as guest, more), so it does not restart the conversation.
+    static final Set<String> RESTART = Set.of("menu", "hi", "hello", "start");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcTemplate jdbc;
@@ -114,19 +114,21 @@ public class WhatsAppService {
         String input = text == null ? "" : text.replace("*", "").replace("#", "").trim();
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT session_id, path FROM whatsapp_sessions WHERE wa_id = ?", waId);
         boolean restart = rows.isEmpty() || RESTART.contains(input.toLowerCase(Locale.ROOT));
+        if (restart && !rows.isEmpty()) engine.forget((String) rows.get(0).get("session_id"));
         String session = restart ? "wa:" + waId + ":" + token() : (String) rows.get(0).get("session_id");
         String path = restart ? "" : ((String) rows.get(0).get("path")).isEmpty() ? input : rows.get(0).get("path") + "*" + input;
         if (path.length() > 450) path = "";
-        String r = engine.handle("WHATSAPP", session, "+" + waId, path);
-        boolean end = r.startsWith("END");
-        if (end) {
+        UssdService.Turn t = engine.turn("WHATSAPP", session, "+" + waId, path);
+        if (t.end()) {
             jdbc.update("DELETE FROM whatsapp_sessions WHERE wa_id = ?", waId);
+            engine.forget(session);
         } else {
+            // PINs are kept as "#": only their hash or a "checked" flag is held for the session.
             jdbc.update("INSERT INTO whatsapp_sessions (wa_id, session_id, path, updated_at) VALUES (?,?,?,?) "
-                    + "ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), path = VALUES(path), updated_at = VALUES(updated_at)", waId, session, path, now());
+                    + "ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), path = VALUES(path), updated_at = VALUES(updated_at)", waId, session, t.storedPath(), now());
         }
-        String body = r.length() > 4 ? r.substring(4) : r;
-        return end ? body + "\n\nSend MENU to start again." : body + "\n\nReply with a number, or MENU to start again.";
+        String body = t.text();
+        return t.end() ? body + "\n\nSend MENU to start again." : body + "\n\nReply with a number, or MENU to start again.";
     }
 
     public List<Map<String, Object>> recent() {

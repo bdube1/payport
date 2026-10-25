@@ -372,6 +372,57 @@ class PlatformControlsScenarioTest {
         call("POST", "/api/v1/admin/channels/USSD", olivia, Map.of("enabled", true, "reason", "back"));
     }
 
+    String says(String s, String ph, String path) throws Exception {
+        return ussd(s, ph, path, true).body().path("text").asText();
+    }
+
+    /** Owner, 2026-10-25: USSD and WhatsApp offer what the website and the app offer, guest and registered. */
+    @Test
+    void ussd_registerLoginSavedNumbersAndPinChange_likeTheApp() throws Exception {
+        String ph = String.format("+263778%06d", 400000 + SEQ.incrementAndGet());
+        String s = "AT-" + SEQ.incrementAndGet();
+        String guest = says(s, ph, "");
+        assertTrue(guest.contains("6. Register") && guest.contains("7. Help"), guest);
+        assertTrue(says(s, ph, "7").contains("support@payport.africa"));
+        assertTrue(says(s, ph, "6").startsWith("CON Register with PayPort"));
+        assertTrue(says(s, ph, "6*Rudo Moyo").contains("ID number"));
+        assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42").contains("Terms and Privacy Policy"));
+        assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42*1").contains("4-digit PIN"));
+        assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42*1*1357").contains("PIN again"));
+        assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42*1*1357*2468").contains("do not match"));
+        String s2 = "AT-" + SEQ.incrementAndGet();
+        String done = says(s2, ph, "6*Rudo Moyo*63-123456A42*1*1357*1357");
+        assertTrue(done.startsWith("END Welcome to PayPort, Rudo"), done);
+        assertEquals("63-123456A42", jdbc.queryForObject("SELECT id_number FROM users WHERE phone = ?", String.class, ph));
+
+        String s3 = "AT-" + SEQ.incrementAndGet();
+        assertTrue(says(s3, ph, "").contains("Welcome to PayPort, Rudo"));
+        String menu = says(s3, ph, "1357");
+        assertTrue(menu.contains("6. My wallet") && menu.contains("8. More") && menu.contains("5. Send money"), menu);
+        assertTrue(says(s3, ph, "1357*8").contains("5. Change PIN"));
+        assertTrue(says(s3, ph, "1357*6").contains("5. Open a wallet"));
+        assertTrue(says(s3, ph, "1357*8*1").startsWith("END No payments yet"));
+
+        String s4 = "AT-" + SEQ.incrementAndGet();
+        String saved = says(s4, ph, "1357*8*3*2*Mum*0771234567");
+        assertTrue(saved.startsWith("END Saved Mum"), saved);
+        String s5 = "AT-" + SEQ.incrementAndGet();
+        assertTrue(says(s5, ph, "1357*1").contains("3. Saved number"));
+        assertTrue(says(s5, ph, "1357*1*3").contains("Mum"));
+        String ccy = says(s5, ph, "1357*1*3*1");
+        assertTrue(ccy.startsWith("CON Currency:"), ccy);
+        String with = says(s5, ph, "1357*1*3*1*1*2.50");
+        assertTrue(with.startsWith("CON Pay with:\n1. PayPort wallet"), "the wallet is the first way to pay: " + with);
+
+        String s6 = "AT-" + SEQ.incrementAndGet();
+        assertTrue(says(s6, ph, "1357*8*5*1111").contains("Wrong PIN"));
+        String s7 = "AT-" + SEQ.incrementAndGet();
+        assertTrue(says(s7, ph, "1357*8*5*1357*2468*2468").startsWith("END Your PIN has been changed"));
+        String s8 = "AT-" + SEQ.incrementAndGet();
+        assertTrue(says(s8, ph, "2468").contains("8. More"), "the new PIN works");
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM channel_session_secrets WHERE value IN ('1357','2468')", Integer.class), "no PIN is ever kept");
+    }
+
     Res raw(String path, String body, String type) throws Exception {
         HttpRequest r = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30))
                 .header("Content-Type", type).POST(HttpRequest.BodyPublishers.ofString(body)).build();
