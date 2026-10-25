@@ -23,6 +23,8 @@ command -v nginx >/dev/null || { apt-get update -y && apt-get install -y nginx; 
 command -v certbot >/dev/null || apt-get install -y certbot python3-certbot-nginx
 
 install -m 644 "$DIR/nginx/payport-proxy.conf" /etc/nginx/snippets/payport-proxy.conf
+install -m 644 "$DIR/nginx/payport-spa.conf" /etc/nginx/snippets/payport-spa.conf
+install -m 644 "$DIR/nginx/payport-gzip.conf" /etc/nginx/snippets/payport-gzip.conf
 install -m 644 "$DIR/nginx/payport-staging.conf" /etc/nginx/sites-available/payport-staging.conf
 ln -sf /etc/nginx/sites-available/payport-staging.conf /etc/nginx/sites-enabled/payport-staging.conf
 nginx -t && systemctl reload nginx
@@ -30,7 +32,7 @@ nginx -t && systemctl reload nginx
 if command -v ufw >/dev/null && ufw status | grep -q active; then ufw allow 'Nginx Full' >/dev/null; fi
 
 args=(); for d in "${DOMAINS[@]}"; do args+=(-d "$d"); done
-certbot --nginx --non-interactive --agree-tos --redirect -m "$EMAIL" "${args[@]}"
+certbot --nginx --non-interactive --agree-tos --redirect --keep-until-expiring -m "$EMAIL" "${args[@]}"
 systemctl reload nginx
 for d in "${DOMAINS[@]}"; do printf '%-36s %s\n' "https://$d" "$(curl -s -o /dev/null -w '%{http_code}' "https://$d/")"; done
-echo "Done. Rebuild the portals with: npm run build -- --mode staging (they then call https://api-staging.payport.africa)."
+echo "Done. The portals are served from their dist folders: after a pull, run npm run build -- --mode staging (no restart needed)."
