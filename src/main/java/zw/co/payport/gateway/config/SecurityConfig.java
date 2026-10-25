@@ -212,6 +212,9 @@ public class SecurityConfig {
         // Outside production (staging on a bare IP, no TLS yet) http extras are accepted too.
         boolean production = zw.co.payport.gateway.platform.DeploymentEnvironment.isProduction(environment);
         if (!production) {
+            // Staging portals (owner, 2026-10-25): ops, consumer, merchant/agent.
+            origins.addAll(List.of("https://admin-staging.payport.africa", "https://app-staging.payport.africa",
+                    "https://merchant-staging.payport.africa"));
             origins.addAll(List.of("http://localhost:4321", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
                     "http://localhost:5173", "http://localhost:8081"));
         }
