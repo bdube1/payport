@@ -1,0 +1,49 @@
+# PayPort staging (owner, 2026-10-25). Imported from /etc/caddy/Caddyfile by scripts/staging/setup-staging-domains.sh.
+# Caddy obtains and renews the https certificates itself.
+# The portals are served straight from their builds (no Node process), compressed; the hashed files under /assets
+# are cached by browsers for a year, everything else is re-checked so a new build shows at once.
+
+admin-staging.payport.africa {
+	root * /opt/payport/staging-ops/dist
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@pages not path /assets/*
+	header @pages Cache-Control "no-cache"
+	try_files {path} /index.html
+	file_server
+}
+
+app-staging.payport.africa {
+	root * /opt/payport/staging-consumer/dist
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@pages not path /assets/*
+	header @pages Cache-Control "no-cache"
+	try_files {path} /index.html
+	file_server
+}
+
+merchant-staging.payport.africa {
+	root * /opt/payport/staging-merchant/dist
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@pages not path /assets/*
+	header @pages Cache-Control "no-cache"
+	try_files {path} /index.html
+	file_server
+}
+
+api-staging.payport.africa {
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy 127.0.0.1:8085 {
+		transport http {
+			read_timeout 120s
+		}
+	}
+}

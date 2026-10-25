@@ -203,16 +203,19 @@ Production activation, live payouts, LIVE settlement mode and settlement automat
 
 ## Staging addresses (https)
 
-| Address | What | Local port |
+| Address | What | Served from |
 |---|---|---|
-| https://admin-staging.payport.africa | Ops portal | 4000 |
-| https://app-staging.payport.africa | Consumer portal | 4001 |
-| https://merchant-staging.payport.africa | Merchant and agent portal | 4002 |
-| https://api-staging.payport.africa | Gateway | 8085 |
+| https://admin-staging.payport.africa | Ops portal | /opt/payport/staging-ops/dist |
+| https://app-staging.payport.africa | Consumer portal | /opt/payport/staging-consumer/dist |
+| https://merchant-staging.payport.africa | Merchant and agent portal | /opt/payport/staging-merchant/dist |
+| https://api-staging.payport.africa | Gateway | 127.0.0.1:8085 |
+
+Caddy (already on the server, also serving other sites) handles https and renews the certificates.
 
 1. DNS: four A records (admin-staging, app-staging, merchant-staging, api-staging) → the staging server.
-2. `sudo EMAIL=<you> scripts/staging/setup-staging-domains.sh` (nginx + Let's Encrypt, renews itself).
+2. Build the three portals (`npm run build -- --mode staging`), then `sudo bash scripts/staging/setup-staging-domains.sh`.
+   It imports `caddy/payport-staging.caddy` into `/etc/caddy/Caddyfile`, replacing only earlier blocks for these four
+   addresses, and restores the backup if Caddy rejects the result.
 3. `.env.staging`: `GATEWAY_BASE_URL`, `OPS_PORTAL_URL`, `CONSUMER_BASE_URL`, `MERCHANT_PORTAL_URL` and
-   `FORWARD_HEADERS_STRATEGY=native` as in `env.staging.example`. The three portal addresses are allowed by CORS
-   outside production without listing them.
-4. Portals: `npm run build -- --mode staging` (reads `.env.staging`: `VITE_API_URL=https://api-staging.payport.africa`).
+   `FORWARD_HEADERS_STRATEGY=native` as in `env.staging.example`.
+4. Updating a portal afterwards: `git pull && npm ci && npm run build -- --mode staging`. No restart; no Node process.
