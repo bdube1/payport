@@ -292,6 +292,20 @@ class RolesPermissionsScenarioTest {
     }
 
     @Test
+    void sessionTimeouts_publicToRead_adminToChange_withinBounds() throws Exception {
+        Res pub = call("GET", "/api/v1/session-timeouts", null, null);
+        assertEquals(200, pub.status(), pub.body().toString());
+        for (String p : List.of("ops", "merchant", "agent", "consumer", "mobile")) assertTrue(pub.data().path(p).asInt() >= 1, p);
+        String admin = staff("ADMIN", null), ops = staff("OPS", null);
+        assertEquals(403, call("PUT", "/api/v1/admin/session-timeouts", ops, Map.of("ops", 30)).status());
+        assertEquals(400, call("PUT", "/api/v1/admin/session-timeouts", admin, Map.of("ops", 0)).status());
+        Res ok = call("PUT", "/api/v1/admin/session-timeouts", admin, Map.of("ops", 30, "mobile", 3));
+        assertEquals(200, ok.status(), ok.body().toString());
+        assertEquals(30, call("GET", "/api/v1/session-timeouts", null, null).data().path("ops").asInt());
+        assertEquals(3, call("GET", "/api/v1/session-timeouts", null, null).data().path("mobile").asInt());
+    }
+
+    @Test
     void stagingEnableEverythingScript_switchesEverythingOn() throws Exception {
         try (Connection c = dataSource.getConnection()) {
             ScriptUtils.executeSqlScript(c, new FileSystemResource("scripts/staging/enable-everything-for-testing.sql"));

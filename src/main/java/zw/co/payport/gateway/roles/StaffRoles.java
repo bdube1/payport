@@ -47,7 +47,15 @@ public class StaffRoles {
         try {
             for (String r : PermissionCatalog.BUILT_IN) {
                 Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM staff_roles WHERE code = ?", Integer.class, r);
-                if (n != null && n > 0) continue;
+                if (n != null && n > 0) {
+                    // An untouched built-in role picks up permissions for features added since it was seeded.
+                    if (Integer.valueOf(1).equals(jdbc.queryForObject("SELECT COUNT(*) FROM staff_roles WHERE code = ? AND updated_by = ?", Integer.class, r, SYSTEM))) {
+                        for (String p : PermissionCatalog.defaults(r)) {
+                            jdbc.update("INSERT IGNORE INTO staff_role_permissions (role_code, permission) VALUES (?, ?)", r, p);
+                        }
+                    }
+                    continue;
+                }
                 jdbc.update("INSERT INTO staff_roles (code, name, description, base_role, built_in, updated_by, updated_at) VALUES (?,?,?,?,TRUE,?,?)",
                         r, PermissionCatalog.BUILT_IN_NAMES.get(r), null, r, SYSTEM, LocalDateTime.now());
                 for (String p : PermissionCatalog.defaults(r)) {
