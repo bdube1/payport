@@ -41,10 +41,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Provider health, checked every minute by sending each provider a real request (owner, 2026-10-25):
  * <ul>
- *   <li><b>UP</b> (Operational): the provider answered.</li>
+ *   <li><b>UP</b> (Operational): the provider answered, even with an error (the error is kept in the detail).</li>
  *   <li><b>DOWN</b>: no answer (connection refused, timed out, or the provider's gateway returned an error page).</li>
- *   <li><b>DEGRADED</b>: an account balance or account lookup was answered, but with an error instead of the balance or
- *       the account (the provider is there, the service is not working).</li>
  * </ul>
  * What each provider is asked:
  * EcoCash and OneMoney - a request with a test reference that they reject (a rejection is an answer);
@@ -55,7 +53,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class ProviderHealthScheduler {
 
-    public static final String UP = "UP", DOWN = "DOWN", DEGRADED = "DEGRADED", NOT_CONFIGURED = "NOT_CONFIGURED";
+    public static final String UP = "UP", DOWN = "DOWN", NOT_CONFIGURED = "NOT_CONFIGURED";
     private static final long CHECK_LIMIT_SECONDS = 60;
 
     private final ProviderHealthRepository healthRepository;
@@ -120,7 +118,6 @@ public class ProviderHealthScheduler {
     public record Result(String status, String detail) {
         static Result up(String d) { return new Result(UP, d); }
         static Result down(String d) { return new Result(DOWN, d); }
-        static Result degraded(String d) { return new Result(DEGRADED, d); }
         static Result notConfigured(String d) { return new Result(NOT_CONFIGURED, d); }
     }
 
@@ -171,7 +168,7 @@ public class ProviderHealthScheduler {
         try {
             return c.run().call();
         } catch (Exception e) {
-            return answered(e) ? Result.degraded("Answered with an error: " + message(e)) : Result.down("No response: " + message(e));
+            return answered(e) ? Result.up("Answered with an error: " + message(e)) : Result.down("No response: " + message(e));
         }
     }
 
@@ -222,7 +219,7 @@ public class ProviderHealthScheduler {
             restTemplate.exchange(netoneBaseUrl + "/wallet-balance", HttpMethod.GET, new HttpEntity<>(headers), Map.class);
             return Result.up("Balance enquiry answered");
         } catch (RestClientResponseException e) {
-            return Result.degraded("Balance enquiry answered HTTP " + e.getStatusCode().value());
+            return Result.up("Balance enquiry answered HTTP " + e.getStatusCode().value());
         }
     }
 
@@ -230,7 +227,7 @@ public class ProviderHealthScheduler {
         if (blank(econetCompanyMsisdn)) return Result.notConfigured("Set ECONET_COMPANY_MSISDN");
         EconetAirtimeAdaptor.BalanceResult b = econet.getObject().getAccountBalance(econetCompanyMsisdn, "USD");
         if (b != null && b.getCompanyAccountAmount() != null) return Result.up("Balance enquiry answered");
-        return Result.degraded("Balance enquiry answered without a balance");
+        return Result.up("Balance enquiry answered without a balance");
     }
 
     Result checkTelecel() {
@@ -240,13 +237,13 @@ public class ProviderHealthScheduler {
         if (b.isSuccess()) return Result.up("Balance enquiry answered");
         // The SOAP client reports a failed call (no answer) as ERROR; any other code came from Telecel.
         if ("ERROR".equals(b.getResultCode())) return Result.down("No response: " + b.getResultDescription());
-        return Result.degraded("Balance enquiry answered: " + b.getResultDescription());
+        return Result.up("Balance enquiry answered: " + b.getResultDescription());
     }
 
     Result checkESolutions() throws Exception {
         ESolutionsResponse r = esolutions.getObject().balanceEnquiry("USD");
         if (r == null) return Result.down("No response");
-        return r.isSuccess() ? Result.up("Balance enquiry answered") : Result.degraded("Balance enquiry answered: " + r.getFailureMessage());
+        return r.isSuccess() ? Result.up("Balance enquiry answered") : Result.up("Balance enquiry answered: " + r.getFailureMessage());
     }
 
     @FunctionalInterface
@@ -257,9 +254,9 @@ public class ProviderHealthScheduler {
         if (blank(number)) return Result.notConfigured("No lookup number set in Provider Tools");
         try {
             Object info = l.run(number);
-            return info == null ? Result.degraded("Lookup of " + number + " returned nothing") : Result.up("Lookup of " + number + " answered");
+            return info == null ? Result.up("Lookup of " + number + " returned nothing") : Result.up("Lookup of " + number + " answered");
         } catch (Exception e) {
-            return answered(e) ? Result.degraded("Lookup of " + number + " answered with an error: " + message(e))
+            return answered(e) ? Result.up("Lookup of " + number + " answered with an error: " + message(e))
                     : Result.down("No response to the lookup of " + number + ": " + message(e));
         }
     }

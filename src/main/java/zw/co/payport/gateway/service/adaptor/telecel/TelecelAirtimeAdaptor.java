@@ -149,16 +149,14 @@ public class TelecelAirtimeAdaptor implements FulfilmentProviderAdaptor {
     }
 
     /**
-     * Currency-aware balance check -- Telecel operates USD and ZWG as
-     * separate agent accounts (confirmed), not a single account with a
-     * currency parameter. Returns null if the requested currency's
-     * credentials aren't configured yet, rather than falling back to the
-     * USD account and mislabeling its figure.
+     * Currency-aware balance check. ZWG uses TELECEL_ZWG_AGENT_CODE / TELECEL_ZWG_MPIN when they are set and
+     * otherwise the same agent code and MPIN as USD (owner, 2026-10-25). Returns null when no credentials are set.
      */
     public TelecelSoapClient.TelecelBalanceResult getBalance(String currency) {
         boolean isZwg = "ZWG".equalsIgnoreCase(currency);
-        String code = isZwg ? zwgAgentCode : agentCode;
-        String pin = isZwg ? zwgMpin : mpin;
+        boolean ownZwg = isZwg && zwgAgentCode != null && !zwgAgentCode.isBlank() && zwgMpin != null && !zwgMpin.isBlank();
+        String code = ownZwg ? zwgAgentCode : agentCode;
+        String pin = ownZwg ? zwgMpin : mpin;
         if (code == null || code.isBlank() || pin == null || pin.isBlank()) {
             return null;
         }

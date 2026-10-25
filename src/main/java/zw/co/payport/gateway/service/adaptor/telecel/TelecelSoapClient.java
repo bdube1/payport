@@ -440,6 +440,21 @@ public class TelecelSoapClient {
 
     // ─── Result DTOs ──────────────────────────────────────────────────────────
 
+    /**
+     * Telecel's balance field, e.g. "0002932C0000000000000002840C000000000000": figures in cents, each followed by
+     * C (credit) or D (debit). The first figure is the agent account balance (0002932C = 29.32). A plain number
+     * ("29.32") is read as it is. Returns null when the field cannot be read.
+     */
+    public static Double balanceAmount(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String v = raw.trim();
+        if (v.matches("-?[0-9]+(\\.[0-9]+)?")) return Double.parseDouble(v);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^([0-9]+)([CD])").matcher(v.toUpperCase());
+        if (!m.find()) return null;
+        double amount = Long.parseLong(m.group(1)) / 100.0;
+        return "D".equals(m.group(2)) ? -amount : amount;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor
