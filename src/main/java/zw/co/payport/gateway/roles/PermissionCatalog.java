@@ -90,7 +90,7 @@ public final class PermissionCatalog {
             f("integrations", "Monitoring", "Provider status & integrations", List.of("/provider-status", "/integrations"),
                     List.of(A + "integrations", A + "netone", A + "provider-health", A + "health-status"), ADMIN, OPS),
             f("provider_tools", "Monitoring", "Provider tools", List.of("/provider-tools"),
-                    List.of(A + "provider-query", "/api/v1/omari/admin", "/api/v1/econet/admin", "/api/v1/vendors"), ADMIN, OPS, FINANCE),
+                    List.of(A + "provider-query", A + "health-lookups", "/api/v1/omari/admin", "/api/v1/econet/admin", "/api/v1/vendors"), ADMIN, OPS, FINANCE),
 
             f("products", "Platform setup", "Products", List.of("/products"), List.of(A + "config/products", A + "config/prefixes"), ADMIN, OPS),
             f("bundles", "Platform setup", "Bundles", List.of("/bundles"), List.of("/api/v1/bundles/admin"), ADMIN, OPS),
