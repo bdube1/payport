@@ -605,7 +605,9 @@ public class BundleService {
     public List<BundleResponse> getAllBundles(String provider, String currency) {
         String p = provider.toUpperCase();
         String ccy = currency == null ? "USD" : currency.toUpperCase();
-        if ("NETONE".equals(p)) syncNetOne();
+        // The list always loads from the table; NetOne is asked at most every 30 minutes and a failure there never
+        // stops the page (Refresh from NetOne asks now and reports what happened).
+        if ("NETONE".equals(p)) syncNetOneIfDue();
         return bundleRepository.findAll().stream()
                 .filter(b -> p.equals(b.getProviderCode()))
                 .filter(b -> !"NETONE".equals(p) || ("ZWG".equals(ccy) ? b.getPriceZwgCents() != null : b.getPriceUsdCents() != null))
@@ -664,6 +666,7 @@ public class BundleService {
             }
         }
         netOneSyncedAt = System.currentTimeMillis();
+        if (added + updated == 0) out.put("message", "NetOne returned no bundles. Check the NetOne connection and the gateway log (NETONE-DATA).");
         out.put("added", added);
         out.put("updated", updated);
         log.info("[NETONE] Catalogue refreshed: {}", out);

@@ -56,6 +56,6 @@ public class ProviderHealth {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
         if (manualOverride == null) manualOverride = false;
-        if (status == null) status = "OPERATIONAL";
+        if (status == null) status = "NOT_CHECKED";
     }
 }

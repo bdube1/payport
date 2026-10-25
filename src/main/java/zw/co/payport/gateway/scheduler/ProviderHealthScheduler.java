@@ -93,8 +93,8 @@ public class ProviderHealthScheduler {
         String previousStatus = lastStatusMap.get(provider);
         // Only log if status changed or it's a DOWN status (always log DOWN)
         if (!status.equals(previousStatus) || "DOWN".equals(status)) {
-            if ("UP".equals(status)) {
-                log.info("[HEALTH] {} → UP", provider);
+            if ("UP".equals(status) || "REACHABLE".equals(status)) {
+                log.info("[HEALTH] {} → {}", provider, status);
             } else if ("TIMEOUTS".equals(status)) {
                 log.warn("[HEALTH] {} → TIMEOUTS - {}", provider, detail);
             } else if ("DOWN".equals(status)) {
@@ -168,29 +168,12 @@ public class ProviderHealthScheduler {
             return;
         }
 
-        try {
-            String checkUrl = ecocashBaseUrl + "/transactions/amount";
-            String encoded = java.util.Base64.getEncoder()
-                    .encodeToString((ecocashUsername + ":" + ecocashPassword).getBytes());
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", "Basic " + encoded);
-            headers.set("Content-Type", "application/json");
-
-            Map<String, Object> testPayload = new HashMap<>();
-            String ref = "HEALTH-" + System.currentTimeMillis();
-            testPayload.put("clientCorrelator", ref);
-            testPayload.put("notifyUrl", "https://localhost/health");
-            testPayload.put("referenceCode", ref);
-            testPayload.put("tranType", "MER");
-            testPayload.put("endUserId", "771111111");
-
-            restTemplate.exchange(checkUrl, HttpMethod.POST, new HttpEntity<>(testPayload, headers), String.class);
-            status = "UP";
-        } catch (HttpClientErrorException e) {
-            // 4xx means server is reachable
-            status = "UP";
-            detail = "API reachable";
+        // A network check only: sending a payment request every minute to find out would be worse than not knowing.
+        String[] hp = hostPort(ecocashBaseUrl);
+        try (Socket socket = new Socket()) {
+            socket.connect(new java.net.InetSocketAddress(hp[0], Integer.parseInt(hp[1])), CHECK_TIMEOUT_MS);
+            status = "REACHABLE";
+            detail = REACHABLE_DETAIL;
         } catch (Exception e) {
             status = "DOWN";
             detail = e.getMessage();
@@ -212,7 +195,8 @@ public class ProviderHealthScheduler {
 
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(econetEndpoint, econetPort), CHECK_TIMEOUT_MS);
-            status = "UP";
+            status = "REACHABLE";
+            detail = REACHABLE_DETAIL;
         } catch (Exception e) {
             status = "DOWN";
             detail = e.getMessage();
@@ -244,7 +228,8 @@ public class ProviderHealthScheduler {
 
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(host, port), CHECK_TIMEOUT_MS);
-            status = "UP";
+            status = "REACHABLE";
+            detail = REACHABLE_DETAIL;
         } catch (Exception e) {
             status = "DOWN";
             detail = e.getMessage();
@@ -287,6 +272,16 @@ public class ProviderHealthScheduler {
     private void checkTelecash() {
         persist("TELECASH", "PAYMENT", "DOWN", "Pending integration");
         logStatusChange("TELECASH", "DOWN", "Pending integration");
+    }
+
+    /** REACHABLE: the provider's server answers on the network; no API call was made, so it is not proof the service works. */
+    static final String REACHABLE_DETAIL = "Network reachable (connection check only)";
+
+    static String[] hostPort(String url) {
+        String raw = url.replace("https://", "").replace("http://", "");
+        String host = raw.split("/")[0].split(":")[0];
+        String port = raw.split("/")[0].contains(":") ? raw.split("/")[0].split(":")[1] : (url.startsWith("https") ? "443" : "80");
+        return new String[] { host, port };
     }
 
     private int countRecentFailures(String providerCode) {
