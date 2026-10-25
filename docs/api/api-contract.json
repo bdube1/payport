@@ -331,6 +331,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/dashboard/volume"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/dispute-timelines"
   },
   {
