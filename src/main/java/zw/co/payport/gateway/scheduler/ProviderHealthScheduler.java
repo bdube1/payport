@@ -319,6 +319,8 @@ public class ProviderHealthScheduler {
                 health.setSuccessRate10m(BigDecimal.valueOf(100.00));
             } else if ("DOWN".equals(status)) {
                 health.setSuccessRate10m(BigDecimal.valueOf(0.00));
+            } else {
+                health.setSuccessRate10m(null); // a connection check says nothing about success
             }
 
             healthRepository.save(health);
