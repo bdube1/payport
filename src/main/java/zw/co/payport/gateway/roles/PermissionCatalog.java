@@ -83,11 +83,12 @@ public final class PermissionCatalog {
             f("ledger", "Finance & settlement", "Ledger", List.of("/ledger"), List.of(A + "ledger"), ADMIN, FINANCE, COMPLIANCE),
 
             f("analytics", "Reports", "Analytics", List.of("/analytics"), List.of(), ADMIN, OPS, FINANCE),
-            f("reports", "Reports", "Consolidated & commission reports", List.of("/reports/consolidated", "/reports/commission"),
+            f("reports", "Reports", "Consolidated & commission reports", List.of("/reports", "/reports/consolidated", "/reports/commission"),
                     List.of(A + "reports"), ADMIN, OPS, FINANCE),
             f("logs", "Reports", "Audit & notification logs", List.of("/logs"), List.of(A + "logs"), ADMIN, OPS),
 
-            f("integrations", "Monitoring", "Provider status & integrations", List.of("/integrations"), List.of(A + "integrations", A + "netone"), ADMIN, OPS),
+            f("integrations", "Monitoring", "Provider status & integrations", List.of("/provider-status", "/integrations"),
+                    List.of(A + "integrations", A + "netone", A + "provider-health", A + "health-status"), ADMIN, OPS),
             f("provider_tools", "Monitoring", "Provider tools", List.of("/provider-tools"),
                     List.of(A + "provider-query", "/api/v1/omari/admin", "/api/v1/econet/admin", "/api/v1/vendors"), ADMIN, OPS, FINANCE),
 
@@ -122,15 +123,26 @@ public final class PermissionCatalog {
         return FEATURES.stream().filter(x -> x.key().equals(key)).findFirst();
     }
 
+    private static boolean under(String path, String p) {
+        return path.equals(p) || path.startsWith(p.endsWith("/") ? p : p + "/") || (p.endsWith("/") && path.equals(p.substring(0, p.length() - 1)));
+    }
+
     /** The feature that guards an API path (longest matching prefix), if any. */
     public static Optional<Feature> forPath(String path) {
+        List<Feature> all = forPathAll(path);
+        return all.isEmpty() ? Optional.empty() : Optional.of(all.get(0));
+    }
+
+    /** Every feature that shares the longest matching prefix (a path can serve more than one page). */
+    public static List<Feature> forPathAll(String path) {
+        List<Feature> out = new ArrayList<>();
+        int len = -1;
         for (Map.Entry<String, Feature> e : BY_PREFIX) {
             String p = e.getKey();
-            if (path.equals(p) || path.startsWith(p.endsWith("/") ? p : p + "/") || (p.endsWith("/") && path.equals(p.substring(0, p.length() - 1)))) {
-                return Optional.of(e.getValue());
-            }
+            if (len >= 0 && p.length() < len) break;
+            if (under(path, p)) { len = p.length(); out.add(e.getValue()); }
         }
-        return Optional.empty();
+        return out;
     }
 
     public static boolean staffPath(String path) {

@@ -12,7 +12,6 @@ import zw.co.payport.gateway.entity.User;
 import zw.co.payport.gateway.repository.UserRepository;
 
 import java.io.IOException;
-import java.util.Optional;
 
 /**
  * Enforces configurable roles on staff APIs: reading needs the feature's view (or manage) permission, any change
@@ -41,16 +40,15 @@ public class PermissionFilter extends OncePerRequestFilter {
             chain.doFilter(req, res);
             return;
         }
-        Optional<User> u = users.findByPhone(ud.getUsername());
+        java.util.Optional<User> u = users.findByPhone(ud.getUsername());
         StaffRoles.Role role = u.map(roles::of).orElse(null);
         if (role == null || !role.enforced()) {
             chain.doFilter(req, res);
             return;
         }
-        Optional<PermissionCatalog.Feature> f = PermissionCatalog.forPath(path);
         boolean read = "GET".equals(req.getMethod()) || "HEAD".equals(req.getMethod());
-        boolean allowed = f.map(x -> role.permissions().contains(x.manage()) || (read && role.permissions().contains(x.view())))
-                .orElse(false);
+        boolean allowed = PermissionCatalog.forPathAll(path).stream()
+                .anyMatch(x -> role.permissions().contains(x.manage()) || (read && role.permissions().contains(x.view())));
         if (!allowed) {
             res.setStatus(403);
             res.setContentType("application/json");
