@@ -50,18 +50,26 @@ public class AuthService {
      * Register a new customer
      */
     public Map<String, Object> register(AuthRequests.RegisterRequest req) {
-        String phone = normalizePhone(req.getPhone());
+        return registerWithPinHash(req.getFullName(), req.getPhone(), req.getIdNumber(), passwordEncoder.encode(req.getPin()));
+    }
+
+    /**
+     * Registration where the PIN was set on PayPort's own PIN page (WhatsApp): only its hash reached here.
+     * Same checks and effects as register.
+     */
+    public Map<String, Object> registerWithPinHash(String fullName, String rawPhone, String idNumber, String pinHash) {
+        String phone = normalizePhone(rawPhone);
 
         if (userRepository.existsByPhone(phone)) {
             throw new RuntimeException("An account with this phone number already exists");
         }
 
         User user = User.builder()
-                .fullName(req.getFullName().trim())
+                .fullName(fullName.trim())
                 .phone(phone)
-                .pinHash(passwordEncoder.encode(req.getPin()))
+                .pinHash(pinHash)
                 .role("CUSTOMER")
-                .idNumber(cleanIdNumber(req.getIdNumber()))
+                .idNumber(cleanIdNumber(idNumber))
                 .isActive(true)
                 .isVerified(true) // auto-verify for now; add OTP later
                 .failedPinAttempts(0)

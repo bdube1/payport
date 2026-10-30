@@ -79,6 +79,17 @@ public class ChannelSimulatorController {
         }, req);
     }
 
+    /** Messages PayPort started to the test number (after a PIN page, payment updates): the test phone shows them. */
+    @org.springframework.web.bind.annotation.GetMapping("/api/v1/admin/whatsapp/simulate/outbox")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS')")
+    public ResponseEntity<ApiResponse<java.util.List<Map<String, Object>>>> outbox(@org.springframework.web.bind.annotation.RequestParam String phone,
+                                                                                @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") long after, HttpServletRequest req) {
+        return Web.run(() -> {
+            testOnly();
+            return whatsapp.outboxFor(phone(phone), after);
+        }, req);
+    }
+
     private static byte[] bytes() {
         byte[] x = new byte[6];
         RANDOM.nextBytes(x);

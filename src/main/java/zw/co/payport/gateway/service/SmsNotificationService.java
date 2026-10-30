@@ -335,7 +335,7 @@ public class SmsNotificationService {
         if (tx.getChannel() != zw.co.payport.gateway.enums.TransactionChannel.WHATSAPP || whatsApp == null) return;
         try {
             var sender = whatsApp.getIfAvailable();
-            if (sender == null || !sender.configured()) return;
+            if (sender == null) return;
             String to = null;
             if (jdbc != null) {
                 java.util.List<String> m = jdbc.queryForList("SELECT msisdn FROM ussd_sessions WHERE reference = ? ORDER BY updated_at DESC LIMIT 1", String.class, tx.getReference());
@@ -343,6 +343,9 @@ public class SmsNotificationService {
             }
             if (to == null) to = tx.getCustomerPhone();
             String err = sender.send(to.replaceAll("[^0-9]", ""), message);
+            if (jdbc != null) jdbc.update("INSERT INTO whatsapp_outbox (wa_id, body, kind, sent, send_error, created_at) VALUES (?,?,?,?,?,?)",
+                    to.replaceAll("[^0-9]", ""), message.length() > 2000 ? message.substring(0, 2000) : message, messageType, err == null,
+                    err == null ? null : (err.length() > 300 ? err.substring(0, 300) : err), java.sql.Timestamp.valueOf(LocalDateTime.now()));
             if (err != null) log.warn("[WHATSAPP] {} update for {} not sent: {}", messageType, tx.getReference(), err);
         } catch (RuntimeException e) {
             log.warn("[WHATSAPP] {} update for {} failed: {}", messageType, tx.getReference(), e.getMessage());

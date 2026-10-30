@@ -93,6 +93,8 @@ public class UssdService {
 
     static final String GUEST = "0";
     static final String MASK = "#";
+    /** The mark a completed PIN step leaves in a session path. */
+    public static final String MASK_TOKEN = MASK;
     static final String MORE = "0";
     static final String HELP = "Help: WhatsApp +263 719 183 557, email support@payport.africa, web www.payport.africa";
     static final String TERMS = "payport.africa/terms";
@@ -130,6 +132,7 @@ public class UssdService {
     private final CardService cards;
     private final PasswordEncoder encoder;
     private final SmsNotificationService sms;
+    private final zw.co.payport.gateway.whatsapp.ChannelPinService pinLinks;
     private final String consumerBase;
 
     public UssdService(JdbcTemplate jdbc, ChannelService channels, MarketRegistry markets, BillerRegistry billers, BillerController billerLookups,
@@ -138,7 +141,7 @@ public class UssdService {
                        CheckoutSessionService checkout, BundleService bundles, ProductTypeRepository products, ProductCurrencyRepository productCurrencies,
                        MerchantCodePayments merchantCodes, ChargeQuoteController chargeQuotes, AuthService auth, BeneficiaryRepository beneficiaries,
                        TransactionRepository transactions, Counterparties counterparties, CardService cards, PasswordEncoder encoder,
-                       SmsNotificationService sms, @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase) {
+                       SmsNotificationService sms, zw.co.payport.gateway.whatsapp.ChannelPinService pinLinks, @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase) {
         this.jdbc = jdbc;
         this.channels = channels;
         this.markets = markets;
@@ -165,6 +168,7 @@ public class UssdService {
         this.cards = cards;
         this.encoder = encoder;
         this.sms = sms;
+        this.pinLinks = pinLinks;
         this.consumerBase = consumerBase == null ? "" : consumerBase.replaceAll("/+$", "");
     }
 
@@ -233,11 +237,16 @@ public class UssdService {
 
     public Turn turn(String channel, String sessionId, String phoneNumber, String text) {
         SECRETS.set(new HashSet<>());
+        DROP.remove();
         try {
             String reply = menu(channel, sessionId, phoneNumber, text);
-            return new Turn(reply, mask(text, SECRETS.get()));
+            String kept = mask(text, SECRETS.get());
+            // A PIN typed into a WhatsApp chat is never used or kept: that answer is dropped from the path.
+            if (Boolean.TRUE.equals(DROP.get())) kept = kept.contains("*") ? kept.substring(0, kept.lastIndexOf('*')) : "";
+            return new Turn(reply, kept);
         } finally {
             SECRETS.remove();
+            DROP.remove();
         }
     }
 
@@ -249,6 +258,7 @@ public class UssdService {
     }
 
     private static final ThreadLocal<Set<Integer>> SECRETS = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> DROP = new ThreadLocal<>();
 
     /** One conversation: who, where, and (once the PIN is checked) whose wallet. */
     private record Ctx(String channel, String session, String msisdn, MarketRegistry.Market market, String network, User holder) {
@@ -299,8 +309,18 @@ public class UssdService {
                 return guest(c, in.next(), in);
             }
             User u = holder.get();
-            if (tokens.length == 0) return "CON Welcome to PayPort, " + firstName(u) + "\nEnter your wallet PIN\n0. Continue as guest";
+            boolean chat = !"USSD".equals(channel);
+            if (tokens.length == 0) {
+                if (chat) return "CON Welcome to PayPort, " + firstName(u) + "\nTap the link to enter your PIN:\n"
+                        + pinLinks.link(sessionId, msisdn, zw.co.payport.gateway.whatsapp.ChannelPinService.LOGIN, u.getId()) + "\n0. Continue as guest";
+                return "CON Welcome to PayPort, " + firstName(u) + "\nEnter your wallet PIN\n0. Continue as guest";
+            }
             In in = new In(tokens, 1);
+            if (chat && !GUEST.equals(tokens[0].trim()) && !MASK.equals(tokens[0].trim())) {
+                DROP.set(true);
+                return "CON For your safety, never type your PIN in WhatsApp. Tap the link to enter it:\n"
+                        + pinLinks.link(sessionId, msisdn, zw.co.payport.gateway.whatsapp.ChannelPinService.LOGIN, u.getId()) + "\n0. Continue as guest";
+            }
             if (GUEST.equals(tokens[0].trim())) {
                 Ctx c = new Ctx(channel, sessionId, msisdn, market.get(), network, null);
                 if (!in.has()) return "CON PayPort\n" + numbered(GUEST_MENU);
@@ -425,6 +445,23 @@ public class UssdService {
         if (!id.matches("^[A-Za-z0-9][A-Za-z0-9 /-]{3,39}$")) return "END Enter a valid ID number.";
         if (!in.has()) return "CON By registering you accept the PayPort Terms and Privacy Policy (" + TERMS + ").\n1. Accept\n2. Cancel";
         if (!"1".equals(in.next())) return "END Cancelled. Nothing was saved.";
+        if (!c.ussd()) {
+            // WhatsApp: the PIN is chosen on PayPort's PIN page, never typed into the chat.
+            if (!in.has()) return "CON Tap the link to choose your PIN:\n" + pinLinks.link(c.session(), c.msisdn(), zw.co.payport.gateway.whatsapp.ChannelPinService.REGISTER, null);
+            String t = in.next();
+            in.secret();
+            if (!MASK.equals(t)) return typedPin(c, zw.co.payport.gateway.whatsapp.ChannelPinService.REGISTER, null);
+            String chosen = getSecret(c, "register_pin");
+            if (chosen == null) throw expired();
+            return once(c, () -> {
+                try {
+                    auth.registerWithPinHash(name, c.phone(), id, chosen);
+                    return "END Welcome to PayPort, " + clip(name.split(" ")[0], 20) + ". Send MENU to log in and open your wallet.";
+                } catch (RuntimeException e) {
+                    return "END " + clip(e.getMessage() == null ? "Registration failed. Please try again." : e.getMessage(), 150);
+                }
+            });
+        }
         if (!in.has()) return "CON Choose a 4-digit PIN:";
         String first = in.next();
         in.secret();
@@ -989,7 +1026,22 @@ public class UssdService {
 
     // ─── change PIN (as /api/v1/account/change-pin) ──────────────────────────
 
+    /** A PIN typed into the chat: not used, not kept, and a fresh link instead. */
+    private String typedPin(Ctx c, String purpose, Long userId) {
+        DROP.set(true);
+        return "CON For your safety, never type your PIN in WhatsApp. Tap the link instead:\n" + pinLinks.link(c.session(), c.msisdn(), purpose, userId);
+    }
+
     private String changePin(Ctx c, In in) {
+        if (!c.ussd()) {
+            String change = zw.co.payport.gateway.whatsapp.ChannelPinService.CHANGE;
+            if (!in.has()) return "CON Tap the link to change your PIN:\n" + pinLinks.link(c.session(), c.msisdn(), change, c.holder().getId());
+            String t = in.next();
+            in.secret();
+            if (!MASK.equals(t)) return typedPin(c, change, c.holder().getId());
+            if (getSecret(c, "pin_changed") == null) throw expired();
+            return "END Your PIN has been changed.";
+        }
         if (!in.has()) return "CON Enter your current PIN:";
         String current = in.next();
         in.secret();
@@ -1184,13 +1236,17 @@ public class UssdService {
         return reference("USSD", session);
     }
 
+    /**
+     * The payment reference for a session: PP-<channel>-<yyyyMMdd>-<8 hex>, at most 24 characters (the size of
+     * transactions.reference, the same shape as the app's PP-MOB-... references). The same session always gets the
+     * same reference, so a gateway retry can never start a second payment. USSD is "USD", the USSD channel code.
+     */
     public static String reference(String channel, String session) {
         try {
-            byte[] h = MessageDigest.getInstance("SHA-256").digest((channel + "|" + session).getBytes(StandardCharsets.UTF_8));
+            String prefix = "USSD".equals(channel) || "USD".equals(channel) ? "USD" : "WHATSAPP".equals(channel) ? "WA" : clip(channel, 6);
+            byte[] h = MessageDigest.getInstance("SHA-256").digest((("USD".equals(prefix) ? "" : channel + "|") + session).getBytes(StandardCharsets.UTF_8));
             String d = LocalDate.now().toString().replace("-", "");
-            String prefix = "USSD".equals(channel) ? "USSD" : "WHATSAPP".equals(channel) ? "WA" : channel;
-            if ("USSD".equals(channel)) h = MessageDigest.getInstance("SHA-256").digest(session.getBytes(StandardCharsets.UTF_8));
-            return "PP-" + prefix + "-" + d + "-" + HexFormat.of().formatHex(h).substring(0, 10).toUpperCase(Locale.ROOT);
+            return "PP-" + prefix + "-" + d + "-" + HexFormat.of().formatHex(h).substring(0, 8).toUpperCase(Locale.ROOT);
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

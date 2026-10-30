@@ -71,7 +71,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/v1/merchants/by-code/") || path.startsWith("/api/v1/wallet/agents/") || path.startsWith("/api/v1/wallet/merchants/") || path.startsWith("/api/v1/codes/scan");
         if (path.equals("/api/v1/merchant-portal/login") || path.equals("/api/v1/merchant-portal/signup")
                 || path.equals("/api/v1/merchant-portal/forgot-password") || path.equals("/api/v1/merchant-portal/reset-password")
-                || path.startsWith("/api/v1/agent-portal/")) isAuthPath = true;
+                || path.startsWith("/api/v1/agent-portal/") || path.startsWith("/api/v1/channel-pin/")) isAuthPath = true;
 
         if (!isAuthPath && !isAssistantPath && !isLookupPath) {
             filterChain.doFilter(request, response);

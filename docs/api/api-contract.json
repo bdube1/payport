@@ -1050,6 +1050,10 @@
    "path": "/api/v1/admin/whatsapp/simulate"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/admin/whatsapp/simulate/outbox"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/admin/whatsapp/test"
   },
@@ -1252,6 +1256,14 @@
   {
    "method": "GET",
    "path": "/api/v1/callbacks/zimswitch/result"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/channel-pin/{token}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/channel-pin/{token}"
   },
   {
    "method": "GET",
