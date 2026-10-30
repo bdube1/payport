@@ -806,6 +806,7 @@ class Phase8CompletionScenarioTest {
     @Test
     void complaintsAndTheReversalDesk_wrongNumberTransfer() throws Exception {
         ensureOn("WALLETS", null);
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
         Customer sam = customer("Sam Sender"), will = customer("Will Wrong");
         String samRef = openWallet(sam, "USD");
         openWallet(will, "USD");
