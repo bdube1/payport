@@ -80,7 +80,9 @@ public class ChannelPinService {
         if (rows.isEmpty()) throw new IllegalArgumentException("This link is not valid.");
         Map<String, Object> r = rows.get(0);
         if (r.get("used_at") != null) throw new IllegalStateException("This link has already been used. Go back to WhatsApp.");
-        if (((Timestamp) r.get("expires_at")).toLocalDateTime().isBefore(LocalDateTime.now()))
+        Object exp = r.get("expires_at");
+        LocalDateTime expires = exp instanceof Timestamp t ? t.toLocalDateTime() : (LocalDateTime) exp;
+        if (expires.isBefore(LocalDateTime.now()))
             throw new IllegalStateException("This link has expired. Go back to WhatsApp and send MENU to start again.");
         return new Request(hash(token), (String) r.get("session_id"), (String) r.get("wa_id"), (String) r.get("purpose"),
                 r.get("user_id") == null ? null : ((Number) r.get("user_id")).longValue());
