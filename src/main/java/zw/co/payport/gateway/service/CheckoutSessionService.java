@@ -54,6 +54,24 @@ public class CheckoutSessionService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.channels.ChannelService channels;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.events.PlatformEvents events;
+
+    /** One platform event per checkout status change (checkout.pending, checkout.paid, checkout.failed, checkout.expired). */
+    void statusEvent(CheckoutSession s, String from) {
+        if (events == null || s.getId() == null) return;
+        java.util.Map<String, Object> p = new java.util.LinkedHashMap<>();
+        p.put("checkoutSessionId", s.getId());
+        p.put("reference", s.getReference());
+        p.put("status", s.getStatus());
+        p.put("previousStatus", from);
+        p.put("amountMinor", s.getAmountCents());
+        p.put("currency", s.getCurrency());
+        p.put("transactionReference", s.getTransactionReference());
+        events.record("checkout." + s.getStatus().toLowerCase(java.util.Locale.ROOT), s.getMerchantId(), "cs_" + s.getId(),
+                "checkout:" + s.getId() + ":" + from + ">" + s.getStatus(), Boolean.TRUE.equals(s.getLivemode()), p);
+    }
+
     public record CreateSessionRequest(
             String reference, Long amountCents, String currency, String description,
             String customerPhone, String customerEmail,
@@ -287,9 +305,11 @@ public class CheckoutSessionService {
         if (!"CREATED".equals(session.getStatus()) && !"PENDING".equals(session.getStatus())) {
             throw new RuntimeException("Only a CREATED or PENDING session can be cancelled (current status: " + session.getStatus() + ")");
         }
+        String from = session.getStatus();
         session.setStatus("CANCELLED");
         session.setUpdatedAt(LocalDateTime.now());
         checkoutSessionRepository.save(session);
+        statusEvent(session, from);
         return session;
     }
 
@@ -346,9 +366,11 @@ public class CheckoutSessionService {
         session.setCustomerPhone(customerPhone);
         session.setCustomerEmail(customerEmail);
         session.setPaymentMethodCode(paymentMethodCode);
+        String fromStatus = session.getStatus();
         session.setStatus("PENDING");
         session.setUpdatedAt(LocalDateTime.now());
         checkoutSessionRepository.save(session);
+        if (!"PENDING".equals(fromStatus)) statusEvent(session, fromStatus);
 
         TransactionResponse result;
         if (isTestMode) {
@@ -376,12 +398,15 @@ public class CheckoutSessionService {
     public int expireOverdueSessions() {
         List<CheckoutSession> overdue = checkoutSessionRepository.findByStatusAndExpiresAtBefore("CREATED", LocalDateTime.now());
         overdue.addAll(checkoutSessionRepository.findByStatusAndExpiresAtBefore("PENDING", LocalDateTime.now()));
+        java.util.Map<Long, String> before = new java.util.HashMap<>();
         for (CheckoutSession s : overdue) {
+            before.put(s.getId(), s.getStatus());
             s.setStatus("EXPIRED");
             s.setUpdatedAt(LocalDateTime.now());
         }
         if (!overdue.isEmpty()) {
             checkoutSessionRepository.saveAll(overdue);
+            for (CheckoutSession s : overdue) statusEvent(s, before.get(s.getId()));
             log.info("[CHECKOUT] Expired {} overdue session(s)", overdue.size());
         }
         return overdue.size();
@@ -390,9 +415,11 @@ public class CheckoutSessionService {
     private void expireIfPastDue(CheckoutSession session) {
         if (("CREATED".equals(session.getStatus()) || "PENDING".equals(session.getStatus()))
                 && session.getExpiresAt().isBefore(LocalDateTime.now())) {
+            String from = session.getStatus();
             session.setStatus("EXPIRED");
             session.setUpdatedAt(LocalDateTime.now());
             checkoutSessionRepository.save(session);
+            statusEvent(session, from);
         }
     }
 
@@ -431,6 +458,7 @@ public class CheckoutSessionService {
             newStatus = "PENDING";
         }
         if (!newStatus.equals(session.getStatus())) {
+            String from = session.getStatus();
             session.setStatus(newStatus);
             session.setUpdatedAt(LocalDateTime.now());
 
@@ -450,6 +478,7 @@ public class CheckoutSessionService {
             // share a transaction context with the original status
             // change, so an implicit flush can't be assumed here.
             checkoutSessionRepository.save(session);
+            statusEvent(session, from);
         }
     }
 

@@ -55,8 +55,7 @@ public class RefundController {
                     initiatedByType, initiatedById);
 
             Map<String, Object> map = toMap(refund);
-            map.put("note", "Recorded and reflected in your balance. This does not yet automatically reverse the payment " +
-                    "through EcoCash/OneMoney/Omari/ZimSwitch -- contact Payport support to coordinate the actual payout back to your customer.");
+            map.put("note", "Taken from your balance. PayPort pays your customer back and records the payout.");
             return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(map, requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("REFUND_FAILED", e.getMessage(), requestId(req)));

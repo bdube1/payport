@@ -73,8 +73,11 @@ class OperationalReadinessScenarioTest {
         r.add("payport.payments.watchdog.enabled", () -> "false");
         r.add("payport.fulfilment.worker.enabled", () -> "false");
         r.add("payport.push.enabled", () -> "false");
+        r.add("payport.commerce.key", () -> COMMERCE_KEY);
         zw.co.payport.gateway.support.UnListStub.register(r);
     }
+
+    static final String COMMERCE_KEY = "commerce-test-key-0123456789abcdef";
 
     @MockitoBean SmsNotificationService sms;
     @MockitoBean EmailService email;
@@ -88,6 +91,7 @@ class OperationalReadinessScenarioTest {
     @Autowired LedgerClient ledger;
     @Autowired BankMessageService bank;
     @Autowired ProviderSettlementService providerSettlements;
+    @Autowired zw.co.payport.gateway.service.CheckoutSessionService checkoutSessions;
     @Autowired Environment env;
     @Value("${local.server.port}") int port;
 
@@ -416,5 +420,93 @@ class OperationalReadinessScenarioTest {
         assertEquals(5_000, wallets.balance(annW));
         assertEquals("REFUNDED", status(ref));
         assertEquals(Set.of(), Set.copyOf(ledger.integrityReport()));
+    }
+
+    // ─── 4. PayPort Commerce's door into the PSP (owner, 2026-10-31) ─────────
+
+    Res commerce(String method, String path, String key, Object body) throws Exception {
+        String raw = body == null ? null : JSON.writeValueAsString(body);
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/json");
+        if (key != null) b.header("X-PayPort-Commerce-Key", key);
+        b.method(method, raw == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(raw));
+        HttpResponse<String> r = HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        String t = r.body() == null ? "" : r.body();
+        JsonNode n;
+        try { n = t.isBlank() ? JSON.createObjectNode() : JSON.readTree(t); } catch (Exception e) { n = JSON.createObjectNode().put("text", t); }
+        return new Res(r.statusCode(), n, t);
+    }
+
+    @Test
+    @Order(4)
+    void commerceFacade_keyRequired_oneCheckoutPerOrder_paidOnlyWhenConfirmed_eventsOncePerChange_merchantRefundsFromItsBalance() throws Exception {
+        MerchantLogin a = merchant("Shop"), b = merchant("Other");
+        String orderRef = "CO-" + SEQ.incrementAndGet() + "ABCD-1";
+        Map<String, Object> body = Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 1_250, "currency", "USD",
+                "description", "Blue mug x1", "successUrl", "https://store.payport.africa/o/x", "cancelUrl", "https://store.payport.africa/o/x", "orderRef", orderRef);
+        assertEquals(403, commerce("POST", "/api/v1/commerce/checkouts", null, body).status(), "no key: refused");
+        assertEquals(403, commerce("POST", "/api/v1/commerce/checkouts", "wrong-key-wrong-key-wrong-key", body).status(), "wrong key: refused");
+        int anon = call("GET", "/api/v1/merchant/commerce/identity", null, null).status();
+        assertTrue(anon == 401 || anon == 403, "identity needs the merchant login: " + anon);
+
+        Res first = commerce("POST", "/api/v1/commerce/checkouts", COMMERCE_KEY, body);
+        assertEquals(200, first.status(), first.raw());
+        Res again = commerce("POST", "/api/v1/commerce/checkouts", COMMERCE_KEY, body);
+        assertEquals(first.data().path("checkoutSessionId").asLong(), again.data().path("checkoutSessionId").asLong(), "a retry gives the same checkout");
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM checkout_sessions WHERE merchant_id = ? AND reference = ?", Integer.class, a.id(), orderRef));
+        assertEquals("NOT_STARTED", first.data().path("outcome").asText());
+        assertTrue(first.data().path("checkoutUrl").asText().endsWith("/checkout/" + first.data().path("checkoutSessionId").asLong()));
+        long sid = first.data().path("checkoutSessionId").asLong();
+
+        // Merchant B's view of merchant A's order: nothing.
+        assertEquals(400, commerce("GET", "/api/v1/commerce/checkouts/" + b.id() + "/" + orderRef, COMMERCE_KEY, null).status());
+
+        // The customer pays; the provider has not confirmed: pending, never paid.
+        String tx = "PP-WEB-20261031-" + String.format("%06d", SEQ.incrementAndGet());
+        jdbc.update("UPDATE checkout_sessions SET transaction_reference = ? WHERE id = ?", tx, sid);
+        checkoutSessions.syncFromTransactionReference(tx, "PAYMENT_PENDING");
+        assertEquals("PENDING", commerce("GET", "/api/v1/commerce/checkouts/" + a.id() + "/" + orderRef, COMMERCE_KEY, null).data().path("outcome").asText());
+        // Confirmed: paid, once. A repeated or late confirmation changes nothing and records no second event.
+        checkoutSessions.syncFromTransactionReference(tx, "COMPLETED");
+        checkoutSessions.syncFromTransactionReference(tx, "COMPLETED");
+        Res paid = commerce("GET", "/api/v1/commerce/checkouts/" + a.id() + "/" + orderRef, COMMERCE_KEY, null);
+        assertEquals("PAID", paid.data().path("outcome").asText(), paid.raw());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM platform_events WHERE event_type = 'checkout.paid' AND subject_ref = ?", Integer.class, "cs_" + sid));
+
+        Res events = commerce("GET", "/api/v1/commerce/events?after=0&limit=500", COMMERCE_KEY, null);
+        assertEquals(200, events.status(), events.raw());
+        assertTrue(events.raw().contains("checkout.paid") && events.raw().contains(orderRef), "the stream has the payment");
+        assertFalse(events.raw().contains("Blue mug"), "no order details or personal data in events");
+        long last = 0;
+        for (JsonNode e : events.data()) last = Math.max(last, e.path("id").asLong());
+        assertEquals(0, commerce("GET", "/api/v1/commerce/events?after=" + last, COMMERCE_KEY, null).data().size(), "the cursor moves on");
+
+        // The merchant refunds its own customer from its own balance; the payout is in the central register.
+        assertEquals(400, commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", b.id(), "reference", orderRef, "amountMinor", 500, "reason", "not mine")).status(),
+                "another merchant cannot refund it");
+        Res refund = commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 500, "reason", "Broken on arrival"));
+        assertEquals(200, refund.status(), refund.raw());
+        assertEquals("PARTIALLY_REFUNDED", refund.data().path("status").asText());
+        assertEquals("AWAITING_PAYOUT", refund.data().path("refunds").get(0).path("payoutStatus").asText(), "requested, not completed, until the payout");
+        String rvs = refund.data().path("refunds").get(0).path("reversalRef").asText();
+        assertEquals("MERCHANT_REFUND", jdbc.queryForObject("SELECT kind FROM reversal_requests WHERE reversal_ref = ?", String.class, rvs));
+        assertEquals(409, commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 900, "reason", "too much")).status(),
+                "never more than what is left");
+        Res payout = call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/payout", staff("FINANCE"), Map.of("payoutReference", "MP-777", "method", "ECOCASH"));
+        assertEquals(200, payout.status(), payout.raw());
+        assertEquals("EXECUTED", commerce("GET", "/api/v1/commerce/checkouts/" + a.id() + "/" + orderRef, COMMERCE_KEY, null).data().path("refunds").get(0).path("payoutStatus").asText());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM platform_events WHERE event_type = 'refund.completed' AND merchant_id = ?", Integer.class, a.id()));
+
+        // Paid out already: not from the balance any more.
+        jdbc.update("INSERT INTO settlements (merchant_id, period_start, period_end, currency, status) VALUES (?, NOW(), NOW(), 'USD', 'PENDING')", a.id());
+        jdbc.update("UPDATE checkout_sessions SET settlement_id = (SELECT MAX(id) FROM settlements WHERE merchant_id = ?) WHERE id = ?", a.id(), sid);
+        Res late = commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 100, "reason", "late refund"));
+        assertTrue(late.status() == 409 && late.raw().contains("paid out"), late.raw());
+
+        // The merchant portal login tells PayPort Commerce who the merchant is.
+        Res me = call("GET", "/api/v1/merchant/commerce/identity", a.token(), null);
+        assertEquals(200, me.status(), me.raw());
+        assertEquals(a.id(), me.data().path("merchantId").asLong());
+        assertTrue(me.data().path("currencies").toString().contains("USD"));
     }
 }

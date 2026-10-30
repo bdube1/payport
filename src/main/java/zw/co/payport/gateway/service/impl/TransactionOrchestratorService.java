@@ -403,7 +403,7 @@ public class TransactionOrchestratorService {
                 .amountCents(toInt(tx.collectCents()))
                 .currency(tx.getCurrency())
                 .customerPhone(tx.getCustomerPhone())
-                .description("Payport " + tx.getProductType().getName())
+                .description(paymentDescription(tx))
                 .build();
         // Capability declaration: the provider must accept the payment's currency.
         if (integrationRegister != null) {
@@ -415,6 +415,42 @@ public class TransactionOrchestratorService {
         // Last check before anything is recorded or sent: suspended provider or open circuit -> refuse now.
         if (providerHealth != null) providerHealth.acquire(providerCode, paymentMethod.getName() != null ? paymentMethod.getName() : providerCode);
         return new PreparedSubmission(tx.getReference(), providerCode, attemptNo, attemptReference, req);
+    }
+
+    /**
+     * What the payer's phone shows on the payment prompt: PayPort and the product or merchant, never a generic word
+     * ("PayPort Econet Airtime", "PayPort NetOne Data Bundle", "PayPort ZESA Prepaid", "PayPort Acme Stores").
+     */
+    String paymentDescription(Transaction tx) {
+        ProductType p = tx.getProductType();
+        String merchant = null;
+        if (p != null && p.getCode() != null && p.getCode().startsWith("MERCHANT")) {
+            try {
+                List<String> m = jdbcTemplate.queryForList("SELECT m.business_name FROM checkout_sessions cs JOIN merchants m ON m.id = cs.merchant_id "
+                        + "WHERE cs.transaction_reference = ? LIMIT 1", String.class, tx.getReference());
+                if (!m.isEmpty()) merchant = m.get(0);
+            } catch (RuntimeException e) {
+                log.debug("[ORCHESTRATOR] merchant name for {} not found: {}", tx.getReference(), e.getMessage());
+            }
+        }
+        return paymentDescription(tx, merchant);
+    }
+
+    static String paymentDescription(Transaction tx, String merchantName) {
+        ProductType p = tx.getProductType();
+        String what;
+        if (merchantName != null && !merchantName.isBlank()) {
+            what = merchantName.trim();
+        } else {
+            what = tx.getProductName() != null && !tx.getProductName().isBlank() ? tx.getProductName().trim()
+                    : p != null && p.getName() != null && !p.getName().isBlank() ? p.getName().trim() : "Payment";
+            String net = tx.getRecipientNetwork();
+            if (net != null && !net.isBlank() && !what.toLowerCase(java.util.Locale.ROOT).contains(net.toLowerCase(java.util.Locale.ROOT))) {
+                what = net.charAt(0) + net.substring(1).toLowerCase(java.util.Locale.ROOT) + " " + what;
+            }
+        }
+        String d = what.toLowerCase(java.util.Locale.ROOT).startsWith("payport") ? what : "PayPort " + what;
+        return d.length() <= 50 ? d : d.substring(0, 50);
     }
 
     private Transaction recordSubmissionOutcome(PreparedSubmission p, PaymentProviderAdaptor.PaymentSubmitResult result) {

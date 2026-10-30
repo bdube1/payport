@@ -1323,14 +1323,6 @@
   },
   {
    "method": "GET",
-   "path": "/api/v1/channel-pin/{token}"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/channel-pin/{token}"
-  },
-  {
-   "method": "GET",
    "path": "/api/v1/charges/quote"
   },
   {
@@ -1348,6 +1340,26 @@
   {
    "method": "GET",
    "path": "/api/v1/codes/scan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/checkouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/checkouts/{merchantId}/{reference}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/events"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/merchants/{merchantId}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/refunds"
   },
   {
    "method": "GET",
@@ -1488,6 +1500,10 @@
   {
    "method": "GET",
    "path": "/api/v1/merchant/collections-by-method"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/commerce/identity"
   },
   {
    "method": "GET",

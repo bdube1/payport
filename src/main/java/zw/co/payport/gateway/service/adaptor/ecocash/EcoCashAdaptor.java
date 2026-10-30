@@ -321,7 +321,7 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
         Map<String, Object> chargingInfo = new LinkedHashMap<>();
         chargingInfo.put("amount", amount);
         chargingInfo.put("currency", request.getCurrency());
-        chargingInfo.put("description", "PayPort Payment");
+        chargingInfo.put("description", request.getDescription() != null ? request.getDescription() : "PayPort Payment");
         paymentAmount.put("charginginformation", chargingInfo);
 
         Map<String, Object> chargeMetaData = new LinkedHashMap<>();

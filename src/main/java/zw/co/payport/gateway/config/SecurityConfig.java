@@ -116,9 +116,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/pos/sales/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales/*/card").permitAll()
+                        // PayPort Commerce, server to server: the service key is checked by CommerceFacade (closed without one).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/commerce/events", "/api/v1/commerce/checkouts/*/*", "/api/v1/commerce/merchants/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/channel-pin/*").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/channel-pin/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()
 
                         // Payment Links -- a customer visiting a shareable
