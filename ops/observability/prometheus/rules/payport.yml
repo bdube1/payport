@@ -1,0 +1,102 @@
+groups:
+  - name: platform
+    rules:
+      - alert: GatewayDown
+        expr: up{job="payport-gateway"} == 0
+        for: 1m
+        labels: { severity: critical, dashboard: overview }
+        annotations: { summary: "The PayPort gateway is not answering" }
+      - alert: PublicSiteDown
+        expr: probe_success{job="payport-public"} == 0
+        for: 2m
+        labels: { severity: critical, dashboard: overview }
+        annotations: { summary: "{{ $labels.instance }} is not reachable from the internet path" }
+      - alert: DatabaseDown
+        expr: mysql_up == 0
+        for: 1m
+        labels: { severity: critical, dashboard: infrastructure }
+        annotations: { summary: "MySQL is not answering" }
+      - alert: DatabaseConnectionsHigh
+        expr: hikaricp_connections_active / hikaricp_connections_max > 0.85
+        for: 5m
+        labels: { severity: warning, dashboard: infrastructure }
+        annotations: { summary: "The gateway is using more than 85% of its database connections" }
+      - alert: DiskAlmostFull
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) < 0.15
+        for: 10m
+        labels: { severity: warning, dashboard: infrastructure }
+        annotations: { summary: "{{ $labels.mountpoint }} has less than 15% free" }
+      - alert: MemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels: { severity: warning, dashboard: infrastructure }
+        annotations: { summary: "Server memory above 90%" }
+      - alert: CpuHigh
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 10m
+        labels: { severity: warning, dashboard: infrastructure }
+        annotations: { summary: "Server CPU above 90%" }
+      - alert: ApiSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="payport-gateway", uri!~"/actuator.*"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning, dashboard: infrastructure }
+        annotations: { summary: "95% of API requests take longer than 2 seconds" }
+
+  - name: payments
+    rules:
+      - alert: SuccessRateLow
+        expr: payport_cc_success_rate_1h < 0.8
+        for: 10m
+        labels: { severity: critical, dashboard: payments }
+        annotations: { summary: "Fewer than 80% of payments in the last hour succeeded" }
+      - alert: UncertainPayments
+        expr: payport_cc_uncertain_payments > 0
+        for: 15m
+        labels: { severity: warning, dashboard: payments }
+        annotations: { summary: "{{ $value }} payment outcomes are still uncertain" }
+      - alert: ProviderNotAnswering
+        expr: payport_cc_provider_up == 0
+        for: 3m
+        labels: { severity: critical, dashboard: providers }
+        annotations: { summary: "{{ $labels.provider }} is not answering" }
+      - alert: ProviderUnreachable
+        expr: probe_success{job="provider-connectivity", module="tcp_connect"} == 0
+        for: 3m
+        labels: { severity: critical, dashboard: providers }
+        annotations: { summary: "{{ $labels.name }} cannot be reached from the server" }
+      - alert: CallbacksFailing
+        expr: increase(payport_cc_failed_callbacks_today[30m]) > 5
+        labels: { severity: warning, dashboard: providers }
+        annotations: { summary: "More than 5 provider callbacks were rejected in 30 minutes" }
+      - alert: ReconciliationExceptions
+        expr: payport_cc_recon_exceptions_open > 0
+        for: 1h
+        labels: { severity: warning, dashboard: providers }
+        annotations: { summary: "{{ $value }} reconciliation exceptions are open" }
+      - alert: ComplaintsOverdue
+        expr: payport_cc_complaints_overdue > 0
+        labels: { severity: warning, dashboard: overview }
+        annotations: { summary: "{{ $value }} complaints are past their deadline" }
+
+  - name: security
+    rules:
+      - alert: LoginFailuresSpike
+        expr: sum(increase(payport_security_events_total{event="login_failed"}[10m])) > 20
+        labels: { severity: warning, dashboard: security }
+        annotations: { summary: "More than 20 failed logins in 10 minutes" }
+      - alert: StaffAccountLocked
+        expr: increase(payport_security_events_total{event="account_locked", who="staff"}[15m]) > 0
+        labels: { severity: warning, dashboard: security }
+        annotations: { summary: "A staff account was locked after failed passwords" }
+      - alert: RateLimitSpike
+        expr: sum(increase(payport_security_events_total{event="rate_limited"}[10m])) > 50
+        labels: { severity: warning, dashboard: security }
+        annotations: { summary: "Many requests are being rate-limited: possible scraping or attack" }
+      - alert: InvalidWebhookSignatures
+        expr: increase(payport_security_events_total{event="webhook_signature_invalid"}[15m]) > 3
+        labels: { severity: warning, dashboard: security }
+        annotations: { summary: "Webhook calls with invalid signatures" }
+      - alert: HighRiskAlerts
+        expr: sum(payport_cc_risk_alerts_open{severity=~"HIGH|CRITICAL"}) > 0
+        labels: { severity: warning, dashboard: security }
+        annotations: { summary: "High-severity fraud alerts are open" }

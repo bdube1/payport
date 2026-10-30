@@ -1,0 +1,30 @@
+filebeat.inputs:
+  - type: filestream
+    id: payport-gateway
+    paths: [/var/log/payport/*.log]
+    fields: { service: payport-gateway }
+    parsers:
+      - multiline: { type: pattern, pattern: '^\d{2}:\d{2}:\d{2}\.\d{3} ', negate: true, match: after }
+  - type: filestream
+    id: caddy
+    paths: [/var/log/caddy/*.log]
+    fields: { service: caddy }
+processors:
+  - script:
+      lang: javascript
+      source: >
+        function process(event) {
+          var m = event.Get("message");
+          if (m) {
+            m = m.replace(/(authorization: bearer )\S+/ig, "$1***").replace(/\b(\d{3})\d{5}(\d{4})\b/g, "$1*****$2");
+            event.Put("message", m);
+          }
+        }
+output.elasticsearch:
+  hosts: ["http://127.0.0.1:9200"]
+  username: elastic
+  password: "${ELASTIC_PASSWORD}"
+  index: "payport-logs-%{+yyyy.MM.dd}"
+setup.template.name: payport-logs
+setup.template.pattern: payport-logs-*
+setup.ilm.enabled: false

@@ -1,0 +1,88 @@
+# PayPort Operations Control Centre - Prometheus.
+# The gateway runs on the same host (staging: port 8085). If Prometheus runs on a separate monitoring server, replace
+# 127.0.0.1:8085 with the gateway's private address, or with api-staging.payport.africa and scheme https.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: staging
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["127.0.0.1:9093"] }]
+
+scrape_configs:
+  # PSP backend: JVM, HTTP requests, database pool, and the Control Centre business and security figures.
+  - job_name: payport-gateway
+    metrics_path: /actuator/prometheus
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics_token
+    static_configs:
+      - targets: ["127.0.0.1:8085"]
+        labels: { service: gateway }
+
+  - job_name: node
+    static_configs: [{ targets: ["127.0.0.1:9100"], labels: { service: server } }]
+
+  - job_name: mysql
+    static_configs: [{ targets: ["127.0.0.1:9104"], labels: { service: database } }]
+
+  # Connectivity: every provider the gateway is configured with (TCP connect + ICMP latency/packet loss) and the
+  # provider callback addresses, discovered from the gateway so the probes follow its configuration.
+  - job_name: provider-connectivity
+    metrics_path: /probe
+    http_sd_configs:
+      - url: http://127.0.0.1:8085/api/v1/monitoring/targets
+        refresh_interval: 5m
+        authorization:
+          type: Bearer
+          credentials_file: /etc/prometheus/secrets/metrics_token
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [module]
+        target_label: __param_module
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  # PayPort's own public addresses, as customers reach them.
+  - job_name: payport-public
+    metrics_path: /probe
+    params: { module: [http_2xx] }
+    static_configs:
+      - targets:
+          - https://api-staging.payport.africa/actuator/health/liveness
+          - https://app-staging.payport.africa/
+          - https://admin-staging.payport.africa/
+          - https://merchant-staging.payport.africa/
+        labels: { kind: public }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  # Internet path from this server (latency and packet loss).
+  - job_name: internet
+    metrics_path: /probe
+    params: { module: [icmp] }
+    static_configs: [{ targets: ["8.8.8.8", "1.1.1.1"], labels: { kind: internet } }]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  - job_name: observability
+    static_configs:
+      - targets: ["127.0.0.1:9090", "127.0.0.1:3100", "127.0.0.1:3200", "127.0.0.1:3300", "127.0.0.1:9115", "127.0.0.1:9093"]

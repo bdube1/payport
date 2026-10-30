@@ -1,0 +1,148 @@
+# PayPort Operations Control Centre: metrics, logs, traces, connectivity probes and the TV dashboards.
+#
+#   cp .env.example .env && chmod 600 .env && vi .env
+#   sudo scripts/setup.sh                    # secrets, start, TV playlist
+#   docker compose --profile kibana up -d    # optional: Elasticsearch + Kibana for log search (about 2.5 GB more)
+#
+# Every service uses the host network and listens on 127.0.0.1 only: nothing here is reachable from outside the
+# server. Grafana (and Kibana if enabled) are published through Caddy with their own logins (caddy/monitor.caddy).
+# Ports: Grafana 3300, Prometheus 9090, Alertmanager 9093, Blackbox 9115, node 9100, MySQL exporter 9104,
+# Loki 3100, Promtail 9080, Tempo 3200 + OTLP 4317/4318, Elasticsearch 9200, Kibana 5601.
+name: payport-observability
+
+x-host: &host
+  restart: unless-stopped
+  network_mode: host
+
+services:
+  prometheus:
+    <<: *host
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --web.listen-address=127.0.0.1:9090
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - ./secrets/metrics_token:/etc/prometheus/secrets/metrics_token:ro
+      - prometheus-data:/prometheus
+
+  alertmanager:
+    <<: *host
+    image: prom/alertmanager:v0.27.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--web.listen-address=127.0.0.1:9093", "--cluster.listen-address=", "--storage.path=/alertmanager"]
+    volumes: ["./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro", "alertmanager-data:/alertmanager"]
+
+  blackbox:
+    <<: *host
+    image: prom/blackbox-exporter:v0.25.0
+    cap_add: [NET_RAW]            # ICMP: latency and packet loss to providers
+    command: ["--config.file=/etc/blackbox_exporter/config.yml", "--web.listen-address=127.0.0.1:9115"]
+    volumes: ["./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro"]
+
+  node-exporter:
+    <<: *host
+    image: prom/node-exporter:v1.8.2
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address=127.0.0.1:9100"]
+    volumes: ["/:/host:ro,rslave"]
+
+  mysqld-exporter:
+    <<: *host
+    image: prom/mysqld-exporter:v0.15.1
+    command: ["--config.my-cnf=/etc/mysqld-exporter/.my.cnf", "--collect.info_schema.processlist", "--web.listen-address=127.0.0.1:9104"]
+    volumes: ["./secrets/mysqld-exporter.cnf:/etc/mysqld-exporter/.my.cnf:ro"]
+
+  loki:
+    <<: *host
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes: ["./loki/loki.yml:/etc/loki/loki.yml:ro", "loki-data:/loki"]
+
+  promtail:
+    <<: *host
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ${PAYPORT_LOG_DIR:-/opt/payport/staging}:/var/log/payport:ro
+      - /var/log/caddy:/var/log/caddy:ro
+      - promtail-positions:/positions
+
+  tempo:
+    <<: *host
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes: ["./tempo/tempo.yml:/etc/tempo/tempo.yml:ro", "tempo-data:/var/tempo"]
+
+  grafana:
+    <<: *host
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3300"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3300}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 10s
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/pp-cc-overview.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+  # ── Kibana (optional): full-text log search next to Loki ──────────────────
+  elasticsearch:
+    <<: *host
+    profiles: ["kibana"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      network.host: 127.0.0.1
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes: ["es-data:/usr/share/elasticsearch/data"]
+
+  kibana:
+    <<: *host
+    profiles: ["kibana"]
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    environment:
+      SERVER_HOST: 127.0.0.1
+      ELASTICSEARCH_HOSTS: http://127.0.0.1:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+      SERVER_PUBLICBASEURL: ${KIBANA_PUBLIC_URL:-http://localhost:5601}
+    depends_on: [elasticsearch]
+
+  filebeat:
+    <<: *host
+    profiles: ["kibana"]
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ${PAYPORT_LOG_DIR:-/opt/payport/staging}:/var/log/payport:ro
+      - /var/log/caddy:/var/log/caddy:ro
+    depends_on: [elasticsearch]
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  tempo-data:
+  grafana-data:
+  promtail-positions:
+  es-data:

@@ -95,7 +95,7 @@ public class AuthService {
     public Map<String, Object> login(AuthRequests.LoginRequest req) {
         String phone = normalizePhone(req.getPhone());
         User user = userRepository.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Invalid phone number or PIN"));
+                .orElseThrow(() -> { zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.LOGIN_FAILED, "customer"); return new RuntimeException("Invalid phone number or PIN"); });
 
         if (!user.getIsActive()) {
             throw new RuntimeException("Account is deactivated. Please contact support.");
@@ -113,6 +113,7 @@ public class AuthService {
                 throw new RuntimeException("Too many failed attempts. Account locked for 15 minutes.");
             }
             userRepository.save(user);
+            zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.LOGIN_FAILED, "customer");
             throw new RuntimeException("Invalid phone number or PIN");
         }
 
@@ -176,9 +177,11 @@ public class AuthService {
                 user.setAccountLocked(true);
                 userRepository.save(user);
                 log.warn("[AUTH] Ops account locked after 3 failed attempts: {}", email);
+                zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.ACCOUNT_LOCKED, "staff");
                 throw new RuntimeException("Account locked after 3 failed attempts. Contact an administrator to unlock it.");
             }
             userRepository.save(user);
+            zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.LOGIN_FAILED, "staff");
             throw new RuntimeException("Invalid credentials");
         }
 

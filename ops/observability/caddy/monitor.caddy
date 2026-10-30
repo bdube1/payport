@@ -1,0 +1,11 @@
+# Control Centre behind Caddy (import from /etc/caddy/Caddyfile like payport-staging.caddy).
+# Grafana has its own login; nothing else of the stack is exposed.
+monitor-staging.payport.africa {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3300
+}
+
+# Only with the Kibana profile: Kibana has its own login (elastic user).
+# logs-staging.payport.africa {
+# 	reverse_proxy 127.0.0.1:5601
+# }

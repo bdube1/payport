@@ -93,6 +93,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (bucket.count().get() > maxRequests) {
             log.warn("[RATE_LIMIT] Blocked {} for {} ({} requests in window)",
                     clientIp(request), path, bucket.count().get());
+            zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.RATE_LIMITED, isAuthPath ? "login" : isLookupPath ? "lookup" : "assistant");
             response.setStatus(429); // Too Many Requests
             response.setContentType("application/json");
             response.getWriter().write(

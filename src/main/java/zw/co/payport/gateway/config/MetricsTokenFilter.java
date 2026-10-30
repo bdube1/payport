@@ -29,7 +29,7 @@ public class MetricsTokenFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/actuator/prometheus");
+        return !request.getRequestURI().startsWith("/actuator/prometheus") && !request.getRequestURI().startsWith("/api/v1/monitoring/");
     }
 
     @Override

@@ -33,7 +33,7 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 public class ConnectivityController {
 
-    private static final String[][] PROVIDERS = {
+    public static final String[][] PROVIDERS = {
             {"EcoCash", "payport.ecocash.base-url"},
             {"OneMoney", "payport.onemoney.base-url"},
             {"O'mari", "payport.omari.base-url"},
@@ -45,7 +45,7 @@ public class ConnectivityController {
             {"e-Solutions (bills)", "payport.esolutions.base-url"},
             {"SMS (Africa's Talking)", "payport.sms.africas-talking.base-url"},
     };
-    private static final String[][] CALLBACKS = {
+    public static final String[][] CALLBACKS = {
             {"EcoCash callback", "payport.ecocash.notify-url"},
             {"OneMoney callback", "payport.onemoney.notify-url"},
             {"ZimSwitch callback", "payport.zimswitch.notify-url"},

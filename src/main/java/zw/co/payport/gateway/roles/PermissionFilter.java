@@ -50,6 +50,7 @@ public class PermissionFilter extends OncePerRequestFilter {
         boolean allowed = PermissionCatalog.forPathAll(path).stream()
                 .anyMatch(x -> role.permissions().contains(x.manage()) || (read && role.permissions().contains(x.view())));
         if (!allowed) {
+            zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.PERMISSION_DENIED, "staff");
             res.setStatus(403);
             res.setContentType("application/json");
             res.getWriter().write("{\"success\":false,\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"Your role does not allow this\"}}");
