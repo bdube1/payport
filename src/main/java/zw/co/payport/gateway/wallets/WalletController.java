@@ -231,6 +231,7 @@ public class WalletController {
     @PostMapping("/api/v1/admin/wallets/refunds/{reference}")
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> refund(@PathVariable String reference, @RequestBody ReasonBody b, HttpServletRequest req) {
-        return Web.run(() -> payments.refundToWallet(reference, b.reason(), Web.staff()), req);
+        // Owner, 2026-10-30: staff reverse money in one place only (Customer care > Reversals, with approval).
+        return ResponseEntity.status(409).body(ApiResponse.error("USE_REVERSAL_DESK", "Reversals are requested and approved in Customer care > Reversals.", null));
     }
 }

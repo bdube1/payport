@@ -113,6 +113,30 @@ public class LedgerClient {
         }
     }
 
+    /**
+     * Reverses an entry on the caller's connection inside the caller's transaction (no commit, no retry), like
+     * {@link #postInTransaction}: business rows and the mirrored entry commit or roll back together.
+     */
+    public PostResult reverseInTransaction(Connection c, String originalEntryRef, String idempotencyKey, LocalDate effectiveDate, String postedBy, String reason) {
+        String entryRef = newEntryRef();
+        try (CallableStatement cs = c.prepareCall("{call ledger_reverse(?, ?, ?, ?, ?, ?, ?, ?)}")) {
+            cs.setString(1, originalEntryRef);
+            cs.setString(2, entryRef);
+            cs.setString(3, idempotencyKey);
+            if (effectiveDate == null) cs.setNull(4, Types.DATE); else cs.setDate(4, Date.valueOf(effectiveDate));
+            cs.setString(5, postedBy);
+            cs.setString(6, reason);
+            cs.registerOutParameter(7, Types.BIGINT);
+            cs.registerOutParameter(8, Types.VARCHAR);
+            cs.execute();
+            long id = cs.getLong(7);
+            Outcome outcome = Outcome.valueOf(cs.getString(8));
+            return new PostResult(id, outcome == Outcome.POSTED ? entryRef : entryRefOf(c, id), outcome);
+        } catch (SQLException e) {
+            throw LedgerException.fromDatabaseMessage(e.getMessage(), e);
+        }
+    }
+
     public PostResult reverse(String originalEntryRef, String idempotencyKey, LocalDate effectiveDate, String postedBy, String reason) {
         return withRetry(() -> {
             try (Connection c = dataSource.getConnection()) {

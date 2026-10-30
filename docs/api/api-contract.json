@@ -111,6 +111,42 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/complaints"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/catalog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/summary"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/trace"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/{id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/assign"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/notes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/status"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/compliance-authorities"
   },
   {
@@ -844,6 +880,34 @@
   {
    "method": "GET",
    "path": "/api/v1/admin/reports/consolidated"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversal-approvals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/approve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/payout"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/reject"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversals/trace"
   },
   {
    "method": "GET",

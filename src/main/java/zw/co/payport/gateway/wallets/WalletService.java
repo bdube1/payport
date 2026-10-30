@@ -383,6 +383,72 @@ public class WalletService {
         return apply("REFUND:" + reference, j, List.of(new Leg(w.id(), "REFUND", "CR", amount, "PAYPORT", reference)), by, "Refund refused");
     }
 
+    /** Wallet operations that can be reversed as a whole (a wallet payment is refunded instead). */
+    public static final Set<String> REVERSIBLE = Set.of("P2P_OUT", "P2P_IN", "CASH_IN", "CASH_OUT", "FX_OUT", "FX_IN");
+
+    /** The lines of a wallet operation, and whether it has already been reversed. */
+    public List<Map<String, Object>> operationLines(String opRef) {
+        return jdbc.queryForList("SELECT o.*, w.wallet_ref, w.user_id FROM wallet_operations o JOIN wallets w ON w.id = o.wallet_id WHERE o.op_ref = ? ORDER BY o.id", opRef);
+    }
+
+    public static String reversalRef(String opRef) {
+        String r = "REV:" + opRef;
+        return r.length() <= 80 ? r : "REV:" + Integer.toHexString(opRef.hashCode()) + ":" + opRef.substring(opRef.length() - 60);
+    }
+
+    public boolean reversed(String opRef) {
+        return !jdbc.queryForList("SELECT 1 FROM wallet_operations WHERE op_ref = ? LIMIT 1", Integer.class, reversalRef(opRef)).isEmpty();
+    }
+
+    /**
+     * Reverses a whole wallet operation (a transfer, cash-in, cash-out or conversion) with a ledger reversal that
+     * mirrors every line of the original entry, charges included, and REVERSAL lines on each wallet. Runs once; the
+     * ledger refuses it if a wallet no longer holds the money (it is then recovered another way). Called only by the
+     * central reversal desk, after approval.
+     */
+    public Map<String, Object> reverseOperation(String opRef, String reason, String by) {
+        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A reason is required");
+        List<Map<String, Object>> lines = operationLines(opRef);
+        if (lines.isEmpty()) throw new IllegalArgumentException("No wallet operation " + opRef);
+        for (Map<String, Object> l : lines) {
+            if (!REVERSIBLE.contains((String) l.get("kind"))) throw new IllegalArgumentException("A " + l.get("kind") + " cannot be reversed here");
+        }
+        String entry = (String) lines.get(0).get("entry_ref");
+        String revRef = reversalRef(opRef);
+        return tx.execute(s -> {
+            List<Long> ids = lines.stream().map(l -> ((Number) l.get("wallet_id")).longValue()).distinct().sorted().toList();
+            for (Long id : ids) one("SELECT * FROM wallets WHERE id = ? FOR UPDATE", id).orElseThrow(() -> new IllegalArgumentException("No such wallet"));
+            List<String> done = jdbc.queryForList("SELECT entry_ref FROM wallet_operations WHERE op_ref = ? LIMIT 1", String.class, revRef);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("opRef", opRef);
+            if (!done.isEmpty()) {
+                out.put("entryRef", done.get(0));
+                out.put("alreadyReversed", true);
+                return out;
+            }
+            String reversal;
+            try {
+                reversal = jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>) c ->
+                        ledger.reverseInTransaction(c, entry, "WALLET_REVERSAL:" + opRef, LocalDate.now(), by, clip(reason, 200)).entryRef());
+            } catch (LedgerException e) {
+                if ("LEDGER_INSUFFICIENT_FUNDS".equals(e.code())) {
+                    throw new Web.InsufficientFundsException("The wallet that received the money no longer holds enough of it to reverse. Recover it another way.");
+                }
+                throw e;
+            }
+            Timestamp now = now();
+            for (Map<String, Object> l : lines) {
+                jdbc.update("INSERT INTO wallet_operations (op_ref, wallet_id, kind, direction, amount_minor, currency, counterparty, reference, entry_ref, created_by, created_at) "
+                                + "VALUES (?,?,'REVERSAL',?,?,?,?,?,?,?,?)",
+                        revRef, l.get("wallet_id"), "DR".equals(l.get("direction")) ? "CR" : "DR", l.get("amount_minor"), l.get("currency"),
+                        clip("reversal of " + l.get("kind"), 120), clip(opRef, 80), reversal, by, now);
+            }
+            out.put("entryRef", reversal);
+            out.put("alreadyReversed", false);
+            return out;
+        });
+    }
+
     // ─── transfers ───────────────────────────────────────────────────────────
 
     public Map<String, Object> transfer(long senderUserId, String toPhoneOrRef, String currency, long amount, String clientRef, String by) {

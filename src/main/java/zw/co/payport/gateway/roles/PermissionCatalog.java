@@ -35,7 +35,7 @@ public final class PermissionCatalog {
         return new Feature(key, group, name, routes, api, List.of(roles));
     }
 
-    public static final List<String> GROUPS = List.of("Overview", "Transactions", "Merchants", "Agents", "Customers & wallets",
+    public static final List<String> GROUPS = List.of("Overview", "Transactions", "Customer care", "Merchants", "Agents", "Customers & wallets",
             "Finance & settlement", "Reports", "Monitoring", "Platform setup", "Compliance", "Administration");
 
     public static final List<Feature> FEATURES = List.of(
@@ -50,6 +50,10 @@ public final class PermissionCatalog {
             f("customer_statement", "Transactions", "Customer statements", List.of("/statement"), List.of(A + "customer-statement"), ADMIN, OPS, FINANCE),
             f("disputes", "Transactions", "Disputes", List.of("/disputes"), List.of(A + "disputes", A + "dispute-timelines"), ADMIN, OPS),
             f("queries", "Transactions", "Queries", List.of("/queries"), List.of(A + "queries"), ADMIN, OPS),
+
+            f("complaints", "Customer care", "Complaints", List.of("/complaints"), List.of(A + "complaints"), ADMIN, OPS, FINANCE, COMPLIANCE),
+            f("reversals", "Customer care", "Reversal requests", List.of("/reversals"), List.of(A + "reversals"), ADMIN, OPS),
+            f("reversal_approval", "Customer care", "Reversal approval", List.of("/reversals/approve"), List.of(A + "reversal-approvals"), ADMIN, FINANCE),
 
             f("merchants", "Merchants", "Merchants & applications", List.of("/merchants", "/merchants/dashboard"),
                     List.of(A + "merchants", A + "platform/merchants", A + "upload-logo"), ADMIN, OPS),
