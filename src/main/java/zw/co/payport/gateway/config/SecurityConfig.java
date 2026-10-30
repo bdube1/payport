@@ -117,6 +117,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/pos/sales/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales/*/card").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/channel-pin/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/channel-pin/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()
 
                         // Payment Links -- a customer visiting a shareable

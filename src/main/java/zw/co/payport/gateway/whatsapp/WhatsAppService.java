@@ -118,17 +118,47 @@ public class WhatsAppService {
         String session = restart ? "wa:" + waId + ":" + token() : (String) rows.get(0).get("session_id");
         String path = restart ? "" : ((String) rows.get(0).get("path")).isEmpty() ? input : rows.get(0).get("path") + "*" + input;
         if (path.length() > 450) path = "";
+        return step(waId, session, path);
+    }
+
+    /** Runs one turn of the engine for this number's session, keeps (or ends) the session, and returns the reply. */
+    private String step(String waId, String session, String path) {
         UssdService.Turn t = engine.turn("WHATSAPP", session, "+" + waId, path);
         if (t.end()) {
             jdbc.update("DELETE FROM whatsapp_sessions WHERE wa_id = ?", waId);
             engine.forget(session);
         } else {
-            // PINs are kept as "#": only their hash or a "checked" flag is held for the session.
+            // PINs are never in the kept path: they are entered on PayPort's PIN page ("#" marks the step).
             jdbc.update("INSERT INTO whatsapp_sessions (wa_id, session_id, path, updated_at) VALUES (?,?,?,?) "
                     + "ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), path = VALUES(path), updated_at = VALUES(updated_at)", waId, session, t.storedPath(), now());
         }
         String body = t.text();
         return t.end() ? body + "\n\nSend MENU to start again." : body + "\n\nReply with a number, or MENU to start again.";
+    }
+
+    /**
+     * After the PIN page: the conversation carries on by itself (the step is marked "#") and the next screen is sent
+     * to the customer in WhatsApp. Nothing happens if the customer has since started again.
+     */
+    public void continueAfterPin(String waId, String session) {
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT path FROM whatsapp_sessions WHERE wa_id = ? AND session_id = ?", waId, session);
+        if (rows.isEmpty()) return;
+        String path = (String) rows.get(0).get("path");
+        String reply = step(waId, session, path == null || path.isEmpty() ? UssdService.MASK_TOKEN : path + "*" + UssdService.MASK_TOKEN);
+        outbox(waId, reply, "AFTER_PIN");
+    }
+
+    /** Sends a message PayPort starts (not a direct answer) and records it. */
+    public void outbox(String waId, String body, String kind) {
+        String err = sender.send(waId, body);
+        jdbc.update("INSERT INTO whatsapp_outbox (wa_id, body, kind, sent, send_error, created_at) VALUES (?,?,?,?,?,?)",
+                waId, clip(body, 2000), kind, err == null, clip(err, 300), now());
+        if (err != null) log.warn("[WHATSAPP] {} message to {} not sent: {}", kind, mask(waId), err);
+    }
+
+    /** Messages PayPort started to this number after the given id (test phone). */
+    public List<Map<String, Object>> outboxFor(String waId, long after) {
+        return jdbc.queryForList("SELECT id, body, kind, sent, created_at FROM whatsapp_outbox WHERE wa_id = ? AND id > ? ORDER BY id LIMIT 20", waId, after);
     }
 
     public List<Map<String, Object>> recent() {
