@@ -481,14 +481,20 @@ class Phase8CompletionScenarioTest {
         assertEquals("PAYMENT_CONFIRMED", paid.data().path("status").asText(), paid.body().toString());
         assertEquals(3_300, balance(ann, "USD"));
 
-        // Vendor failed the airtime: finance refunds it to the wallet; the payment is closed as REFUNDED.
+        // Vendor failed the airtime: operations asks for the refund on the reversal desk, finance approves it; the
+        // payment is closed as REFUNDED and the money is back in the wallet.
         jdbc.update("UPDATE transactions SET status = 'FULFILMENT_FAILED' WHERE reference = ?", airtime);
         String fin = staff("Fin Refunds", "FINANCE");
-        Res refund = call("POST", "/api/v1/admin/wallets/refunds/" + airtime, fin, Map.of("reason", "vendor failed"));
+        String opsDesk = staff("Ops Desk", "OPS");
+        Res asked = call("POST", "/api/v1/admin/reversals", opsDesk, Map.of("kind", "WALLET_REFUND", "targetRef", airtime, "reason", "vendor failed"));
+        assertEquals(200, asked.status(), asked.body().toString());
+        String rvs = asked.data().path("reversal_ref").asText();
+        Res refund = call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", fin, Map.of());
         assertEquals(200, refund.status(), refund.body().toString());
-        assertEquals("REFUNDED", refund.data().path("status").asText());
+        assertEquals("EXECUTED", refund.data().path("status").asText(), refund.body().toString());
+        assertEquals("REFUNDED", jdbc.queryForObject("SELECT status FROM transactions WHERE reference = ?", String.class, airtime));
         assertEquals(3_800, balance(ann, "USD"));
-        assertEquals(409, call("POST", "/api/v1/admin/wallets/refunds/" + airtime, fin, Map.of("reason", "again")).status(), "refunded once");
+        assertEquals(409, call("POST", "/api/v1/admin/reversals", opsDesk, Map.of("kind", "WALLET_REFUND", "targetRef", airtime, "reason", "again please")).status(), "refunded once");
         assertEquals(3_800, balance(ann, "USD"));
 
         // Pay a merchant's hosted checkout from the wallet.
@@ -794,6 +800,60 @@ class Phase8CompletionScenarioTest {
         assertFalse(set.body().toString().contains("EAAG-test-token-value"));
         assertTrue(jdbc.queryForObject("SELECT access_token FROM whatsapp_settings WHERE id = 1", String.class).startsWith("enc:v1:"), "encrypted at rest");
         assertEquals(400, call("PUT", "/api/v1/admin/whatsapp/settings", admin, Map.of("phoneNumberId", "not-a-number")).status());
+    }
+
+    /** Owner, 2026-10-30: complaints are traced, and money is reversed only from the reversal desk after someone else approves. */
+    @Test
+    void complaintsAndTheReversalDesk_wrongNumberTransfer() throws Exception {
+        ensureOn("WALLETS", null);
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
+        Customer sam = customer("Sam Sender"), will = customer("Will Wrong");
+        String samRef = openWallet(sam, "USD");
+        openWallet(will, "USD");
+        topUp(samRef, 5_000);
+        long samBefore = balance(sam, "USD"), willBefore = balance(will, "USD");
+        Res sent = call("POST", "/api/v1/wallet/transfers", sam.token(), Map.of("to", will.phone(), "currency", "USD", "amountMinor", 1_500, "pin", PIN, "clientRef", "oops-1"));
+        assertEquals(200, sent.status(), sent.body().toString());
+        String op = sent.data().path("transferRef").asText();
+        long samAfterSend = balance(sam, "USD");
+
+        String ops = staff("Care Ops", "OPS"), admin = staff("Care Admin", "ADMIN"), fin = staff("Care Fin", "FINANCE");
+        Map<String, Object> complaint = Map.of("category", "A_WRONG_NUMBER", "channel", "PHONE", "customerPhone", sam.phone(), "reference", op,
+                "description", "Sent money to the wrong number");
+        assertEquals(403, call("POST", "/api/v1/admin/complaints", fin, complaint).status(), "finance reads complaints, operations opens them");
+        Res cmp = call("POST", "/api/v1/admin/complaints", ops, complaint);
+        assertEquals(200, cmp.status(), cmp.body().toString());
+        String cref = cmp.data().path("complaint_ref").asText();
+        assertTrue(cref.startsWith("CMP-"), cref);
+        assertEquals("NORMAL", cmp.data().path("priority").asText());
+        assertEquals("WALLET_REVERSAL", cmp.data().path("trace").path("options").get(0).path("kind").asText(), cmp.body().toString());
+
+        Res asked = call("POST", "/api/v1/admin/reversals", admin, Map.of("kind", "WALLET_REVERSAL", "targetRef", op, "reason", "Customer sent to the wrong number", "complaintRef", cref));
+        assertEquals(200, asked.status(), asked.body().toString());
+        String rvs = asked.data().path("reversal_ref").asText();
+        assertEquals(1_500, asked.data().path("amount_minor").asLong(), "the amount comes from the record");
+        assertEquals(403, call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", admin, Map.of()).status(), "nobody approves their own request");
+        assertEquals(samAfterSend, balance(sam, "USD"), "nothing moves before approval");
+        Res ok = call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", fin, Map.of("note", "confirmed with both parties"));
+        assertEquals(200, ok.status(), ok.body().toString());
+        assertEquals("EXECUTED", ok.data().path("status").asText(), ok.body().toString());
+        assertEquals(samBefore, balance(sam, "USD"), "the sender has the money back, charges included");
+        assertEquals(willBefore, balance(will, "USD"));
+        Res c = call("GET", "/api/v1/admin/complaints/" + cmp.data().path("id").asLong(), ops, null);
+        assertEquals("AWAITING_REVERSAL", c.data().path("status").asText());
+        assertTrue(c.data().path("notes").toString().contains("approved"), c.body().toString());
+        assertEquals(0, c.data().path("trace").path("options").size(), "a reversed transfer cannot be reversed again");
+        assertEquals(200, call("POST", "/api/v1/admin/complaints/" + cmp.data().path("id").asLong() + "/status", ops,
+                Map.of("status", "RESOLVED", "resolution", "The money is back in your wallet.")).status());
+
+        // Money already spent by the recipient: the reversal is refused and recorded as failed.
+        Res again = call("POST", "/api/v1/wallet/transfers", sam.token(), Map.of("to", will.phone(), "currency", "USD", "amountMinor", 1_000, "pin", PIN, "clientRef", "oops-2"));
+        String op2 = again.data().path("transferRef").asText();
+        assertEquals(200, call("POST", "/api/v1/wallet/transfers", will.token(), Map.of("to", sam.phone(), "currency", "USD", "amountMinor", 900, "pin", PIN, "clientRef", "spent")).status());
+        String rvs2 = call("POST", "/api/v1/admin/reversals", ops, Map.of("kind", "WALLET_REVERSAL", "targetRef", op2, "reason", "Wrong number again")).data().path("reversal_ref").asText();
+        Res failed = call("POST", "/api/v1/admin/reversal-approvals/" + rvs2 + "/approve", fin, Map.of());
+        assertEquals("FAILED", failed.data().path("status").asText(), failed.body().toString());
+        assertTrue(failed.data().path("error").asText().contains("no longer holds"), failed.body().toString());
     }
 
     /** Owner, 2026-10-30: a PIN is never typed into WhatsApp; a one-time PayPort page takes it and the chat carries on. */

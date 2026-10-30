@@ -389,21 +389,32 @@ class OperationalReadinessScenarioTest {
         assertEquals(403, call("GET", "/api/v1/admin/transactions-export/csv", ann.token(), null).status(), "customer cannot export");
         assertEquals(200, call("GET", "/api/v1/admin/transactions-export/csv", staff("FINANCE"), null).status(), "finance can export");
 
-        // Refunds: only finance and administrators refund to a wallet; customers, merchants, ops and compliance cannot.
+        // Reversals (owner, 2026-10-30): only from the reversal desk; requested by operations, approved by someone else in
+        // finance. Customers, merchants and compliance can do neither, and the old direct refund routes do nothing.
         Res paid = call("POST", "/api/v1/wallet/pay", ann.token(), Map.of("reference", ref, "pin", PIN));
         assertEquals(200, paid.status(), paid.raw());
         jdbc.update("UPDATE transactions SET status = 'FULFILMENT_FAILED' WHERE reference = ?", ref);
-        for (String t : List.of(ann.token(), a.token(), staff("OPS"), staff("COMPLIANCE"))) {
-            assertRefused(call("POST", "/api/v1/admin/wallets/refunds/" + ref, t, Map.of("reason", "x")), "wallet refund");
-        }
-        for (String t : List.of(ann.token(), a.token(), staff("COMPLIANCE"))) {
-            assertRefused(call("POST", "/api/v1/admin/transactions/" + ref + "/refund", t, Map.of("reason", "x")), "payment refund");
+        assertEquals(409, call("POST", "/api/v1/admin/wallets/refunds/" + ref, staff("FINANCE"), Map.of("reason", "x")).status(), "direct wallet refund is gone");
+        assertEquals(409, call("POST", "/api/v1/admin/transactions/" + ref + "/refund", staff("ADMIN"), Map.of("reason", "x")).status(), "direct refund is gone");
+        Map<String, Object> ask = Map.of("kind", "WALLET_REFUND", "targetRef", ref, "reason", "vendor failed to deliver");
+        for (String t : List.of(ann.token(), a.token(), staff("COMPLIANCE"), staff("FINANCE"))) {
+            assertRefused(call("POST", "/api/v1/admin/reversals", t, ask), "reversal request");
         }
         assertEquals("FULFILMENT_FAILED", status(ref), "nothing changed");
         assertEquals(4_500, wallets.balance(annW));
-        Res refund = call("POST", "/api/v1/admin/wallets/refunds/" + ref, staff("FINANCE"), Map.of("reason", "vendor failed"));
-        assertEquals(200, refund.status(), refund.raw());
+        String ops = staff("OPS");
+        Res asked = call("POST", "/api/v1/admin/reversals", ops, ask);
+        assertEquals(200, asked.status(), asked.raw());
+        String rvs = asked.data().path("reversal_ref").asText();
+        assertEquals(409, call("POST", "/api/v1/admin/reversals", staff("OPS"), ask).status(), "one open request per payment");
+        assertRefused(call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", ops, Map.of()), "operations cannot approve");
+        assertRefused(call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", staff("COMPLIANCE"), Map.of()), "compliance cannot approve");
+        assertEquals(4_500, wallets.balance(annW));
+        Res approved = call("POST", "/api/v1/admin/reversal-approvals/" + rvs + "/approve", staff("FINANCE"), Map.of("note", "checked"));
+        assertEquals(200, approved.status(), approved.raw());
+        assertEquals("EXECUTED", approved.data().path("status").asText(), approved.raw());
         assertEquals(5_000, wallets.balance(annW));
+        assertEquals("REFUNDED", status(ref));
         assertEquals(Set.of(), Set.copyOf(ledger.integrityReport()));
     }
 }

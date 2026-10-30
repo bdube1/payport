@@ -229,10 +229,8 @@ public class OpsController {
             @PathVariable String ref,
             @RequestBody Map<String, String> body,
             HttpServletRequest req) {
-        String reason = body.getOrDefault("reason", "Ops-initiated refund");
-        String operator = zw.co.payport.gateway.platform.Web.staff();   // Phase 9: from the login, never from the request body
-        TransactionResponse tx = orchestratorService.initiateRefund(ref, operator, reason);
-        return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
+        // Owner, 2026-10-30: staff reverse money in one place only (the reversal desk, with approval).
+        return ResponseEntity.status(409).body(ApiResponse.error("USE_REVERSAL_DESK", "Reversals are requested and approved in Customer care > Reversals.", requestId(req)));
     }
 
     /**
@@ -249,12 +247,8 @@ public class OpsController {
             @PathVariable String ref,
             @RequestBody Map<String, String> body,
             HttpServletRequest req) {
-        String refundReference = body.get("refundReference");
-        String refundMethod = body.get("refundMethod");
-        String reason = body.get("reason");
-        String operator = zw.co.payport.gateway.platform.Web.staff();   // Phase 9: from the login, never from the request body
-        TransactionResponse tx = orchestratorService.completeManualRefund(ref, operator, refundReference, refundMethod, reason);
-        return ResponseEntity.ok(ApiResponse.success(tx, requestId(req)));
+        // Owner, 2026-10-30: the payout of an approved refund is recorded on the reversal desk.
+        return ResponseEntity.status(409).body(ApiResponse.error("USE_REVERSAL_DESK", "Reversals are requested and approved in Customer care > Reversals.", requestId(req)));
     }
 
     // ─── PROVIDER HEALTH ──────────────────────────────────────────────────────
