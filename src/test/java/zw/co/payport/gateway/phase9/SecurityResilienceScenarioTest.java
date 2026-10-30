@@ -72,6 +72,7 @@ class SecurityResilienceScenarioTest {
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.0");
 
     static final String METRICS_TOKEN = "scrape-token-for-tests";
+    @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.observability.ControlCentreMetrics controlCentre;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
@@ -239,6 +240,17 @@ class SecurityResilienceScenarioTest {
         Res scrape = call("GET", "/actuator/prometheus", METRICS_TOKEN, null, Map.of("Accept", "text/plain"));
         assertEquals(200, scrape.status());
         assertTrue(scrape.raw().body().contains("http_server_requests"), "request metrics exported");
+
+        // Operations Control Centre figures (owner, 2026-10-30): business counts and security events, no personal data.
+        call("POST", "/api/v1/auth/login", null, "{\"phone\":\"+263770000999\",\"pin\":\"0000\"}", Map.of());
+        controlCentre.refresh();
+        String body = call("GET", "/actuator/prometheus", METRICS_TOKEN, null, Map.of("Accept", "text/plain")).raw().body();
+        for (String m : java.util.List.of("payport_cc_transactions_today", "payport_cc_success_rate_1h", "payport_cc_transactions_today_by_outcome{",
+                "payport_cc_complaints_open", "payport_security_events_total{")) {
+            assertTrue(body.contains(m), m + " exported");
+        }
+        assertTrue(body.contains("event=\"login_failed\""), "failed logins counted");
+        assertFalse(body.contains("+263770000999") || body.contains("263770000999"), "no phone numbers in metrics");
 
         assertEquals(200, call("GET", "/actuator/health/liveness", null, null, Map.of()).status());
         assertEquals(200, call("GET", "/actuator/health/readiness", null, null, Map.of()).status());

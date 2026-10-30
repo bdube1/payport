@@ -41,7 +41,10 @@ public class WhatsAppController {
     @PostMapping("/api/v1/whatsapp/webhook")
     public ResponseEntity<String> receive(@RequestBody(required = false) String body, HttpServletRequest req) {
         if (!whatsapp.configured()) return ResponseEntity.status(503).body("not configured");
-        if (!whatsapp.signatureValid(req.getHeader("X-Hub-Signature-256"), body)) return ResponseEntity.status(401).body("bad signature");
+        if (!whatsapp.signatureValid(req.getHeader("X-Hub-Signature-256"), body)) {
+            zw.co.payport.gateway.observability.SecurityEvents.count(zw.co.payport.gateway.observability.SecurityEvents.SIGNATURE_INVALID, "whatsapp");
+            return ResponseEntity.status(401).body("bad signature");
+        }
         try {
             whatsapp.receive(body);
         } catch (Exception e) {

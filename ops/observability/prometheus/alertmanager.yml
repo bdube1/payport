@@ -1,0 +1,10 @@
+# Alerts show on the TV (Grafana alert list). To also notify people, add a receiver here (email, Slack, webhook)
+# and route to it; see https://prometheus.io/docs/alerting/latest/configuration/
+route:
+  receiver: control-centre
+  group_by: [alertname, provider]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: control-centre

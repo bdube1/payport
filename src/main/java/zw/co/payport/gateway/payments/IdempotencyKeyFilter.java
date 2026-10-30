@@ -130,6 +130,7 @@ public class IdempotencyKeyFilter extends OncePerRequestFilter {
         }
         response.setStatus(((Number) row.get("response_status")).intValue());
         if (row.get("response_type") != null) response.setContentType((String) row.get("response_type"));
+        zw.co.payport.gateway.observability.SecurityEvents.duplicateRequest();
         response.setHeader("Idempotent-Replayed", "true");
         String bodyText = (String) row.get("response_body");
         if (bodyText != null) response.getOutputStream().write(bodyText.getBytes(StandardCharsets.UTF_8));

@@ -1,0 +1,34 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prom
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    isDefault: true
+    jsonData: { manageAlerts: true, alertmanagerUid: am, timeInterval: 15s }
+  - name: Alertmanager
+    uid: am
+    type: alertmanager
+    access: proxy
+    url: http://127.0.0.1:9093
+    jsonData: { implementation: prometheus }
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://127.0.0.1:3100
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          matcherRegex: "trace_id=(\\w+)"
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://127.0.0.1:3200
+    jsonData:
+      tracesToLogsV2: { datasourceUid: loki, spanStartTimeShift: "-5m", spanEndTimeShift: "5m", filterByTraceID: true }
+      serviceMap: { datasourceUid: prom }

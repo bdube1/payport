@@ -40,6 +40,7 @@ public class PinVerifier {
             u.setFailedPinAttempts(n);
             if (n >= MAX_ATTEMPTS) u.setLockedUntil(LocalDateTime.now().plusMinutes(15));
             users.save(u);
+            zw.co.payport.gateway.observability.SecurityEvents.count(n >= MAX_ATTEMPTS ? zw.co.payport.gateway.observability.SecurityEvents.ACCOUNT_LOCKED : zw.co.payport.gateway.observability.SecurityEvents.PIN_REJECTED, "customer");
             throw new Web.PinRejectedException(n >= MAX_ATTEMPTS ? "Too many wrong PINs. Your account is locked for 15 minutes." : "Wrong PIN");
         }
         if (u.getFailedPinAttempts() != null && u.getFailedPinAttempts() > 0) {

@@ -1,0 +1,17 @@
+server: { http_listen_address: 127.0.0.1, http_listen_port: 9080, grpc_listen_port: 0 }
+positions: { filename: /positions/positions.yaml }
+clients: [{ url: http://127.0.0.1:3100/loki/api/v1/push }]
+scrape_configs:
+  - job_name: payport-gateway
+    static_configs: [{ targets: [localhost], labels: { job: payport-gateway, __path__: /var/log/payport/*.log } }]
+    pipeline_stages:
+      # 19:02:30.270 INFO  [thread] logger - message ; multi-line stack traces stay with their line
+      - multiline: { firstline: '^\d{2}:\d{2}:\d{2}\.\d{3} ', max_wait_time: 3s }
+      - regex: { expression: '^\S+ (?P<level>[A-Z]+)\s+\[(?P<thread>[^\]]*)\] (?P<logger>\S+)' }
+      - labels: { level: }
+      # Never keep secrets or full card/phone data in logs shipped off the box.
+      # (each captured group is replaced)
+      - replace: { expression: '(?i)authorization: bearer (\S+)', replace: '***' }
+      - replace: { expression: '\b\d{3}(\d{5})\d{4}\b', replace: '*****' }
+  - job_name: caddy
+    static_configs: [{ targets: [localhost], labels: { job: caddy, __path__: /var/log/caddy/*.log } }]

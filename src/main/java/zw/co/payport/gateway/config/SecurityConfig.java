@@ -144,6 +144,7 @@ public class SecurityConfig {
                         // Phase 9: liveness/readiness probes; Prometheus scrape is checked by MetricsTokenFilter.
                         .requestMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/monitoring/targets").permitAll()   // scrape token (MetricsTokenFilter)
                         .requestMatchers("/actuator/info").permitAll()
                         .requestMatchers("/").permitAll()
 

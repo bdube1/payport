@@ -40,7 +40,16 @@ JAR=$(find "$DIR/target" -maxdepth 1 -name "*.jar" ! -name "*original*" | head -
 cp "$JAR" "$DIR/payport-staging.jar"
 
 echo "Starting STAGING on port $SERVER_PORT, database '$db', settlement $SETTLEMENT_MODE, automation off"
-nohup java -jar "$DIR/payport-staging.jar" > "$LOG" 2>&1 &
+# Traces for the Operations Control Centre (Tempo): set OTEL_AGENT_JAR and OTEL_EXPORTER_OTLP_ENDPOINT in .env.staging
+# (see ops/observability/README.md). Without them the gateway runs exactly as before.
+JAVA_OPTS=()
+if [ -n "${OTEL_AGENT_JAR:-}" ] && [ -f "$OTEL_AGENT_JAR" ]; then
+  JAVA_OPTS+=("-javaagent:$OTEL_AGENT_JAR" "-Dotel.service.name=${OTEL_SERVICE_NAME:-payport-gateway-staging}"
+              "-Dotel.exporter.otlp.endpoint=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}" "-Dotel.exporter.otlp.protocol=http/protobuf"
+              "-Dotel.metrics.exporter=none" "-Dotel.logs.exporter=none" "-Dotel.instrumentation.jdbc.statement-sanitizer.enabled=true")
+  echo "Tracing on: $OTEL_AGENT_JAR -> ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
+fi
+nohup java "${JAVA_OPTS[@]}" -jar "$DIR/payport-staging.jar" > "$LOG" 2>&1 &
 echo $! > "$PID_FILE"
 for i in $(seq 1 60); do
   if curl -fsS "http://localhost:$SERVER_PORT/actuator/health/readiness" >/dev/null 2>&1; then
