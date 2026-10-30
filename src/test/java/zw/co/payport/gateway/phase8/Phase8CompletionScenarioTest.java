@@ -805,6 +805,7 @@ class Phase8CompletionScenarioTest {
     /** Owner, 2026-10-30: complaints are traced, and money is reversed only from the reversal desk after someone else approves. */
     @Test
     void complaintsAndTheReversalDesk_wrongNumberTransfer() throws Exception {
+        ensureOn("WALLETS", null);
         Customer sam = customer("Sam Sender"), will = customer("Will Wrong");
         String samRef = openWallet(sam, "USD");
         openWallet(will, "USD");
