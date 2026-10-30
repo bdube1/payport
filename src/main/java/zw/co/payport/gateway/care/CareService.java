@@ -108,9 +108,13 @@ public class CareService {
             String op = (String) o.get("op_ref");
             if (!seen.add(op) || !WalletService.REVERSIBLE.contains((String) o.get("kind")) || wallets.reversed(op)) continue;
             long amount = ((Number) o.get("amount_minor")).longValue();
-            String kind = String.valueOf(o.get("kind")).replace('_', ' ').toLowerCase(Locale.ROOT);
-            options.add(option("WALLET_REVERSAL", op, amount, (String) o.get("currency"), "Reverse the " + kind.replace(" out", "").replace(" in", "")
-                    + " of " + o.get("currency") + " " + money(amount) + " (" + op + ")"));
+            String kind = switch (String.valueOf(o.get("kind"))) {
+                case "P2P_OUT", "P2P_IN" -> "transfer";
+                case "CASH_IN" -> "cash-in";
+                case "CASH_OUT" -> "cash-out";
+                default -> "currency conversion";
+            };
+            options.add(option("WALLET_REVERSAL", op, amount, (String) o.get("currency"), "Reverse the " + kind + " of " + o.get("currency") + " " + money(amount) + " (" + op + ")"));
         }
         out.put("reversals", jdbc.queryForList("SELECT reversal_ref, kind, status, requested_by, requested_at FROM reversal_requests WHERE target_ref = ? ORDER BY id DESC", ref));
         out.put("options", options);
