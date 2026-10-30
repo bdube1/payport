@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+  <title th:text="${title}">Not found</title>
+  <link rel="stylesheet" href="/assets/store.css">
+</head>
+<body>
+<main class="wrap narrow center">
+  <h1 th:text="${title}">Not found</h1>
+  <p class="muted">Check the link you were given, or ask the seller for a new one.</p>
+</main>
+<footer th:replace="~{fragments :: foot}"></footer>
+</body>
+</html>

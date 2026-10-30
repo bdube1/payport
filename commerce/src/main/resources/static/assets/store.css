@@ -1,0 +1,54 @@
+:root{--brand:#0B6E4F;--ink:#16211C;--muted:#5B6B63;--line:#E3E8E5;--bg:#F7F9F8;--card:#fff;--warn:#8A4B00;--warnbg:#FFF4E5;--ok:#0B6E4F}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+a{color:var(--brand)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink);text-decoration:none;min-width:0}
+.brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logo{width:36px;height:36px;border-radius:8px;object-fit:cover}
+.chat{font-size:14px;font-weight:600;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+.narrow{max-width:560px}
+.center{text-align:center;padding-top:64px}
+h1{font-size:26px;line-height:1.2;margin:12px 0 8px}
+h2{font-size:15px;margin:0 0 8px;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+.hero{margin-bottom:12px}
+.grid{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.card a{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-decoration:none;color:var(--ink);height:100%}
+.pic{width:100%;aspect-ratio:1/1;object-fit:cover;background:#EEF2F0}
+.pic.blank{display:block}
+.name{padding:10px 12px 0;font-weight:600}
+.price{padding:2px 12px 12px;color:var(--brand);font-weight:700}
+.price.big{padding:0;font-size:24px;margin:0 0 8px}
+.hero-pic{width:100%;max-height:420px;object-fit:cover;border-radius:12px;background:#EEF2F0}
+.desc{white-space:pre-line}
+.buy{display:grid;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0}
+.buy label{display:grid;gap:4px;font-size:14px;color:var(--muted)}
+input{font:inherit;padding:12px;border:1px solid #C9D3CE;border-radius:10px;background:#fff;color:var(--ink);width:100%}
+input:focus{outline:2px solid var(--brand);outline-offset:1px}
+.pay,.link-btn{display:inline-block;font:inherit;font-weight:700;color:#fff;background:var(--brand);border:0;border-radius:10px;padding:14px 18px;width:100%;cursor:pointer;text-align:center;text-decoration:none}
+.link-btn{width:auto}
+.notice{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:12px}
+.share{margin:24px 0 8px;border-top:1px solid var(--line);padding-top:16px}
+.share-row{display:flex;flex-wrap:wrap;gap:8px}
+.sh{font:inherit;font-size:14px;font-weight:600;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);text-decoration:none;cursor:pointer}
+.sh.wa{border-color:#25D366}
+.qr{margin-top:12px}
+.qr summary{cursor:pointer;color:var(--muted);font-size:14px}
+.qr img{display:block;margin:8px 0;background:#fff;border:1px solid var(--line);border-radius:8px}
+.status{border-radius:12px;padding:16px;margin:16px 0;background:var(--card);border:1px solid var(--line)}
+.status .state{font-size:20px;font-weight:700;margin:0}
+.status.paid{border-color:var(--ok);background:#E8F5EF}
+.status.paid .state{color:var(--ok)}
+.status.confirming{background:#EEF4FF;border-color:#B9CCF5}
+.status.failed,.status.expired{background:var(--warnbg)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 16px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.foot{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;padding:24px 16px;color:var(--muted);font-size:13px}
+.foot a{color:var(--muted)}
+@media (prefers-color-scheme:dark){:root{--ink:#E8EEEA;--muted:#A3B2AA;--line:#2A3530;--bg:#111816;--card:#18211E;--warnbg:#3A2A12;--warn:#FFD39A}
+input{background:#0F1513;border-color:#33413A}.pic,.hero-pic{background:#1F2A26}.status.paid{background:#123326}.status.confirming{background:#17233A;border-color:#2C4170}}

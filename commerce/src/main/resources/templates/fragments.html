@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head th:fragment="head(title, description, image, color, url)">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${title}">PayPort Store</title>
+  <meta name="description" th:content="${description}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" th:content="${title}">
+  <meta property="og:description" th:content="${description}">
+  <meta property="og:url" th:if="${url != null}" th:content="${url}">
+  <meta property="og:image" th:if="${image != null}" th:content="${publicUrl + image}">
+  <meta name="twitter:card" th:content="${image != null} ? 'summary_large_image' : 'summary'">
+  <link rel="stylesheet" href="/assets/store.css">
+  <link rel="stylesheet" th:href="@{/theme.css(c=${color != null ? #strings.substring(color, 1) : '0B6E4F'})}">
+  <script src="/assets/store.js" defer></script>
+</head>
+<body>
+
+<header th:fragment="top(store)" class="top">
+  <a class="brand" th:href="${store.slug != null} ? @{/s/{s}(s=${store.slug})} : '#'">
+    <img th:if="${store.logo != null}" th:src="${store.logo}" alt="" class="logo">
+    <span th:text="${store.name}">Store</span>
+  </a>
+  <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="chat" rel="noopener" target="_blank">WhatsApp</a>
+</header>
+
+<section th:fragment="share(share)" class="share">
+  <h2>Share</h2>
+  <div class="share-row">
+    <a class="sh wa" th:href="${share.whatsapp}" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="sh fb" th:href="${share.facebook}" target="_blank" rel="noopener">Facebook</a>
+    <a class="sh x" th:href="${share.x}" target="_blank" rel="noopener">X</a>
+    <a class="sh em" th:href="${share.email}">Email</a>
+    <button type="button" class="sh cp" th:attr="data-copy=${share.url}">Copy link</button>
+  </div>
+  <details class="qr">
+    <summary>QR code</summary>
+    <img th:src="${share.qr}" alt="QR code" width="200" height="200">
+    <a th:href="${share.qr}" download="qr.svg">Download</a>
+  </details>
+</section>
+
+<footer th:fragment="foot" class="foot">
+  <span>Payments by <strong>PayPort</strong></span>
+  <a href="https://www.payport.africa/terms" rel="noopener">Terms</a>
+  <a href="https://www.payport.africa/privacy" rel="noopener">Privacy</a>
+</footer>
+</body>
+</html>

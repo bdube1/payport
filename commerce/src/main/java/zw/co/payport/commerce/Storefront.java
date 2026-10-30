@@ -1,0 +1,390 @@
+package zw.co.payport.commerce;
+
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * The pages customers see: a merchant's mini-store, product pages, payment links and their order. All of it is
+ * rendered from Commerce's own database, so the pages work while the PSP is down; only "Pay" needs the PSP, and if it
+ * cannot be reached the order is kept and the customer can pay a moment later. Customers are always sent to the
+ * PSP's hosted checkout to pay: card details never touch these pages.
+ */
+@Controller
+public class Storefront {
+
+    private final Shop shop;
+    private final Payments payments;
+    private final Settings settings;
+
+    public Storefront(Shop shop, Payments payments, Settings settings) {
+        this.shop = shop;
+        this.payments = payments;
+        this.settings = settings;
+    }
+
+    @org.springframework.web.bind.annotation.ModelAttribute("publicUrl")
+    public String publicUrl() {
+        return settings.publicUrl;
+    }
+
+    /** The store colour as a stylesheet (pages allow styles from this site only, never inline). */
+    @GetMapping(value = "/theme.css", produces = "text/css")
+    public ResponseEntity<String> theme(@RequestParam(name = "c", defaultValue = "0B6E4F") String c) {
+        String hex = c.matches("[0-9A-Fa-f]{6}") ? c : "0B6E4F";
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic()).body(":root{--brand:#" + hex + "}");
+    }
+
+    /** The header for pages of a merchant without a store record (every key present: templates read them all). */
+    static Map<String, Object> defaultStore() {
+        Map<String, Object> m = new java.util.HashMap<>();
+        m.put("name", "PayPort");
+        m.put("slug", null);
+        m.put("about", null);
+        m.put("color", "#0B6E4F");
+        m.put("logo", null);
+        m.put("whatsapp", null);
+        m.put("open", false);
+        return m;
+    }
+
+    /** What the share buttons need (WhatsApp, Facebook, X, email, copy, QR). */
+    Map<String, Object> share(String path, String text) {
+        String url = settings.publicUrl + path;
+        String u = enc(url), t = enc(text);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("url", url);
+        m.put("text", text);
+        m.put("whatsapp", "https://wa.me/?text=" + enc(text + " " + url));
+        m.put("facebook", "https://www.facebook.com/sharer/sharer.php?u=" + u);
+        m.put("x", "https://twitter.com/intent/tweet?url=" + u + "&text=" + t);
+        m.put("email", "mailto:?subject=" + t + "&body=" + enc(text + "\n" + url));
+        m.put("qr", "/qr.svg?path=" + enc(path));
+        return m;
+    }
+
+    static String enc(String s) {
+        return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    static String price(long minor, String ccy) {
+        return ccy + " " + Shop.major(minor);
+    }
+
+    Map<String, Object> storeModel(Map<String, Object> s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", s.get("name"));
+        m.put("slug", s.get("slug"));
+        m.put("about", s.get("about"));
+        m.put("color", s.get("theme_color"));
+        m.put("logo", s.get("logo_image") == null ? null : "/img/" + s.get("logo_image"));
+        m.put("whatsapp", s.get("whatsapp") == null ? null : "https://wa.me/" + String.valueOf(s.get("whatsapp")).replace("+", ""));
+        m.put("open", "OPEN".equals(s.get("status")) && "ACTIVE".equals(s.get("psp_status") == null ? "ACTIVE" : s.get("psp_status")));
+        return m;
+    }
+
+    Map<String, Object> productModel(Map<String, Object> p, String storeSlug) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", p.get("name"));
+        m.put("slug", p.get("slug"));
+        m.put("description", p.get("description"));
+        m.put("price", price(((Number) p.get("price_minor")).longValue(), (String) p.get("currency")));
+        m.put("image", p.get("image_id") == null ? null : "/img/" + p.get("image_id"));
+        m.put("url", "/s/" + storeSlug + "/" + p.get("slug"));
+        return m;
+    }
+
+    String missing(Model model, HttpServletResponse res, String what) {
+        res.setStatus(404);
+        model.addAttribute("title", what);
+        return "missing";
+    }
+
+    @GetMapping("/")
+    public String home(Model model) {
+        model.addAttribute("title", "PayPort Store");
+        return "home";
+    }
+
+    @GetMapping("/s/{slug}")
+    public String store(@PathVariable String slug, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty()) return missing(model, res, "This store does not exist");
+        Map<String, Object> st = s.get();
+        long merchant = ((Number) st.get("merchant_id")).longValue();
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map<String, Object> p : shopProducts(merchant)) items.add(productModel(p, (String) st.get("slug")));
+        model.addAttribute("store", storeModel(st));
+        model.addAttribute("products", items);
+        model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on PayPort"));
+        model.addAttribute("title", st.get("name"));
+        model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with PayPort." : st.get("about"));
+        return "store";
+    }
+
+    List<Map<String, Object>> shopProducts(long merchantId) {
+        return shop.publicProducts(merchantId);
+    }
+
+    @GetMapping("/s/{slug}/{product}")
+    public String product(@PathVariable String slug, @PathVariable String product, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty()) return missing(model, res, "This store does not exist");
+        Optional<Map<String, Object>> p = shop.publicProduct(((Number) s.get().get("id")).longValue(), product).filter(x -> "ACTIVE".equals(x.get("status")));
+        if (p.isEmpty()) return missing(model, res, "This product is not available");
+        return productPage(s.get(), p.get(), model, null);
+    }
+
+    String productPage(Map<String, Object> st, Map<String, Object> p, Model model, String problem) {
+        Map<String, Object> pm = productModel(p, (String) st.get("slug"));
+        model.addAttribute("store", storeModel(st));
+        model.addAttribute("product", pm);
+        model.addAttribute("key", Shop.token() + Shop.token());
+        model.addAttribute("problem", problem);
+        model.addAttribute("share", share((String) pm.get("url"), p.get("name") + " - " + pm.get("price") + " at " + st.get("name")));
+        model.addAttribute("title", p.get("name") + " | " + st.get("name"));
+        model.addAttribute("description", p.get("description") == null ? pm.get("price") + " at " + st.get("name") : p.get("description"));
+        model.addAttribute("image", pm.get("image"));
+        return "product";
+    }
+
+    @PostMapping("/s/{slug}/{product}/buy")
+    public String buy(@PathVariable String slug, @PathVariable String product, @RequestParam(defaultValue = "1") String qty,
+                      @RequestParam(required = false) String name, @RequestParam(required = false) String phone, @RequestParam(required = false) String note,
+                      @RequestParam String k, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty()) return missing(model, res, "This store does not exist");
+        Map<String, Object> st = s.get();
+        Optional<Map<String, Object>> p = shop.publicProduct(((Number) st.get("id")).longValue(), product).filter(x -> "ACTIVE".equals(x.get("status")));
+        if (p.isEmpty()) return missing(model, res, "This product is not available");
+        if (!Boolean.TRUE.equals(storeModel(st).get("open"))) return productPage(st, p.get(), model, "This store is not taking orders at the moment.");
+        int q;
+        try {
+            q = Integer.parseInt(qty.trim());
+        } catch (NumberFormatException e) {
+            q = 0;
+        }
+        if (q < 1 || q > 20) return productPage(st, p.get(), model, "Choose a quantity from 1 to 20.");
+        Customer c;
+        try {
+            c = customer(name, phone, note);
+        } catch (IllegalArgumentException e) {
+            return productPage(st, p.get(), model, e.getMessage());
+        }
+        long unit = ((Number) p.get().get("price_minor")).longValue();
+        Payments.Placed placed;
+        try {
+            placed = payments.place(new Payments.NewOrder(((Number) st.get("merchant_id")).longValue(), ((Number) st.get("id")).longValue(), null,
+                    ((Number) p.get().get("id")).longValue(), (String) p.get().get("name"), q, Math.multiplyExact(unit, q), (String) p.get().get("currency"),
+                    c.name(), c.phone(), c.note(), k));
+        } catch (IllegalArgumentException e) {
+            return productPage(st, p.get(), model, e.getMessage());
+        }
+        return startPayment(placed, model, res);
+    }
+
+    record Customer(String name, String phone, String note) {}
+
+    static Customer customer(String name, String phone, String note) {
+        String n = Shop.text(name, 120, false, "name");
+        String p = phone == null ? null : phone.replaceAll("[\\s()-]", "");
+        if (p != null && p.isEmpty()) p = null;
+        if (p != null && !p.matches("\\+?[0-9]{9,15}")) throw new IllegalArgumentException("Enter a valid phone number, or leave it empty.");
+        return new Customer(n, p, Shop.text(note, 300, false, "note"));
+    }
+
+    /** Sends the customer to the PSP's checkout, or shows their saved order with what went wrong. */
+    String startPayment(Payments.Placed placed, Model model, HttpServletResponse res) {
+        Payments.Start start;
+        try {
+            start = payments.pay(placed.orderRef(), placed.viewToken());
+        } catch (Shop.NotFound e) {
+            return missing(model, res, "This order does not exist");
+        }
+        if (start.checkoutUrl() != null) return "redirect:" + start.checkoutUrl();
+        return orderPage(placed.orderRef(), placed.viewToken(), start.problem(), model, res);
+    }
+
+    // ─── payment links ───────────────────────────────────────────────────────
+
+    @GetMapping("/l/{code}")
+    public String link(@PathVariable String code, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> l = shop.publicLink(code);
+        if (l.isEmpty()) return missing(model, res, "This payment link does not exist");
+        return linkPage(l.get(), model, null);
+    }
+
+    String linkPage(Map<String, Object> l, Model model, String problem) {
+        long merchant = ((Number) l.get("merchant_id")).longValue();
+        Map<String, Object> st = shop.publicStoreOf(merchant).orElse(Map.of());
+        Map<String, Object> lm = new LinkedHashMap<>();
+        lm.put("code", l.get("code"));
+        lm.put("title", l.get("title"));
+        lm.put("description", l.get("description"));
+        lm.put("currency", l.get("currency"));
+        Long amount = l.get("amount_minor") == null ? null : ((Number) l.get("amount_minor")).longValue();
+        lm.put("fixed", amount != null);
+        lm.put("price", amount == null ? null : price(amount, (String) l.get("currency")));
+        lm.put("min", l.get("min_minor") == null ? null : Shop.major(((Number) l.get("min_minor")).longValue()));
+        lm.put("max", l.get("max_minor") == null ? null : Shop.major(((Number) l.get("max_minor")).longValue()));
+        lm.put("reference", l.get("reference"));
+        lm.put("image", null);
+        String status = Shop.effectiveStatus(l);
+        boolean merchantOpen = !st.isEmpty() && Boolean.TRUE.equals(storeModel(st).get("open"));
+        lm.put("open", "ACTIVE".equals(status) && merchantOpen);
+        lm.put("closedReason", switch (status) {
+            case "EXPIRED" -> "This payment link has expired.";
+            case "USED" -> "This payment link has already been paid.";
+            case "DISABLED" -> "This payment link has been switched off.";
+            default -> merchantOpen ? null : "This merchant is not taking payments at the moment.";
+        });
+        if (l.get("product_id") != null) {
+            shop.publicProductById(((Number) l.get("product_id")).longValue()).ifPresent(p -> lm.put("image", p.get("image_id") == null ? null : "/img/" + p.get("image_id")));
+        }
+        model.addAttribute("store", st.isEmpty() ? defaultStore() : storeModel(st));
+        model.addAttribute("link", lm);
+        model.addAttribute("key", Shop.token() + Shop.token());
+        model.addAttribute("problem", problem);
+        model.addAttribute("share", share("/l/" + l.get("code"), l.get("title") + (amount == null ? "" : " - " + lm.get("price"))));
+        model.addAttribute("title", l.get("title") + (st.isEmpty() ? "" : " | " + st.get("name")));
+        model.addAttribute("description", l.get("description") == null ? "Pay securely with PayPort." : l.get("description"));
+        model.addAttribute("image", lm.get("image"));
+        return "link";
+    }
+
+    @PostMapping("/l/{code}/pay")
+    public String payLink(@PathVariable String code, @RequestParam(required = false) String amount, @RequestParam(required = false) String name,
+                          @RequestParam(required = false) String phone, @RequestParam(required = false) String note, @RequestParam String k,
+                          Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> ol = shop.publicLink(code);
+        if (ol.isEmpty()) return missing(model, res, "This payment link does not exist");
+        Map<String, Object> l = ol.get();
+        long merchant = ((Number) l.get("merchant_id")).longValue();
+        Map<String, Object> st = shop.publicStoreOf(merchant).orElse(Map.of());
+        if (!"ACTIVE".equals(Shop.effectiveStatus(l)) || st.isEmpty() || !Boolean.TRUE.equals(storeModel(st).get("open"))) return linkPage(l, model, null);
+        long value;
+        if (l.get("amount_minor") != null) {
+            value = ((Number) l.get("amount_minor")).longValue();
+        } else {
+            try {
+                value = new java.math.BigDecimal(amount == null ? "" : amount.trim()).movePointRight(2).longValueExact();
+            } catch (ArithmeticException | NumberFormatException e) {
+                return linkPage(l, model, "Enter the amount, for example 12.50.");
+            }
+            if (value <= 0) return linkPage(l, model, "Enter an amount above zero.");
+            Long min = l.get("min_minor") == null ? null : ((Number) l.get("min_minor")).longValue();
+            Long max = l.get("max_minor") == null ? null : ((Number) l.get("max_minor")).longValue();
+            if (min != null && value < min) return linkPage(l, model, "The smallest amount is " + price(min, (String) l.get("currency")) + ".");
+            if (max != null && value > max) return linkPage(l, model, "The largest amount is " + price(max, (String) l.get("currency")) + ".");
+        }
+        Customer c;
+        try {
+            c = customer(name, phone, note);
+        } catch (IllegalArgumentException e) {
+            return linkPage(l, model, e.getMessage());
+        }
+        Payments.Placed placed;
+        try {
+            placed = payments.place(new Payments.NewOrder(merchant, ((Number) st.get("id")).longValue(), ((Number) l.get("id")).longValue(),
+                    l.get("product_id") == null ? null : ((Number) l.get("product_id")).longValue(), (String) l.get("title"), 1, value, (String) l.get("currency"),
+                    c.name(), c.phone(), c.note(), k));
+        } catch (IllegalArgumentException e) {
+            return linkPage(l, model, e.getMessage());
+        }
+        return startPayment(placed, model, res);
+    }
+
+    // ─── the customer's order ────────────────────────────────────────────────
+
+    @GetMapping("/o/{ref}")
+    public String order(@PathVariable String ref, @RequestParam(name = "t", required = false) String token, Model model, HttpServletResponse res) {
+        payments.refresh(ref);
+        return orderPage(ref, token, null, model, res);
+    }
+
+    @PostMapping("/o/{ref}/pay")
+    public String retry(@PathVariable String ref, @RequestParam(name = "t") String token, Model model, HttpServletResponse res) {
+        if (payments.orderForCustomer(ref, token).isEmpty()) return missing(model, res, "This order does not exist");
+        return startPayment(new Payments.Placed(ref, token, true), model, res);
+    }
+
+    String orderPage(String ref, String token, String problem, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> oo = payments.orderForCustomer(ref, token);
+        if (oo.isEmpty()) return missing(model, res, "This order does not exist");
+        Map<String, Object> o = oo.get();
+        long merchant = ((Number) o.get("merchant_id")).longValue();
+        Map<String, Object> st = shop.publicStoreOf(merchant).orElse(Map.of());
+        String ps = String.valueOf(o.get("payment_status"));
+        Map<String, Object> om = new LinkedHashMap<>();
+        om.put("ref", ref);
+        om.put("token", token);
+        om.put("item", o.get("item_name"));
+        om.put("quantity", o.get("quantity"));
+        om.put("total", price(((Number) o.get("amount_minor")).longValue(), (String) o.get("currency")));
+        om.put("state", switch (ps) {
+            case "PAID" -> "paid";
+            case "PENDING", "CONFIRMING" -> "confirming";
+            case "FAILED" -> "failed";
+            case "EXPIRED" -> "expired";
+            default -> "unpaid";
+        });
+        om.put("refund", switch (String.valueOf(o.get("refund_status"))) {
+            case "REQUESTED" -> "A refund has been requested. You will receive it once it has been paid out.";
+            case "PARTIAL" -> "Part of this payment has been refunded.";
+            case "REFUNDED" -> "This payment has been refunded.";
+            default -> null;
+        });
+        om.put("canPay", !"PAID".equals(ps) && !"PENDING".equals(ps) && !"CONFIRMING".equals(ps) && !"CANCELLED".equals(o.get("order_status")));
+        model.addAttribute("store", st.isEmpty() ? defaultStore() : storeModel(st));
+        model.addAttribute("order", om);
+        model.addAttribute("problem", problem);
+        model.addAttribute("refresh", "confirming".equals(om.get("state")));
+        model.addAttribute("title", "Order " + ref);
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Referrer-Policy", "no-referrer");
+        return "order";
+    }
+
+    // ─── pictures and QR codes ───────────────────────────────────────────────
+
+    @GetMapping("/img/{id}")
+    public ResponseEntity<byte[]> image(@PathVariable String id) {
+        return shop.image(id).map(i -> ResponseEntity.ok().contentType(MediaType.parseMediaType((String) i.get("content_type")))
+                        .cacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic()).eTag((String) i.get("sha256")).body((byte[]) i.get("bytes")))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** QR codes for this site's own pages only (never an address someone else chooses). */
+    @GetMapping(value = "/qr.svg", produces = "image/svg+xml")
+    public ResponseEntity<String> qr(@RequestParam String path) {
+        if (path == null || !path.matches("/(l/[" + Shop.ALPHABET + "]{8}|s/[a-z0-9-]{2,60}(/[a-z0-9-]{1,80})?)")) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic()).body(Qr.svg(settings.publicUrl + path));
+    }
+
+    static Timestamp ts(LocalDateTime t) {
+        return Timestamp.valueOf(t);
+    }
+
+    static String lower(String s) {
+        return s == null ? "" : s.toLowerCase(Locale.ROOT);
+    }
+}
