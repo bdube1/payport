@@ -35,6 +35,7 @@
           <div class="store-text">
             <strong th:text="${s.name}">Store</strong>
             <span class="muted small" th:text="${s.type} + ' · ' + ${s.products} + (${s.products == 1} ? ' item' : ' items')">Food · 4 items</span>
+            <span th:if="${s.rating != null}" class="stars small" th:text="${s.rating}"></span>
             <span th:if="${s.line != null}" class="desc-line show" th:text="${s.line}"></span>
           </div>
         </div>

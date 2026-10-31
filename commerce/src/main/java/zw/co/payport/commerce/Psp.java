@@ -85,6 +85,14 @@ public class Psp {
         return call("GET", "/api/v1/commerce/events?after=" + after + "&limit=" + limit, null, null, Duration.ofSeconds(10));
     }
 
+    public JsonNode merchant(long merchantId) {
+        return call("GET", "/api/v1/commerce/merchants/" + merchantId, null, null, Duration.ofSeconds(5));
+    }
+
+    public JsonNode message(Map<String, Object> body) {
+        return call("POST", "/api/v1/commerce/messages", body, null, Duration.ofSeconds(5));
+    }
+
     /** Who a merchant portal login belongs to (the portal's own token, forwarded once at sign-in). */
     public JsonNode identity(String merchantPortalToken) {
         return call("GET", "/api/v1/merchant/commerce/identity", null, merchantPortalToken, Duration.ofSeconds(5));

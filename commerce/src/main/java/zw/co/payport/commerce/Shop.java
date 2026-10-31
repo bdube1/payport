@@ -34,6 +34,10 @@ public class Shop {
     static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcTemplate jdbc;
+
+    JdbcTemplate jdbc() {
+        return jdbc;
+    }
     private final Settings settings;
 
     public Shop(JdbcTemplate jdbc, Settings settings) {
@@ -181,6 +185,8 @@ public class Shop {
         v.put("announcement", r.get("announcement"));
         v.put("codEnabled", bool(r.get("cod_enabled")));
         v.put("listed", bool(r.get("listed")));
+        v.put("alertsEnabled", bool(r.get("alerts_enabled")));
+        v.put("customerSms", bool(r.get("customer_sms")));
         return v;
     }
 
@@ -218,11 +224,13 @@ public class Shop {
         String announcement = text(b.getOrDefault("announcement", cur.get("announcement")), 200, false, "announcement");
         boolean cod = b.containsKey("codEnabled") ? bool(b.get("codEnabled")) : (Boolean) cur.get("codEnabled");
         boolean listed = b.containsKey("listed") ? bool(b.get("listed")) : (Boolean) cur.get("listed");
+        boolean alerts = b.containsKey("alertsEnabled") ? bool(b.get("alertsEnabled")) : (Boolean) cur.get("alertsEnabled");
+        boolean customerSms = b.containsKey("customerSms") ? bool(b.get("customerSms")) : (Boolean) cur.get("customerSms");
         try {
             jdbc.update("UPDATE stores SET name = ?, about = ?, whatsapp = ?, theme_color = ?, slug = ?, logo_image = ?, status = ?, pickup_enabled = ?, pickup_note = ?, "
-                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, design = ?, banner_image = ?, tagline = ?, business_type = ?, announcement = ?, cod_enabled = ?, listed = ?, updated_at = ? WHERE merchant_id = ?",
+                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, design = ?, banner_image = ?, tagline = ?, business_type = ?, announcement = ?, cod_enabled = ?, listed = ?, alerts_enabled = ?, customer_sms = ?, updated_at = ? WHERE merchant_id = ?",
                     name, about, wa == null ? null : wa.replaceAll("[\\s-]", ""), color.toUpperCase(Locale.ROOT), slug, logo, status, pickup, pickupNote,
-                    delivery, fee, freeFrom, deliveryNote, design, banner, tagline, type, announcement, cod, listed, now(), merchantId);
+                    delivery, fee, freeFrom, deliveryNote, design, banner, tagline, type, announcement, cod, listed, alerts, customerSms, now(), merchantId);
         } catch (DuplicateKeyException e) {
             throw new IllegalArgumentException("That store address is taken");
         }
@@ -273,6 +281,7 @@ public class Shop {
         v.put("kind", r.get("kind"));
         v.put("compareAtMinor", r.get("compare_at_minor"));
         v.put("featured", bool(r.get("featured")));
+        v.put("durationMin", r.get("duration_min"));
         v.put("status", r.get("status"));
         String storeSlug = jdbc.queryForList("SELECT slug FROM stores WHERE id = ?", String.class, r.get("store_id")).stream().findFirst().orElse("");
         v.put("url", settings.publicUrl + "/s/" + storeSlug + "/" + r.get("slug"));
@@ -307,14 +316,20 @@ public class Shop {
             if (stock < 0 || stock > 1_000_000) throw new IllegalArgumentException("Enter the number in stock, or leave it empty");
         }
         if ("SERVICE".equals(kind)) stock = null;   // services are not counted
+        Integer duration = null;
+        Object du = b.get("durationMin");
+        if ("SERVICE".equals(kind) && du != null && !String.valueOf(du).isBlank()) {
+            try { duration = Integer.valueOf(String.valueOf(du).trim()); } catch (NumberFormatException e) { throw new IllegalArgumentException("Enter how long the service takes, in minutes"); }
+            if (duration < 5 || duration > 720) throw new IllegalArgumentException("A service takes 5 to 720 minutes");
+        }
         if (id == null) {
             String base = slug(name);
             if (java.util.Set.of("cart", "checkout").contains(base)) base = base + "-item";
             for (int i = 0; i < 20; i++) {
                 String s = i == 0 ? base : base + "-" + code(3).toLowerCase(Locale.ROOT);
                 try {
-                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, category, kind, compare_at_minor, featured, created_at, updated_at) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, now(), now());
+                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, category, kind, compare_at_minor, featured, duration_min, created_at, updated_at) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, duration, now(), now());
                     long nid = jdbc.queryForObject("SELECT id FROM products WHERE store_id = ? AND slug = ?", Long.class, store, s);
                     event("product.created", merchantId, String.valueOf(nid), null);
                     return product(merchantId, nid);
@@ -324,8 +339,8 @@ public class Shop {
             }
             throw new IllegalStateException("Please try again");
         }
-        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, category = ?, kind = ?, compare_at_minor = ?, featured = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
-                name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, now(), id, merchantId);
+        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, category = ?, kind = ?, compare_at_minor = ?, featured = ?, duration_min = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
+                name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, duration, now(), id, merchantId);
         if (n == 0) throw new NotFound("No such product");
         return product(merchantId, id);
     }

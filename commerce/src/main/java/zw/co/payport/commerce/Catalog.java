@@ -188,7 +188,7 @@ public class Catalog {
 
     /** Listed, open stores with something on sale, by type; optional search and type filter. */
     public List<Map<String, Object>> directory(String type, String q) {
-        StringBuilder sql = new StringBuilder("SELECT s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, "
+        StringBuilder sql = new StringBuilder("SELECT s.id, s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, "
                 + "(SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE') AS products FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id "
                 + "WHERE s.listed = TRUE AND s.status = 'OPEN' AND m.psp_status = 'ACTIVE' AND EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE')");
         List<Object> args = new ArrayList<>();

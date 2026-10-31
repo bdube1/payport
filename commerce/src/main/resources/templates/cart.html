@@ -51,14 +51,28 @@
         <label th:if="${cart.delivery}" class="opt"><input type="radio" name="method" value="DELIVERY" th:checked="${!cart.pickup}" required>
           <span><strong>Delivery</strong> <span th:text="${cart.totalDelivery}"></span> <span class="muted small" th:text="'(delivery ' + ${cart.fee} + ')'"></span><br><span class="muted small" th:if="${cart.deliveryNote != null}" th:text="${cart.deliveryNote}"></span></span></label>
       </fieldset>
+      <label th:if="${cart.delivery and !cart.servicesOnly and !#lists.isEmpty(cart.zones)}">Delivery area (if delivering)
+        <select name="zone">
+          <option value="">Choose your area</option>
+          <option th:each="z : ${cart.zones}" th:value="${z.id}" th:text="${z.label}">Area</option>
+        </select></label>
       <label th:if="${cart.delivery and !cart.servicesOnly}">Delivery address <input name="address" maxlength="300" autocomplete="street-address"></label>
       <label>Your name <input name="name" maxlength="120" autocomplete="name" required></label>
       <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel" required></label>
       <label>Note for the seller <input name="note" maxlength="300"></label>
-      <fieldset th:if="${cart.cod}" class="choice">
+      <label th:if="${cart.booking}">Appointment time
+        <select name="slot" required>
+          <option value="">Choose a time</option>
+          <optgroup th:each="d : ${cart.days}" th:label="${d.day}">
+            <option th:each="t : ${d.times}" th:value="${t.value}" th:text="${t.label}">09:00</option>
+          </optgroup>
+        </select></label>
+      <p th:if="${cart.booking and #lists.isEmpty(cart.days)}" class="notice">No free times in the next two weeks.</p>
+      <fieldset th:if="${cart.cod or !#lists.isEmpty(cart.methods)}" class="choice">
         <legend>How do you want to pay?</legend>
-        <label class="opt"><input type="radio" name="pay" value="ONLINE" checked> <span><strong>Pay now</strong> <span class="muted small">EcoCash, OneMoney, card</span></span></label>
-        <label class="opt"><input type="radio" name="pay" value="CASH"> <span><strong th:text="${cart.servicesOnly} ? 'Pay at the appointment' : 'Pay on delivery or collection'">Pay on delivery</strong></span></label>
+        <label th:each="m, i : ${cart.methods}" class="opt"><input type="radio" name="pay" th:value="${m.code}" th:checked="${i.first}"> <span><strong th:text="${m.name}">EcoCash</strong></span></label>
+        <label th:if="${#lists.isEmpty(cart.methods)}" class="opt"><input type="radio" name="pay" value="ONLINE" checked> <span><strong>Pay now</strong> <span class="muted small">EcoCash, OneMoney, card</span></span></label>
+        <label th:if="${cart.cod}" class="opt"><input type="radio" name="pay" value="CASH"> <span><strong th:text="${cart.servicesOnly} ? 'Pay at the appointment' : 'Pay on delivery or collection'">Pay on delivery</strong></span></label>
       </fieldset>
       <button type="submit" class="pay" th:disabled="${!cart.ok}" th:text="${cart.cod} ? 'Place order' : 'Pay'">Pay</button>
     </form>

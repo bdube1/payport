@@ -6,6 +6,7 @@
 <main class="wrap narrow">
   <img th:if="${product.image != null}" th:src="${product.image}" alt="" class="hero-pic">
   <h1 th:text="${product.name}">Product</h1>
+  <p th:if="${product.rating != null}" class="stars" th:text="${product.rating}"></p>
   <p class="price big"><span th:text="${product.price}">USD 1.00</span> <s th:if="${product.was != null}" class="was" th:text="${product.was}"></s></p>
   <p th:if="${product.description != null}" th:text="${product.description}" class="desc"></p>
   <p th:if="${problem != null}" th:text="${problem}" class="notice" role="alert"></p>
@@ -17,6 +18,14 @@
     <button type="submit" class="pay" th:text="${product.service} ? 'Book' : 'Add to cart'">Add to cart</button>
   </form>
   <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
+  <section th:if="${!#lists.isEmpty(reviews)}" class="reviews">
+    <h2>Reviews</h2>
+    <div th:each="r : ${reviews}" class="review">
+      <p><span class="stars" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong> <span class="muted small" th:text="${r.date}"></span></p>
+      <p th:if="${r.comment != null}" th:text="${r.comment}"></p>
+      <p th:if="${r.reply != null}" class="reply muted small" th:text="'Reply: ' + ${r.reply}"></p>
+    </div>
+  </section>
   <section th:if="${!#lists.isEmpty(also)}" class="also">
     <h2>Customers also bought</h2>
     <ul class="grid">

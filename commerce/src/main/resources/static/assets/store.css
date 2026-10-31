@@ -126,3 +126,12 @@ input{background:#0F1513;border-color:#33413A}.pic,.hero-pic{background:#1F2A26}
 .store-text{display:grid;gap:2px;min-width:0}
 .desc-line.show{display:block;color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (prefers-color-scheme:dark){.store-banner{background:linear-gradient(135deg,#1F2A26,#18211E)}.status.cash{background:#123326}}
+/* Growth tools: ratings, reviews, choices. */
+.stars{color:#B45309;font-weight:600;margin:0 0 6px}
+.card-stars{padding:0 12px 10px;margin:0}
+.reviews{margin-top:24px}
+.review{border-top:1px solid var(--line);padding:10px 0}
+.review p{margin:0 0 4px}
+.reply{padding-left:12px;border-left:3px solid var(--line)}
+select{font:inherit;padding:12px;border:1px solid #C9D3CE;border-radius:10px;background:#fff;color:var(--ink);width:100%}
+@media (prefers-color-scheme:dark){select{background:#0F1513;border-color:#33413A}.stars{color:#FBBF24}}

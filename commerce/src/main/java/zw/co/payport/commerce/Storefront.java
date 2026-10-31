@@ -43,6 +43,9 @@ public class Storefront {
     @org.springframework.beans.factory.annotation.Autowired
     private Catalog catalog;
 
+    @org.springframework.beans.factory.annotation.Autowired Growth growth;
+    @org.springframework.beans.factory.annotation.Autowired Options options;
+
     public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
         this.delivery = delivery;
         this.domains = domains;
@@ -148,6 +151,8 @@ public class Storefront {
         m.put("was", p.get("compare_at_minor") == null ? null : price(((Number) p.get("compare_at_minor")).longValue(), (String) p.get("currency")));
         m.put("service", "SERVICE".equals(p.get("kind")));
         m.put("few", stock != null && stock > 0 && stock <= 5 ? "Only " + stock + " left" : null);
+        m.put("rating", null);
+        m.put("id", ((Number) p.get("id")).longValue());
         return m;
     }
 
@@ -176,6 +181,7 @@ public class Storefront {
             m.put("logo", st.get("logo_image") == null ? null : "/img/" + st.get("logo_image"));
             m.put("banner", st.get("banner_image") == null ? null : "/img/" + st.get("banner_image"));
             m.put("products", st.get("products"));
+            m.put("rating", st.get("id") == null ? null : growth.storeRating(((Number) st.get("id")).longValue()));
             stores.add(m);
         }
         List<Map<String, Object>> types = new ArrayList<>();
@@ -217,12 +223,15 @@ public class Storefront {
         boolean byCollection = category != null && cols.stream().anyMatch(c -> category.equals(c.get("slug")));
         List<Long> inCol = byCollection ? catalog.productsIn(storeId, category) : List.of();
         List<Map<String, Object>> featured = new ArrayList<>();
+        Map<Long, String> ratings = growth.productRatings(storeId);
         for (Map<String, Object> p : shopProducts(merchant)) {
             if (p.get("category") != null) categories.add((String) p.get("category"));
             boolean pick = byCollection ? inCol.contains(((Number) p.get("id")).longValue())
                     : category == null || category.isBlank() || category.equals(p.get("category"));
-            if (pick && matches(p, q)) items.add(productModel(p, (String) st.get("slug")));
-            if (Shop.bool(p.get("featured"))) featured.add(productModel(p, (String) st.get("slug")));
+            Map<String, Object> pm = productModel(p, (String) st.get("slug"));
+            pm.put("rating", ratings.get(((Number) p.get("id")).longValue()));
+            if (pick && matches(p, q)) items.add(pm);
+            if (Shop.bool(p.get("featured"))) featured.add(pm);
         }
         model.addAttribute("collections", cols);
         model.addAttribute("featured", (category == null || category.isBlank()) && (q == null || q.isBlank()) ? featured : List.of());
@@ -231,6 +240,7 @@ public class Storefront {
         model.addAttribute("category", category == null || category.isBlank() ? null : category);
         Map<String, Object> sm = storeModel(st);
         sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
+        sm.put("rating", growth.storeRating(storeId));
         model.addAttribute("store", sm);
         model.addAttribute("products", items);
         model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on PayPort"));
@@ -274,6 +284,8 @@ public class Storefront {
 
     String productPage(Map<String, Object> st, Map<String, Object> p, Model model, String problem, String cart) {
         Map<String, Object> pm = productModel(p, (String) st.get("slug"));
+        pm.put("rating", growth.ratingOf(((Number) p.get("id")).longValue()));
+        model.addAttribute("reviews", growth.reviewsOf(((Number) p.get("id")).longValue()));
         Map<String, Object> sm = storeModel(st);
         sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
         model.addAttribute("store", sm);
@@ -380,6 +392,25 @@ public class Storefront {
         boolean servicesOnly = v.map(x -> !x.lines().isEmpty() && x.lines().stream().allMatch(Carts.Line::service)).orElse(false);
         cm.put("servicesOnly", servicesOnly);
         cm.put("cod", Shop.bool(st.get("cod_enabled")));
+        long merchantId = ((Number) st.get("merchant_id")).longValue();
+        cm.put("methods", options.choices(merchantId));
+        List<Map<String, Object>> zl = new ArrayList<>();
+        if (delivery && ccy != null) for (Map<String, Object> z : growth.publicZones(storeId)) {
+            long zf = Growth.zoneFee(z, items);
+            zl.add(Map.of("id", z.get("id"), "label", z.get("name") + " · " + (zf == 0 ? "free delivery" : price(zf, ccy) + " delivery") + " · total " + price(items + zf, ccy)));
+        }
+        cm.put("zones", zl);
+        int minutes = v.map(this::bookingMinutes).orElse(0);
+        boolean booking = minutes > 0 && growth.takesBookings(storeId);
+        cm.put("booking", booking);
+        List<Map<String, Object>> days = new ArrayList<>();
+        if (booking) {
+            Map<String, List<Map<String, Object>>> byDay = new LinkedHashMap<>();
+            for (Growth.Slot sl : growth.slots(storeId, minutes))
+                byDay.computeIfAbsent(sl.day(), d -> new ArrayList<>()).add(Map.of("value", sl.value(), "label", sl.start().toLocalTime().toString()));
+            byDay.forEach((d, t) -> days.add(Map.of("day", d, "times", t)));
+        }
+        cm.put("days", days);
         cm.put("total", ccy == null ? null : price(items, ccy));
         long fee = deliveryFee(st, items);
         cm.put("fee", ccy == null ? null : fee == 0 ? "Free" : price(fee, ccy));
@@ -393,12 +424,28 @@ public class Storefront {
         return "cart";
     }
 
+    /** Minutes of appointment the cart's services need (60 each unless the merchant set the length). */
+    int bookingMinutes(Carts.View v) {
+        int total = 0;
+        for (Carts.Line l : v.lines()) {
+            if (!l.service()) continue;
+            Integer d = jdbc().queryForList("SELECT duration_min FROM products WHERE id = ?", Integer.class, l.productId()).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+            total += (d == null || d <= 0 ? Growth.DEFAULT_DURATION : d) * l.quantity();
+        }
+        return Math.min(total, 12 * 60);
+    }
+
+    org.springframework.jdbc.core.JdbcTemplate jdbc() {
+        return shop.jdbc();
+    }
+
     /** Pay for the cart: one order with every item, the delivery choice and the fee; then the PSP's checkout. */
     @PostMapping("/s/{slug}/checkout")
     public String checkout(@PathVariable String slug, @RequestParam(required = false) String name, @RequestParam(required = false) String phone,
                            @RequestParam(required = false) String method, @RequestParam(required = false) String address,
                            @RequestParam(required = false) String note, @RequestParam String k,
                            @RequestParam(required = false) String code, @RequestParam(required = false) String pay,
+                           @RequestParam(required = false) String zone, @RequestParam(required = false) String slot,
                            @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                            Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
@@ -433,22 +480,41 @@ public class Storefront {
             items -= discount.discountMinor();
         }
         boolean cash = "CASH".equals(pay) && Shop.bool(st.get("cod_enabled"));
-        DeliveryProvider.Quote quote = delivery.of(st.get("delivery_provider")).quote(st, items, addr);
-        if ("DELIVERY".equals(how) && quote.problem() != null) return cartPage(slug, cart, quote.problem(), model, res);
-        long fee = "DELIVERY".equals(how) ? quote.feeMinor() : 0;
+        long merchantId = ((Number) st.get("merchant_id")).longValue();
+        String payChoice = pay != null && options.accepted(merchantId).contains(pay) ? pay : null;
+        long fee;
+        String zoneName = null;
+        List<Map<String, Object>> zones = growth.publicZones(storeId);
+        if ("DELIVERY".equals(how) && !zones.isEmpty()) {
+            Optional<Map<String, Object>> z = growth.zone(storeId, zone);
+            if (z.isEmpty()) return cartPage(slug, cart, "Choose your delivery area.", model, res, code);
+            fee = Growth.zoneFee(z.get(), items);
+            zoneName = (String) z.get().get("name");
+        } else {
+            DeliveryProvider.Quote quote = delivery.of(st.get("delivery_provider")).quote(st, items, addr);
+            if ("DELIVERY".equals(how) && quote.problem() != null) return cartPage(slug, cart, quote.problem(), model, res);
+            fee = "DELIVERY".equals(how) ? quote.feeMinor() : 0;
+        }
+        int minutes = bookingMinutes(v.get());
+        Payments.Booking booking = null;
+        if (minutes > 0 && growth.takesBookings(storeId)) {
+            Optional<java.time.LocalDateTime> at = growth.validSlot(storeId, minutes, slot);
+            if (at.isEmpty()) return cartPage(slug, cart, slot == null || slot.isBlank() ? "Choose a time for your appointment." : "That time is no longer free. Please choose another time.", model, res, code);
+            booking = new Payments.Booking(at.get(), minutes);
+        }
         List<Payments.Item> lines = v.get().lines().stream().map(l -> new Payments.Item(l.productId(), l.name(), l.unitMinor(), l.quantity())).toList();
         String summary = lines.size() == 1 ? lines.get(0).name() : lines.size() + " items from " + st.get("name");
         Payments.Placed placed;
         try {
             placed = payments.place(new Payments.NewOrder(((Number) st.get("merchant_id")).longValue(), storeId, null, lines.size() == 1 ? lines.get(0).productId() : null,
-                    summary, v.get().count(), items + fee, v.get().currency(), c.name(), c.phone(), c.note(), k, lines, how, fee, "DELIVERY".equals(how) ? addr : null));
+                    summary, v.get().count(), items + fee, v.get().currency(), c.name(), c.phone(), c.note(), k, lines, how, fee, "DELIVERY".equals(how) ? addr : null), booking);
         } catch (IllegalArgumentException e) {
             return cartPage(slug, cart, e.getMessage(), model, res);
         }
         carts.empty(v.get().cartId());
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());
-            payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor());
+            payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor(), cash ? null : payChoice, zoneName);
         }
         if (cash) return orderPage(placed.orderRef(), placed.viewToken(), null, model, res);
         return startPayment(placed, model, res);
@@ -573,6 +639,25 @@ public class Storefront {
         return orderPage(ref, token, null, model, res);
     }
 
+    /** A buyer's review, from their own order page. */
+    @PostMapping("/o/{ref}/review")
+    public String review(@PathVariable String ref, @RequestParam(name = "t") String token, @RequestParam(required = false) String product,
+                         @RequestParam(required = false) String rating, @RequestParam(required = false) String comment, @RequestParam(required = false) String name,
+                         Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> o = payments.orderForCustomer(ref, token);
+        if (o.isEmpty()) return missing(model, res, "This order does not exist");
+        try {
+            long pid = Long.parseLong(String.valueOf(product));
+            growth.review(o.get(), pid, rating, comment, name);
+        } catch (NumberFormatException e) {
+            return orderPage(ref, token, "Choose the item to review", model, res);
+        } catch (IllegalArgumentException e) {
+            return orderPage(ref, token, e.getMessage(), model, res);
+        }
+        model.addAttribute("thanks", "Thank you for your review.");
+        return orderPage(ref, token, null, model, res);
+    }
+
     @PostMapping("/o/{ref}/pay")
     public String retry(@PathVariable String ref, @RequestParam(name = "t") String token, Model model, HttpServletResponse res) {
         if (payments.orderForCustomer(ref, token).isEmpty()) return missing(model, res, "This order does not exist");
@@ -617,10 +702,15 @@ public class Storefront {
             default -> null;
         } : null);
         om.put("address", o.get("delivery_address"));
+        om.put("zone", o.get("delivery_zone"));
+        om.put("booking", growth.bookingOf(((Number) o.get("id")).longValue()).orElse(null));
+        om.put("payChoice", o.get("pay_choice") == null ? null : Options.LABELS.get(String.valueOf(o.get("pay_choice"))));
         om.put("discount", ((Number) o.get("discount_minor")).longValue() > 0 ? o.get("discount_code") + " −" + price(((Number) o.get("discount_minor")).longValue(), (String) o.get("currency")) : null);
         om.put("canPay", !"PAID".equals(ps) && !"PENDING".equals(ps) && !"CONFIRMING".equals(ps) && !"ON_DELIVERY".equals(ps) && !"CANCELLED".equals(o.get("order_status")));
         model.addAttribute("store", st.isEmpty() ? defaultStore() : storeModel(st));
         model.addAttribute("order", om);
+        model.addAttribute("reviewable", growth.reviewable(o));
+        if (!model.containsAttribute("thanks")) model.addAttribute("thanks", null);
         model.addAttribute("problem", problem);
         model.addAttribute("refresh", "confirming".equals(om.get("state")));
         model.addAttribute("title", "Order " + ref);
