@@ -446,7 +446,7 @@ class OperationalReadinessScenarioTest {
         // chooses the methods it accepts and the customer's choice in the store comes first.
         assertEquals("false", jdbc.queryForObject("SELECT setting_value FROM platform_settings WHERE setting_key = 'commerce_livemode'", String.class));
         Res methods = call("GET", "/api/v1/merchant/payment-methods", a.token(), null);
-        assertEquals(200, methods.status(), methods.raw());
+        assertEquals(200, methods.status(), "merchant reads its methods: " + methods.raw());
         assertTrue(methods.raw().contains("ECOCASH") && methods.raw().contains("ZIMSWITCH"), methods.raw());
         Res off = call("PUT", "/api/v1/merchant/payment-methods", a.token(), Map.of("ZIMSWITCH", false));
         assertEquals(200, off.status(), "owner switches card off: " + off.raw());
@@ -457,7 +457,7 @@ class OperationalReadinessScenarioTest {
         String sandboxRef = "CO-" + SEQ.incrementAndGet() + "SBOX-1";
         Res sandbox = commerce("POST", "/api/v1/commerce/checkouts", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", sandboxRef, "amountMinor", 300, "currency", "USD",
                 "description", "Tea x1", "successUrl", "https://store.payport.africa/o/y", "cancelUrl", "https://store.payport.africa/o/y", "orderRef", sandboxRef, "method", "ONEMONEY"));
-        assertEquals(200, sandbox.status(), sandbox.raw());
+        assertEquals(200, sandbox.status(), "sandbox checkout: " + sandbox.raw());
         assertFalse(sandbox.data().path("livemode").asBoolean(), "sandbox until switched to live");
         long sbId = sandbox.data().path("checkoutSessionId").asLong();
         Res pub = call("GET", "/api/v1/checkout/" + sbId, null, null);
@@ -468,7 +468,7 @@ class OperationalReadinessScenarioTest {
         assertEquals("CREATED", jdbc.queryForObject("SELECT status FROM checkout_sessions WHERE id = ?", String.class, sbId), "nothing sent to a provider");
         assertEquals(403, call("POST", "/api/v1/admin/payments/store-live", staff("OPS"), Map.of("live", true, "reason", "owner approved")).status(), "admins only");
         Res ready = call("GET", "/api/v1/admin/payments/live-readiness", staff("OPS"), null);
-        assertEquals(200, ready.status(), ready.raw());
+        assertEquals(200, ready.status(), "ops reads live readiness: " + ready.raw());
         assertFalse(ready.data().path("storePaymentsLive").asBoolean());
         assertFalse(ready.raw().toLowerCase().contains("password\":\""), "never the credentials");
         // The rest of this test exercises live store payments.
@@ -548,7 +548,7 @@ class OperationalReadinessScenarioTest {
         Map<String, Object> msg = Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "+263771234567", "text", "Your order " + orderRef + " is ready to collect.", "reference", orderRef);
         assertEquals(403, commerce("POST", "/api/v1/commerce/messages", null, msg).status());
         Res sent = commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, msg);
-        assertEquals(200, sent.status(), sent.raw());
+        assertEquals(200, sent.status(), "store text: " + sent.raw());
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "12", "text", "Hi")).status());
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "+263771234567", "text", "x".repeat(301))).status());
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = ?", Integer.class, a.id()));
