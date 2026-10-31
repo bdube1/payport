@@ -761,7 +761,8 @@ class CommerceScenarioTest {
         String ref = orderRefOf(k);
         assertNotNull(jdbc.queryForObject("SELECT shopper_id FROM orders WHERE order_ref = ?", Long.class, ref));
         assertEquals("Rudo Moyo", jdbc.queryForObject("SELECT customer_name FROM orders WHERE order_ref = ?", String.class, ref));
-        assertTrue(page(storePath + "/cart", both).body().contains("7 Fife Avenue, Harare"), "the saved address is offered next time");
+        String nextCart = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        assertTrue(page(storePath + "/cart", nextCart + "; " + me).body().contains("7 Fife Avenue, Harare"), "the saved address is offered next time");
 
         Res account = page("/me", me);
         assertEquals(200, account.status());
