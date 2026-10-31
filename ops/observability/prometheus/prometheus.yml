@@ -25,6 +25,13 @@ scrape_configs:
       - targets: ["127.0.0.1:8085"]
         labels: { service: gateway }
 
+  # PayPort Commerce (the store, port 8086): its own figures, local only.
+  - job_name: payport-commerce
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["127.0.0.1:8086"]
+        labels: { service: commerce }
+
   - job_name: node
     static_configs: [{ targets: ["127.0.0.1:9100"], labels: { service: server } }]
 
@@ -58,6 +65,7 @@ scrape_configs:
     static_configs:
       - targets:
           - https://api-staging.payport.africa/actuator/health/liveness
+          - https://store-staging.payport.africa/
           - https://app-staging.payport.africa/
           - https://admin-staging.payport.africa/
           - https://merchant-staging.payport.africa/
