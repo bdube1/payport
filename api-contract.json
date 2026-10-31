@@ -1747,6 +1747,11 @@
    "access": null
   },
   {
+   "method": "POST",
+   "path": "/api/v1/commerce/reports",
+   "access": null
+  },
+  {
    "method": "GET",
    "path": "/api/v1/econet/admin/balance",
    "access": null
@@ -2268,12 +2273,32 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/store/report-reasons",
+   "access": null
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/store/stores",
    "access": null
   },
   {
    "method": "GET",
    "path": "/api/v1/store/stores/{slug}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores/{slug}/chat",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/stores/{slug}/chat",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/stores/{slug}/report",
    "access": null
   },
   {
