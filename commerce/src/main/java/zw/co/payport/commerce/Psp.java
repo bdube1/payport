@@ -93,6 +93,11 @@ public class Psp {
         return call("POST", "/api/v1/commerce/messages", body, null, Duration.ofSeconds(5));
     }
 
+    /** A report of a seller or a customer, to Payport customer care (answers with the complaint reference). */
+    public JsonNode report(Map<String, Object> body) {
+        return call("POST", "/api/v1/commerce/reports", body, null, Duration.ofSeconds(8));
+    }
+
     /** Who a merchant portal login belongs to (the portal's own token, forwarded once at sign-in). */
     public JsonNode identity(String merchantPortalToken) {
         return call("GET", "/api/v1/merchant/commerce/identity", null, merchantPortalToken, Duration.ofSeconds(5));

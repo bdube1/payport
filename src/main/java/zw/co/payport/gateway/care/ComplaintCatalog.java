@@ -36,6 +36,10 @@ public final class ComplaintCatalog {
                     "Investigate the merchant and the evidence; facilitate a refund or escalate the dispute.", "NORMAL", true),
             c("M_DECLINED_WITH_BALANCE", "MERCHANT", "Payment declined despite enough balance", "System outage, transaction limits or processing error",
                     "Check the balance, limits and system logs; fix the technical issue or advise the customer.", "LOW", false),
+            c("S_SELLER_CONDUCT", "MERCHANT", "Payport Store: customer reported a seller", "Rude or abusive seller, a suspected scam, asking to be paid outside Payport or misleading items",
+                    "Read the report and the chat, contact the seller, and warn, suspend the store or refund the customer as the evidence shows.", "NORMAL", false),
+            c("S_CUSTOMER_CONDUCT", "MERCHANT", "Payport Store: seller reported a customer", "Abusive messages, spam or a suspected scam by a customer",
+                    "Read the report and the chat; warn or block the customer and support the seller.", "LOW", false),
 
             c("A_CASH_OUT_NO_CASH", "AGENT", "Wallet debited but agent gave no cash", "Agent not credited or confirmation delayed",
                     "Verify the transaction and the agent's float; tell the agent to release the cash if credited, or reverse the customer's debit.", "NORMAL", true),

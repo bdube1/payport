@@ -41,6 +41,7 @@ public class ChannelApi {
     private final Options options;
     private final DeliveryProvider.Registry delivery;
     @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
+    @org.springframework.beans.factory.annotation.Autowired Chats chats;
 
     public ChannelApi(Settings settings, Shop shop, Catalog catalog, Carts carts, Payments payments, Growth growth, Options options, DeliveryProvider.Registry delivery) {
         this.settings = settings;
@@ -287,6 +288,58 @@ public class ChannelApi {
             out.put("checkoutUrl", s.checkoutUrl());
         }
         return out;
+    }
+
+    // ─── chat with the seller (the same conversations as the website) ───────
+
+    /** A customer's message to a store from the app, WhatsApp or USSD (the channel tells who the customer is: their phone). */
+    @PostMapping("/api/channel/chat")
+    public Map<String, Object> chatSend(@RequestHeader(value = KEY, required = false) String key, @RequestBody Map<String, Object> b) {
+        requireKey(key);
+        String channel = String.valueOf(b.get("channel"));
+        if (!CHANNELS.contains(channel)) throw new IllegalArgumentException("Unknown channel");
+        Map<String, Object> st = shop.publicStore(String.valueOf(b.get("store"))).orElseThrow(() -> new Shop.NotFound("No such store"));
+        String phone = String.valueOf(b.get("phone"));
+        Chats.phone9(phone);
+        Chats.Who who = new Chats.Who(null, null, phone, b.get("name") == null ? null : String.valueOf(b.get("name")), channel);
+        long id = chats.customerSays(st, who, b.get("text") == null ? null : String.valueOf(b.get("text")), null);
+        return MerchantApi.ok(Map.of("chatId", id, "messages", chats.messages(id, 0)));
+    }
+
+    /** The customer's conversation with a store (app). */
+    @GetMapping("/api/channel/chat")
+    public Map<String, Object> chatRead(@RequestHeader(value = KEY, required = false) String key, @RequestParam String store, @RequestParam String phone,
+                                        @RequestParam(defaultValue = "0") long after) {
+        requireKey(key);
+        Map<String, Object> st = shop.publicStore(store).orElseThrow(() -> new Shop.NotFound("No such store"));
+        Optional<Map<String, Object>> c = chats.find(((Number) st.get("id")).longValue(), new Chats.Who(null, null, phone, null, "APP"));
+        List<Map<String, Object>> messages = c.map(x -> chats.messages(((Number) x.get("id")).longValue(), after)).orElse(List.of());
+        c.ifPresent(x -> chats.customerRead(((Number) x.get("id")).longValue()));
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("store", st.get("name"));
+        v.put("messages", messages);
+        return MerchantApi.ok(v);
+    }
+
+    /** A customer reports a store from the app, WhatsApp or USSD. */
+    @PostMapping("/api/channel/report")
+    public Map<String, Object> report(@RequestHeader(value = KEY, required = false) String key, @RequestBody Map<String, Object> b) {
+        requireKey(key);
+        Map<String, Object> st = shop.publicStore(String.valueOf(b.get("store"))).orElseThrow(() -> new Shop.NotFound("No such store"));
+        String phone = b.get("phone") == null ? null : String.valueOf(b.get("phone"));
+        Long chatId = phone == null ? null : chats.find(((Number) st.get("id")).longValue(), new Chats.Who(null, null, phone, null, "APP"))
+                .map(x -> ((Number) x.get("id")).longValue()).orElse(null);
+        String ref = chats.report(st, "CUSTOMER", chatId, (String) b.get("reason"), (String) b.get("details"), phone);
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("complaintRef", ref);
+        v.put("reasons", Chats.REASON_NAMES);
+        return MerchantApi.ok(v);
+    }
+
+    @GetMapping("/api/channel/report/reasons")
+    public Map<String, Object> reasons(@RequestHeader(value = KEY, required = false) String key) {
+        requireKey(key);
+        return MerchantApi.ok(Chats.REASON_NAMES);
     }
 
     /** An order as the customer may see it (the phone number it was placed with must match). */

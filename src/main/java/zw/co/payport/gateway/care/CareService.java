@@ -28,7 +28,7 @@ import java.util.Set;
 public class CareService {
 
     public static final Set<String> STATUSES = Set.of("OPEN", "INVESTIGATING", "AWAITING_REVERSAL", "RESOLVED", "CLOSED", "REJECTED");
-    static final Set<String> CHANNELS = Set.of("PHONE", "WALK_IN", "EMAIL", "WHATSAPP", "SOCIAL", "MERCHANT", "AGENT", "OTHER");
+    static final Set<String> CHANNELS = Set.of("PHONE", "WALK_IN", "EMAIL", "WHATSAPP", "SOCIAL", "MERCHANT", "AGENT", "STORE", "OTHER");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcTemplate jdbc;

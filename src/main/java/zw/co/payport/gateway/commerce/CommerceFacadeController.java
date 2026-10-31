@@ -63,6 +63,12 @@ public class CommerceFacadeController {
         return Web.run(() -> { facade.requireKey(key); return facade.message(b); }, req);
     }
 
+    @PostMapping("/api/v1/commerce/reports")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> report(@RequestHeader(value = KEY, required = false) String key,
+                                                                  @RequestBody CommerceFacade.NewReport b, HttpServletRequest req) {
+        return Web.run(() -> { facade.requireKey(key); return facade.report(b); }, req);
+    }
+
     @GetMapping("/api/v1/commerce/merchants/{merchantId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> merchant(@RequestHeader(value = KEY, required = false) String key, @PathVariable Long merchantId,
                                                                     HttpServletRequest req) {

@@ -52,6 +52,7 @@ public class CommerceFacade {
                           PlatformEvents events, TransactionOutcomeService outcomes, JdbcTemplate jdbc,
                           @Value("${payport.commerce.key:}") String key,
                           @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase,
+                          @Value("${payport.environment:production}") String environment,
                           zw.co.payport.gateway.merchant.MerchantPaymentMethods methods) {
         this.methods = methods;
         this.checkouts = checkouts;
@@ -62,7 +63,10 @@ public class CommerceFacade {
         this.outcomes = outcomes;
         this.jdbc = jdbc;
         this.key = key == null ? "" : key.trim();
-        this.consumerBase = consumerBase == null ? "" : consumerBase.replaceAll("/+$", "");
+        String base = consumerBase == null ? "" : consumerBase.replaceAll("/+$", "");
+        // Staging never sends shoppers to the live payment page (CONSUMER_BASE_URL left at its live default).
+        if ("staging".equalsIgnoreCase(environment) && base.equals("https://app.payport.africa")) base = "https://app-staging.payport.africa";
+        this.consumerBase = base;
     }
 
     /** The service key check: a missing or wrong key is refused; no key configured means the door is closed. */
@@ -197,7 +201,10 @@ public class CommerceFacade {
 
     static final int MESSAGES_PER_DAY = 500;
 
-    public record NewMessage(Long merchantId, String to, String phone, String text, String reference) {}
+    public record NewMessage(Long merchantId, String to, String phone, String text, String reference, String channel) {}
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.whatsapp.WhatsAppService whatsapp;
 
     /**
      * A text about a store order: to the merchant (its registered contact phone; Commerce never chooses that number) or
@@ -210,14 +217,20 @@ public class CommerceFacade {
         String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
         if (text.isEmpty() || text.length() > 300) throw new IllegalArgumentException("A message is 1 to 300 characters");
         boolean toMerchant = "MERCHANT".equals(b.to());
+        boolean chat = "CHAT_CUSTOMER".equals(b.to());
         String phone = toMerchant ? m.getContactPhone() : b.phone() == null ? null : b.phone().replaceAll("[\\s()-]", "");
         if (phone == null || !phone.matches("\\+?[0-9]{9,15}")) throw new IllegalArgumentException(toMerchant ? "The merchant has no contact phone" : "Invalid phone number");
         Integer today = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = ? AND created_at >= CURDATE()", Integer.class, m.getId());
         if (today != null && today >= MESSAGES_PER_DAY) throw new IllegalStateException("Today's message limit for this store has been reached");
         String ref = b.reference() == null ? null : b.reference().replaceAll("[^A-Za-z0-9_-]", "");
         if (ref != null && ref.length() > 60) ref = ref.substring(0, 60);
-        jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (?,?,?,NOW(6))", m.getId(), toMerchant ? "MERCHANT" : "CUSTOMER", ref);
-        if (sms != null) sms.sendText(phone, text, ref == null ? "STORE" : ref, toMerchant ? "STORE_ORDER_ALERT" : "STORE_ORDER_UPDATE");
+        jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (?,?,?,NOW(6))", m.getId(), toMerchant ? "MERCHANT" : chat ? "CHAT" : "CUSTOMER", ref);
+        // A seller's chat answer to a WhatsApp customer goes back on WhatsApp; to a USSD customer by SMS.
+        if (chat && "WHATSAPP".equals(b.channel()) && whatsapp != null) {
+            whatsapp.outbox(phone.replaceAll("\\D", ""), text + "\n\nReply here: send MENU, then Shop, the store, and Message the seller.", "STORE_CHAT");
+            return Map.of("queued", true);
+        }
+        if (sms != null) sms.sendText(phone, text, ref == null ? "STORE" : ref, toMerchant ? "STORE_ORDER_ALERT" : chat ? "STORE_CHAT" : "STORE_ORDER_UPDATE");
         return Map.of("queued", true);
     }
 
@@ -237,6 +250,38 @@ public class CommerceFacade {
         jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (0, 'STORE_USER', ?, NOW(6))", who);
         if (sms != null) sms.sendText(phone, text, "STORE", "STORE_USER_CODE");
         return Map.of("queued", true);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.care.CareService care;
+
+    public record NewReport(Long merchantId, String about, String reason, String store, String storeSlug, Long chatId, String details, String reporterPhone) {}
+
+    /**
+     * A Payport Store report: a customer reporting a seller, or a seller reporting a customer. It becomes a customer
+     * care complaint (Customer care > Complaints) for staff to follow up; the answer carries the complaint reference.
+     */
+    public Map<String, Object> report(NewReport b) {
+        if (care == null) throw new IllegalStateException("Customer care is not available");
+        Merchant m = merchant(b.merchantId());
+        boolean aboutSeller = !"CUSTOMER".equals(b.about());
+        String reason = b.reason() == null ? "Not given" : b.reason().replaceAll("[\\u0000-\\u001F]", " ").trim();
+        String details = b.details() == null ? "" : b.details().replaceAll("[\\u0000-\\u0009\\u000B-\\u001F]", " ").trim();
+        String text = (aboutSeller ? "A customer reported the seller " : "The seller reported a customer of ") + clipText(b.store(), 80)
+                + " (merchant " + m.getId() + ", " + clipText(m.getBusinessName(), 80) + ") on Payport Store. Reason: " + clipText(reason, 60) + "."
+                + (b.chatId() == null ? "" : " Chat " + b.chatId() + ".") + (details.isEmpty() ? "" : " Details: " + clipText(details, 1200));
+        String phone = aboutSeller ? b.reporterPhone() : null;
+        String reference = "STORE-" + (b.storeSlug() == null ? m.getId() : b.storeSlug().replaceAll("[^A-Za-z0-9-]", "")) + (b.chatId() == null ? "" : "-CHAT-" + b.chatId());
+        Map<String, Object> c = care.create(new zw.co.payport.gateway.care.CareService.NewComplaint(aboutSeller ? "S_SELLER_CONDUCT" : "S_CUSTOMER_CONDUCT", "STORE",
+                phone, null, clipText(reference, 100), text), "commerce");
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("complaintRef", c.get("complaintRef") != null ? c.get("complaintRef") : c.get("complaint_ref"));
+        return out;
+    }
+
+    static String clipText(String s, int n) {
+        if (s == null) return "";
+        return s.length() > n ? s.substring(0, n) : s;
     }
 
     /** For Payport Commerce's sign-in: who the merchant user behind a merchant portal token is. */

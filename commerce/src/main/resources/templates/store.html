@@ -1,35 +1,44 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head th:replace="~{fragments :: head(${title}, ${description}, ${store.banner}, ${store.color}, ${share.url})}"></head>
-<body th:class="'d-' + ${store.design}">
+<body>
 <header th:replace="~{fragments :: top(${store})}"></header>
 <p th:if="${store.announcement != null}" class="announce" th:text="${store.announcement}"></p>
 <div th:if="${store.banner != null}" class="banner"><img th:src="${store.banner}" alt=""></div>
 <main class="wrap">
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Stores</a><span class="sep">/</span><b th:text="${store.name}">Store</b>
+  </nav>
   <section class="hero">
-    <h1 th:text="${store.name}">Store</h1>
-    <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
-    <p th:if="${store.rating != null}" th:text="${store.rating}" class="stars"></p>
-    <form method="post" th:action="@{/s/{s}/favourite(s=${store.slug})}" class="fav-form">
-      <button type="submit" class="sh fav" th:classappend="${store.favourite} ? 'on'" th:text="${store.favourite} ? '♥ Favourite' : '♡ Add to favourites'">♡ Add to favourites</button>
-    </form>
-    <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
-    <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
+    <div>
+      <h1 th:text="${store.name}">Store</h1>
+      <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
+      <a th:if="${store.rating != null}" href="#store-reviews" class="rate-line"><span th:text="${store.rating}"></span></a>
+      <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
+    </div>
+    <div class="hero-acts">
+      <a th:href="@{/s/{s}/chat(s=${store.slug})}" class="btn-soft">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6A8 8 0 1 1 21 12z"/></svg>
+        Chat with seller</a>
+      <form method="post" th:action="@{/s/{s}/favourite(s=${store.slug})}" class="fav-form">
+        <button type="submit" class="btn-soft fav" th:classappend="${store.favourite} ? 'on'" th:text="${store.favourite} ? '♥ Favourite' : '♡ Add to favourites'">♡ Add to favourites</button>
+      </form>
+    </div>
   </section>
-  <section th:if="${store.design == 'local' and (store.pickup != null or store.delivers != null or store.whatsapp != null)}" class="info">
-    <p th:if="${store.pickup != null}" th:text="${store.pickup}"></p>
-    <p th:if="${store.delivers != null}" th:text="${store.delivers}"></p>
-    <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="pay link-btn" rel="noopener" target="_blank">Order on WhatsApp</a>
-  </section>
+  <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
+  <div th:if="${store.pickup != null or store.delivers != null}" class="info-row">
+    <span th:if="${store.pickup != null}" th:text="${store.pickup}"></span>
+    <span th:if="${store.delivers != null}" th:text="${store.delivers}"></span>
+  </div>
   <form method="get" th:action="@{/s/{s}/search(s=${store.slug})}" class="search" role="search">
-    <input name="q" th:value="${q}" placeholder="Search" aria-label="Search this store" maxlength="80">
+    <input name="q" th:value="${q}" placeholder="Search this store" aria-label="Search this store" maxlength="80">
   </form>
   <p th:if="${q != null}" class="muted small"><span th:text="${#lists.size(products)} + ' found for “' + ${q} + '”'"></span> · <a th:href="@{/s/{s}(s=${store.slug})}">Show all</a></p>
   <nav th:if="${!#lists.isEmpty(collections)}" class="chips">
     <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
     <a th:each="c : ${collections}" th:href="@{/s/{s}(s=${store.slug},c=${c.slug})}" th:text="${c.name}" th:classappend="${c.slug == category} ? 'on'">Collection</a>
   </nav>
-  <nav th:if="${#lists.isEmpty(collections) and store.design == 'boutique' and !#sets.isEmpty(categories)}" class="chips">
+  <nav th:if="${#lists.isEmpty(collections) and !#sets.isEmpty(categories)}" class="chips">
     <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
     <a th:each="c : ${categories}" th:href="@{/s/{s}(s=${store.slug},c=${c})}" th:text="${c}" th:classappend="${c == category} ? 'on'">Category</a>
   </nav>
@@ -41,7 +50,6 @@
         <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
         <div th:if="${p.image == null}" class="pic blank"></div>
         <span class="name" th:text="${p.name}">Product</span>
-        <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
         <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
         <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
         <span th:if="${p.rating != null}" class="stars small card-stars" th:text="${p.rating}"></span>
@@ -57,14 +65,31 @@
         <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
         <div th:if="${p.image == null}" class="pic blank"></div>
         <span class="name" th:text="${p.name}">Product</span>
-        <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
         <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
         <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
         <span th:if="${p.rating != null}" class="stars small card-stars" th:text="${p.rating}"></span>
       </a>
     </li>
   </ul>
+
+  <section class="reviews" id="store-reviews">
+    <h2>What customers say</h2>
+    <div class="rv-head">
+      <div class="rv-score"><span th:text="${summary.average}">4.6</span><small th:text="${summary.count} + (${summary.count == 1} ? ' review' : ' reviews')">12 reviews</small></div>
+      <div class="bars">
+        <div th:each="b : ${summary.bars}" class="bar"><span th:text="${b.stars} + '★'">5★</span><i><b th:class="'w' + ${b.tenth}"></b></i><span th:text="${b.count}">0</span></div>
+      </div>
+    </div>
+    <div th:each="r : ${reviews}" class="review">
+      <p><span class="st" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong><span class="verified">Verified purchase</span> <span class="muted small" th:text="${r.date}"></span></p>
+      <p class="muted small" th:if="${r.product != null}" th:text="${r.product}"></p>
+      <p th:if="${r.comment != null}" th:text="${r.comment}"></p>
+      <p th:if="${r.reply != null}" class="reply" th:text="${store.name} + ': ' + ${r.reply}"></p>
+    </div>
+  </section>
+
   <section th:replace="~{fragments :: share(${share})}"></section>
+  <a th:href="@{/s/{s}/report(s=${store.slug})}" class="report-link">Report this store</a>
 </main>
 <footer th:replace="~{fragments :: foot}"></footer>
 </body>

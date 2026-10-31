@@ -41,8 +41,17 @@ public class Settings {
         return m.matches() ? m.group(1) + "app" + (m.group(2) == null ? "" : m.group(2)) + "." + m.group(3) : "";
     }
 
+    /** Payport's own payment pages (any https address on payport.africa), or the configured checkout address. */
     public boolean checkoutAllowed(String url) {
-        return url != null && checkoutOrigins.stream().anyMatch(o -> !o.isEmpty() && url.startsWith(o + "/"));
+        if (url == null) return false;
+        if (checkoutOrigins.stream().anyMatch(o -> !o.isEmpty() && url.startsWith(o + "/"))) return true;
+        try {
+            java.net.URI u = java.net.URI.create(url);
+            String h = u.getHost() == null ? "" : u.getHost().toLowerCase(java.util.Locale.ROOT);
+            return "https".equals(u.getScheme()) && u.getUserInfo() == null && (h.equals("payport.africa") || h.endsWith(".payport.africa"));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     static String trim(String url) {

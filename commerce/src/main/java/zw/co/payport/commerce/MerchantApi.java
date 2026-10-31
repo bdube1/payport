@@ -38,6 +38,7 @@ public class MerchantApi {
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
     @org.springframework.beans.factory.annotation.Autowired Ai ai;
     @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
+    @org.springframework.beans.factory.annotation.Autowired Chats chats;
 
     public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
         this.catalog = catalog;
@@ -238,6 +239,43 @@ public class MerchantApi {
         options.refresh(m);
         return ok(options.choices(m));
     }
+
+    // ─── chat with customers ─────────────────────────────────────────────────
+
+    @GetMapping("/api/commerce/chats")
+    public Map<String, Object> chatList(HttpServletRequest req) {
+        long m = me(req).merchantId();
+        return ok(Map.of("chats", chats.list(m), "unread", chats.unread(m)));
+    }
+
+    @GetMapping("/api/commerce/chats/insights")
+    public Map<String, Object> chatInsights(HttpServletRequest req) { return ok(chats.insights(me(req).merchantId())); }
+
+    @GetMapping("/api/commerce/chats/{id}")
+    public Map<String, Object> chatThread(@PathVariable long id, HttpServletRequest req) { return ok(chats.thread(me(req).merchantId(), id)); }
+
+    @PostMapping("/api/commerce/chats/{id}/reply")
+    public Map<String, Object> chatReply(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        Tokens.Merchant m = me(req);
+        return ok(chats.reply(m.merchantId(), id, b == null ? null : b.get("text"), "merchant-user:" + m.userId()));
+    }
+
+    @PostMapping("/api/commerce/chats/{id}/block")
+    public Map<String, Object> chatBlock(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(chats.block(manager(req).merchantId(), id, b != null && Shop.bool(b.get("blocked"))));
+    }
+
+    /** The seller reports the customer of a conversation (to Payport customer care). */
+    @PostMapping("/api/commerce/chats/{id}/report")
+    public Map<String, Object> chatReport(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        String ref = chats.sellerReports(me(req).merchantId(), id, b == null ? null : (String) b.get("reason"), b == null ? null : (String) b.get("details"));
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("complaintRef", ref);
+        return ok(v);
+    }
+
+    @GetMapping("/api/commerce/chats/reasons")
+    public Map<String, Object> chatReasons() { return ok(Chats.REASON_NAMES); }
 
     @GetMapping("/api/commerce/reviews")
     public Map<String, Object> reviews(HttpServletRequest req) { return ok(growth.merchantReviews(me(req).merchantId())); }

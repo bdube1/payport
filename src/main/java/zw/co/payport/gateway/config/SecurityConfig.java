@@ -118,9 +118,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales/*/card").permitAll()
                         // Payport Commerce, server to server: the service key is checked by CommerceFacade (closed without one).
                         .requestMatchers(HttpMethod.GET, "/api/v1/commerce/events", "/api/v1/commerce/checkouts/*/*", "/api/v1/commerce/merchants/*").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds", "/api/v1/commerce/messages").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds", "/api/v1/commerce/messages", "/api/v1/commerce/reports").permitAll()
                         // The Payport Store in the app: browsing and prices are public; ordering needs a customer login (StoreController).
-                        .requestMatchers(HttpMethod.GET, "/api/v1/store/stores", "/api/v1/store/stores/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/stores", "/api/v1/store/stores/*", "/api/v1/store/report-reasons").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/store/stores/*/slots", "/api/v1/store/quote").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()

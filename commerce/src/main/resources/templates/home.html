@@ -92,6 +92,24 @@
       </ul>
     </section>
 
+    <section th:if="${!#lists.isEmpty(topRated)}" class="d-section">
+      <div class="d-section-head"><h2>Top rated</h2></div>
+      <ul class="d-grid d-grid-4">
+        <li th:each="s : ${topRated}">
+          <a th:href="${s.url}" class="d-card">
+            <div class="d-card-art short" th:classappend="'art-' + ${s.typeCode}">
+              <img th:if="${s.banner != null}" th:src="${s.banner}" alt="" loading="lazy" class="d-card-img">
+              <th:block th:if="${s.banner == null}"><svg th:replace="~{art :: art(${s.typeCode})}"></svg></th:block>
+            </div>
+            <div class="d-card-body">
+              <div class="d-card-text"><strong th:text="${s.name}">Store</strong><span th:text="${s.meta}">Food · 11 items</span></div>
+              <div class="d-tags"><span th:if="${s.rating != null}" class="d-tag rate" th:text="${s.rating}"></span></div>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </section>
+
     <section class="d-section">
       <div class="d-section-head"><h2 th:text="${type != null} ? ${type} : 'All stores'">All stores</h2><span class="d-link" th:text="${openCount} + ' open now'">8 open now</span></div>
       <p th:if="${#lists.isEmpty(stores)}" class="d-empty">No stores here yet.</p>

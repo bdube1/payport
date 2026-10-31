@@ -24,6 +24,7 @@ public class Options {
     public static final Map<String, String> LABELS = new LinkedHashMap<>();
 
     static {
+        LABELS.put("WALLET", "Payport Wallet");
         LABELS.put("ECOCASH", "EcoCash");
         LABELS.put("ONEMONEY", "OneMoney");
         LABELS.put("OMARI", "Omari");

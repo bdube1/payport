@@ -99,4 +99,33 @@ public class StoreClient {
     public JsonNode order(String ref, String phone) {
         return call("GET", "/api/channel/orders/" + enc(ref) + "?phone=" + enc(phone), null);
     }
+
+    /** A customer's message to a store's seller (the same conversations as the website). */
+    public JsonNode chat(String slug, String phone, String text, String channel, String name) {
+        Map<String, Object> b = new java.util.LinkedHashMap<>();
+        b.put("store", slug);
+        b.put("phone", phone);
+        b.put("text", text);
+        b.put("channel", channel);
+        b.put("name", name);
+        return call("POST", "/api/channel/chat", b);
+    }
+
+    public JsonNode chat(String slug, String phone, long after) {
+        return call("GET", "/api/channel/chat?store=" + enc(slug) + "&phone=" + enc(phone) + "&after=" + after, null);
+    }
+
+    /** A customer reports a store (to Payport customer care). */
+    public JsonNode report(String slug, String phone, String reason, String details) {
+        Map<String, Object> b = new java.util.LinkedHashMap<>();
+        b.put("store", slug);
+        b.put("phone", phone);
+        b.put("reason", reason);
+        b.put("details", details);
+        return call("POST", "/api/channel/report", b);
+    }
+
+    public JsonNode reportReasons() {
+        return call("GET", "/api/channel/report/reasons", null);
+    }
 }

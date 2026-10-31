@@ -143,6 +143,12 @@ class FakePsp {
                 send(x, 200, Map.of("success", true, "data", Map.of("merchantId", m, "status", "ACTIVE", "methods", methods(m))));
                 return;
             }
+            if (method.equals("POST") && path.equals("/api/v1/commerce/reports")) {
+                JsonNode b = json.readTree(x.getRequestBody());
+                messages.add("REPORT|" + b.path("about").asText() + "|" + b.path("reason").asText());
+                send(x, 200, Map.of("success", true, "data", Map.of("complaintRef", "CMP-TEST-1")));
+                return;
+            }
             if (method.equals("POST") && path.equals("/api/v1/commerce/messages")) {
                 JsonNode b = json.readTree(x.getRequestBody());
                 messages.add(b.path("to").asText() + "|" + b.path("text").asText());

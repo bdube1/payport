@@ -12,7 +12,7 @@ html{font-size:clamp(11px,0.8264vw,17px)}
 *{box-sizing:border-box}
 body.dir2{margin:0;font-family:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:linear-gradient(180deg,#E3F1FA 0,#F1F8FC 60rem,#F6FAFD 100%);
   -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
-.d-wrap{max-width:calc(111.25rem + 3rem);margin:0 auto;padding:0 1.5rem}
+.d-wrap{width:100%;max-width:none;margin:0;padding:0 clamp(1.5rem,4.2vw,5rem)}
 a{color:inherit}
 
 /* announcement and header */
@@ -82,6 +82,7 @@ a{color:inherit}
 .d-grid-3{grid-template-columns:repeat(3,1fr);gap:2.25rem}
 .d-grid-4{grid-template-columns:repeat(4,1fr);gap:1.85rem}
 @media (min-width:2100px){.d-grid-4{grid-template-columns:repeat(5,1fr)}}
+@media (min-width:2800px){.d-grid-4{grid-template-columns:repeat(6,1fr)}.d-grid-3{grid-template-columns:repeat(4,1fr)}}
 .d-card{display:flex;flex-direction:column;height:100%;background:var(--card);border-radius:1.75rem;overflow:hidden;text-decoration:none;color:var(--ink);
   box-shadow:0 .6rem 1.8rem rgba(16,72,120,.08);transition:transform .15s ease,box-shadow .15s ease}
 .d-card:hover{transform:translateY(-.2rem);box-shadow:0 1rem 2.4rem rgba(16,72,120,.13)}

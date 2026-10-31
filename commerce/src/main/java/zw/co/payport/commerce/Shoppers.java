@@ -218,6 +218,23 @@ public class Shoppers {
         return true;
     }
 
+    /** Saved products (the heart on a product page). */
+    public boolean saved(Shopper s, long productId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM saved_products WHERE shopper_id = ? AND product_id = ?", Integer.class, s.id(), productId);
+        return n != null && n > 0;
+    }
+
+    public boolean toggleSaved(Shopper s, long productId) {
+        if (jdbc.update("DELETE FROM saved_products WHERE shopper_id = ? AND product_id = ?", s.id(), productId) > 0) return false;
+        jdbc.update("INSERT IGNORE INTO saved_products (shopper_id, product_id, created_at) VALUES (?,?,?)", s.id(), productId, Shop.now());
+        return true;
+    }
+
+    public List<Map<String, Object>> savedProducts(Shopper s) {
+        return jdbc.queryForList("SELECT p.name, p.slug, st.slug AS store_slug, st.name AS store FROM saved_products sp JOIN products p ON p.id = sp.product_id "
+                + "JOIN stores st ON st.id = p.store_id WHERE sp.shopper_id = ? AND p.status = 'ACTIVE' ORDER BY sp.created_at DESC LIMIT 50", s.id());
+    }
+
     public List<Map<String, Object>> favourites(Shopper s) {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> r : jdbc.queryForList("SELECT st.name, st.slug, st.business_type FROM favourites f JOIN stores st ON st.id = f.store_id "

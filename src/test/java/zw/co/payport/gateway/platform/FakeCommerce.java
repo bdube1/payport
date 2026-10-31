@@ -19,6 +19,7 @@ class FakeCommerce {
     final HttpServer server;
     final ObjectMapper json = new ObjectMapper();
     final List<JsonNode> orders = new ArrayList<>();
+    final List<JsonNode> chats = new ArrayList<>();
 
     FakeCommerce() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -48,6 +49,12 @@ class FakeCommerce {
         } else if (method.equals("POST") && path.equals("/api/channel/orders")) {
             synchronized (this) { orders.add(json.readTree(x.getRequestBody())); }
             send(x, 200, Map.of("success", true, "data", order));
+        } else if (method.equals("POST") && path.equals("/api/channel/chat")) {
+            synchronized (this) { chats.add(json.readTree(x.getRequestBody())); }
+            send(x, 200, Map.of("success", true, "data", Map.of("chatId", 1, "messages", List.of())));
+        } else if (method.equals("POST") && path.equals("/api/channel/report")) {
+            synchronized (this) { chats.add(json.readTree(x.getRequestBody())); }
+            send(x, 200, Map.of("success", true, "data", Map.of("complaintRef", "CMP-TEST-9")));
         } else if (method.equals("GET") && path.equals("/api/channel/orders")) {
             send(x, 200, Map.of("success", true, "data", orders.isEmpty() ? List.of() : List.of(order)));
         } else {

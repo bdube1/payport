@@ -11,43 +11,55 @@
   <meta property="og:url" th:if="${url != null}" th:content="${url}">
   <meta property="og:image" th:if="${image != null}" th:content="${publicUrl + image}">
   <meta name="twitter:card" th:content="${image != null} ? 'summary_large_image' : 'summary'">
+  <link rel="preload" href="/assets/fonts/plus-jakarta-sans-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/assets/store.css">
-  <link rel="stylesheet" th:href="@{/theme.css(c=${color != null ? #strings.substring(color, 1) : '0B6E4F'})}">
   <script src="/assets/store.js" defer></script>
 </head>
 <body>
 
 <header th:fragment="top(store)" class="top">
-  <a class="brand" th:href="${store.slug != null} ? @{/s/{s}(s=${store.slug})} : '#'">
-    <img th:if="${store.logo != null}" th:src="${store.logo}" alt="" class="logo">
-    <span th:text="${store.name}">Store</span>
-  </a>
-  <span class="top-right">
-    <a th:href="${me != null ? '/me' : '/signin'}" class="chat" th:text="${me != null ? me.first : 'Sign in'}">Sign in</a>
-    <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="chat" rel="noopener" target="_blank">WhatsApp</a>
-    <a th:if="${store.slug != null and store.cartCount > 0}" th:href="@{/s/{s}/cart(s=${store.slug})}" class="chat cartlink" th:text="'Cart ' + ${store.cartCount}">Cart</a>
-  </span>
+  <div class="top-in">
+    <a class="brand" th:href="${store.slug != null} ? @{/s/{s}(s=${store.slug})} : '/'">
+      <span class="brand-ico">
+        <img th:if="${store.logo != null}" th:src="${store.logo}" alt="">
+        <svg th:if="${store.logo == null}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 8.5h17"/></svg>
+      </span>
+      <span class="brand-name" th:text="${store.name}">Store</span>
+      <span th:if="${store.slug != null}" class="pill" th:classappend="${store.open} ? 'open' : 'closed'" th:text="${store.open} ? 'Open' : 'Closed'">Open</span>
+    </a>
+    <nav class="top-right">
+      <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="btn-line hide-s" rel="noopener" target="_blank">WhatsApp</a>
+      <a th:href="${me != null ? '/me' : '/signin'}" class="top-link hide-s" th:text="${me != null ? 'Hi, ' + me.first : 'Sign in'}">Sign in</a>
+      <a th:if="${store.slug != null}" th:href="@{/s/{s}/cart(s=${store.slug})}" class="cart-btn" aria-label="Cart">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2.5 3.5h2.6l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2l1.6-7.3H6.1"/></svg>
+        <span th:if="${store.cartCount > 0}" class="cart-n" th:text="${store.cartCount}">1</span>
+      </a>
+    </nav>
+  </div>
 </header>
 
 <section th:fragment="share(share)" class="share">
-  <h2>Share</h2>
-  <div class="share-row">
-    <a class="sh wa" th:href="${share.whatsapp}" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="sh fb" th:href="${share.facebook}" target="_blank" rel="noopener">Facebook</a>
-    <a class="sh x" th:href="${share.x}" target="_blank" rel="noopener">X</a>
-    <a class="sh em" th:href="${share.email}">Email</a>
-    <button type="button" class="sh cp" th:attr="data-copy=${share.url}">Copy link</button>
-  </div>
-  <details class="qr">
-    <summary>QR code</summary>
-    <img th:src="${share.qr}" alt="QR code" width="200" height="200">
-    <a th:href="${share.qr}" download="qr.svg">Download</a>
+  <details class="share-menu" th:attr="data-share-url=${share.url},data-share-text=${share.text}">
+    <summary class="btn-soft" aria-label="Share">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.3 10.7 7.4-4.4M8.3 13.3l7.4 4.4"/></svg>
+      Share
+    </summary>
+    <div class="share-pop">
+      <a th:href="${share.whatsapp}" target="_blank" rel="noopener">WhatsApp</a>
+      <a th:href="${share.facebook}" target="_blank" rel="noopener">Facebook</a>
+      <a th:href="${share.x}" target="_blank" rel="noopener">X</a>
+      <a th:href="${share.email}">Email</a>
+      <button type="button" th:attr="data-copy=${share.url}">Copy link</button>
+      <a th:href="${share.qr}" target="_blank" rel="noopener">QR code</a>
+    </div>
   </details>
 </section>
 
 <footer th:fragment="foot" class="foot">
   <span>Payments by <strong>Payport</strong></span>
+  <span>·</span>
   <a href="https://www.payport.africa/terms" rel="noopener">Terms</a>
+  <span>·</span>
   <a href="https://www.payport.africa/privacy" rel="noopener">Privacy</a>
 </footer>
 </body>
