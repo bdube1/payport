@@ -36,6 +36,7 @@ public class MerchantApi {
     private final Catalog catalog;
     @org.springframework.beans.factory.annotation.Autowired Options options;
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
+    @org.springframework.beans.factory.annotation.Autowired Ai ai;
 
     public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
         this.catalog = catalog;
@@ -265,6 +266,17 @@ public class MerchantApi {
 
     @GetMapping("/api/commerce/bookings")
     public Map<String, Object> bookings(HttpServletRequest req) { return ok(growth.merchantBookings(me(req).merchantId())); }
+
+    /** PayPort AI writes a product description for the merchant to edit (nothing is saved until the product is). */
+    @PostMapping("/api/commerce/ai/describe")
+    public Map<String, Object> describe(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        long m = manager(req).merchantId();
+        Object store = shop.store(m).get("name");
+        return ok(Map.of("description", ai.describe(b.get("name") == null ? null : String.valueOf(b.get("name")),
+                b.get("category") == null ? null : String.valueOf(b.get("category")), String.valueOf(b.get("kind")),
+                b.get("notes") == null ? null : String.valueOf(b.get("notes")), store == null ? null : String.valueOf(store)),
+                "byModel", ai.modelOn()));
+    }
 
     @GetMapping("/api/commerce/business-types")
     public Map<String, Object> businessTypes() {

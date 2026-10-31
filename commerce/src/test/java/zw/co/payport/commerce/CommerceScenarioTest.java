@@ -474,6 +474,13 @@ class CommerceScenarioTest {
         assertTrue(page("/?t=FOOD").body().contains("Bravo Foods"));
         assertFalse(page("/?t=CLOTHING").body().contains("Bravo Foods"));
         assertTrue(page("/?q=Mazoe").body().contains("Bravo Foods"));
+        // The search box is PayPort AI's assistant: plain words find the item, with a short answer.
+        Res asked = page("/?q=" + URLEncoder.encode("cheap orange please", StandardCharsets.UTF_8));
+        assertTrue(asked.body().contains("PayPort AI") && asked.body().contains("Mazoe orange") && asked.body().contains("lowest price"), asked.body());
+        Res written = api("POST", "/api/commerce/ai/describe", bravo, Map.of("name", "Mazoe orange", "category", "Drinks", "notes", "ice cold, 2 litres"));
+        assertEquals(200, written.status(), written.body());
+        assertTrue(written.data().path("description").asText().contains("Mazoe orange"), written.body());
+        assertEquals(400, api("POST", "/api/commerce/ai/describe", bravo, Map.of("category", "Drinks")).status(), "a name is needed");
         api("PUT", "/api/commerce/store", bravo, Map.of("listed", false));
         assertFalse(page("/").body().contains("Bravo Foods"), "a store can stay out of the directory");
         api("PUT", "/api/commerce/store", bravo, Map.of("listed", true));

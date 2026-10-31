@@ -188,7 +188,9 @@ public class Catalog {
 
     /** Listed, open stores with something on sale, by type; optional search and type filter. */
     public List<Map<String, Object>> directory(String type, String q) {
-        StringBuilder sql = new StringBuilder("SELECT s.id, s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, "
+        StringBuilder sql = new StringBuilder("SELECT s.id, s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, s.cod_enabled, s.delivery_enabled, "
+                + "EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE' AND p.compare_at_minor IS NOT NULL) AS on_sale, "
+                + "(SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND o.payment_status = 'PAID' AND o.paid_at >= NOW() - INTERVAL 30 DAY) AS orders30, "
                 + "(SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE') AS products FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id "
                 + "WHERE s.listed = TRUE AND s.status = 'OPEN' AND m.psp_status = 'ACTIVE' AND EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE')");
         List<Object> args = new ArrayList<>();
@@ -203,6 +205,33 @@ public class Catalog {
         }
         sql.append(" ORDER BY s.name LIMIT 500");
         return jdbc.queryForList(sql.toString(), args.toArray());
+    }
+
+    /** Items on sale in listed, open stores matching the assistant's reading of a question (best matches first). */
+    public List<Map<String, Object>> searchProducts(Ai.Query q, int limit) {
+        if (q.terms().isEmpty()) return List.of();
+        StringBuilder score = new StringBuilder("(0");
+        List<Object> args = new ArrayList<>();
+        StringBuilder any = new StringBuilder("(");
+        for (int i = 0; i < Math.min(q.terms().size(), 24); i++) {
+            String like = "%" + q.terms().get(i).replace("%", "") + "%";
+            score.append(" + CASE WHEN p.name LIKE ? THEN 3 ELSE 0 END + CASE WHEN COALESCE(p.category,'') LIKE ? THEN 2 ELSE 0 END + CASE WHEN COALESCE(p.description,'') LIKE ? THEN 1 ELSE 0 END");
+            args.add(like); args.add(like); args.add(like);
+            any.append(i == 0 ? "" : " OR ").append("p.name LIKE ? OR COALESCE(p.category,'') LIKE ? OR COALESCE(p.description,'') LIKE ? OR s.name LIKE ?");
+        }
+        score.append(")");
+        any.append(")");
+        List<Object> all = new ArrayList<>(args);
+        for (int i = 0; i < Math.min(q.terms().size(), 24); i++) {
+            String like = "%" + q.terms().get(i).replace("%", "") + "%";
+            all.add(like); all.add(like); all.add(like); all.add(like);
+        }
+        String sql = "SELECT p.id, p.slug, p.name, p.price_minor, p.currency, p.image_id, p.compare_at_minor, s.slug AS store_slug, s.name AS store_name, s.cod_enabled, "
+                + score + " AS score FROM products p JOIN stores s ON s.id = p.store_id JOIN merchants m ON m.merchant_id = s.merchant_id "
+                + "WHERE p.status = 'ACTIVE' AND (p.stock IS NULL OR p.stock > 0) AND s.listed = TRUE AND s.status = 'OPEN' AND m.psp_status = 'ACTIVE' AND " + any
+                + (q.delivery() ? " AND s.delivery_enabled = TRUE" : "") + (q.cashOnDelivery() ? " AND s.cod_enabled = TRUE" : "")
+                + " ORDER BY " + (q.cheap() ? "p.price_minor, score DESC" : "score DESC, p.price_minor") + " LIMIT " + Math.max(1, Math.min(limit, 60));
+        return jdbc.queryForList(sql, all.toArray());
     }
 
     public Optional<String> typeName(String type) {
