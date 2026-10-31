@@ -32,6 +32,8 @@ public class CheckoutController {
     private final CheckoutSessionService checkoutSessionService;
     private final MerchantRepository merchantRepository;
     private final zw.co.payport.gateway.repository.TransactionRepository transactionRepository;
+    private final zw.co.payport.gateway.merchant.MerchantPaymentMethods acceptedMethods;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public record PayBody(String customerPhone, String customerEmail, String paymentMethodCode) {}
 
@@ -51,6 +53,10 @@ public class CheckoutController {
             // Public endpoint keyed by a sequential id: never return the full phone number (R3).
             body.put("customerPhone", maskPhone(session.getCustomerPhone()));
             body.put("testMode", !Boolean.TRUE.equals(session.getLivemode()));
+            // Only the methods this merchant accepts; the one the customer chose in the store first.
+            body.put("methods", acceptedMethods.accepted(session.getMerchantId()));
+            body.put("preferredMethod", jdbc.queryForList("SELECT preferred_method FROM checkout_sessions WHERE id = ?", String.class, session.getId())
+                    .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null));
             return ResponseEntity.ok(ApiResponse.success(body, requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("NOT_FOUND", e.getMessage(), requestId(req)));

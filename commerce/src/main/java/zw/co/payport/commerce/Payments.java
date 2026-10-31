@@ -38,6 +38,10 @@ public class Payments {
     private final Psp psp;
     private final Settings settings;
     private final org.springframework.transaction.support.TransactionTemplate tx;
+    @org.springframework.beans.factory.annotation.Autowired Growth growth;
+
+    /** An appointment to book with the order (services): its start (local time) and length. */
+    public record Booking(LocalDateTime start, int minutes) {}
 
     public Payments(JdbcTemplate jdbc, Shop shop, Psp psp, Settings settings, org.springframework.transaction.PlatformTransactionManager txManager) {
         this.jdbc = jdbc;
@@ -80,6 +84,12 @@ public class Payments {
     /** The order, once per idempotency key (a double submit gets the same order back). */
     @Transactional
     public Placed place(NewOrder o) {
+        return place(o, null);
+    }
+
+    /** As above, with an appointment that is held together with the items (and released with them). */
+    @Transactional
+    public Placed place(NewOrder o, Booking booking) {
         if (o.idempotencyKey() == null || !o.idempotencyKey().matches("[A-Za-z0-9_-]{16,64}")) throw new IllegalArgumentException("Please reload the page and try again");
         List<Map<String, Object>> had = jdbc.queryForList("SELECT order_ref FROM orders WHERE idempotency_key = ?", o.idempotencyKey());
         String token = viewToken(o.idempotencyKey());
@@ -100,6 +110,7 @@ public class Payments {
                 }
                 jdbc.update("UPDATE orders SET items_minor = ?, delivery_method = ?, delivery_fee_minor = ?, delivery_address = ? WHERE id = ?",
                         o.items().isEmpty() ? null : itemsMinor, o.deliveryMethod() == null ? "NONE" : o.deliveryMethod(), o.deliveryFeeMinor(), o.deliveryAddress(), id);
+                if (booking != null) growth.pending(id, o.storeId(), o.merchantId(), booking.start(), booking.minutes());
                 String short_ = reserve(id);
                 if (short_ != null) throw new IllegalArgumentException(short_);   // rolls the whole order back
                 shop.event("order.created", o.merchantId(), ref, o.linkId() != null ? "link" : "store");
@@ -118,9 +129,16 @@ public class Payments {
 
     /** After placing: the discount used and how the customer pays. Pay on delivery holds the items until the cash is recorded. */
     public void finish(String ref, boolean cash, String discountCode, long discountMinor) {
-        jdbc.update("UPDATE orders SET pay_method = ?, discount_code = ?, discount_minor = ?, payment_status = CASE WHEN ? THEN 'ON_DELIVERY' ELSE payment_status END, "
+        finish(ref, cash, discountCode, discountMinor, null, null);
+    }
+
+    /** As above, with the customer's payment method choice and delivery area. */
+    public void finish(String ref, boolean cash, String discountCode, long discountMinor, String payChoice, String zone) {
+        jdbc.update("UPDATE orders SET pay_choice = ?, delivery_zone = ? WHERE order_ref = ?", payChoice, zone, ref);
+        int n = jdbc.update("UPDATE orders SET pay_method = ?, discount_code = ?, discount_minor = ?, payment_status = CASE WHEN ? THEN 'ON_DELIVERY' ELSE payment_status END, "
                 + "delivery_status = CASE WHEN ? AND delivery_method <> 'NONE' THEN 'PREPARING' ELSE delivery_status END, updated_at = ? WHERE order_ref = ? AND payment_status = 'NOT_STARTED'",
                 cash ? "CASH" : "ONLINE", discountCode, discountMinor, cash, cash, Shop.now(), ref);
+        if (n > 0 && cash) growth.orderConfirmed(ref);
     }
 
     /** The merchant received the cash for a pay-on-delivery order: it is paid (not through the PSP). */
@@ -170,6 +188,7 @@ public class Payments {
         body.put("merchantId", merchantId);
         body.put("reference", reference);
         body.put("orderRef", ref);
+        if (o.get("pay_choice") != null) body.put("method", o.get("pay_choice"));
         body.put("amountMinor", ((Number) o.get("amount_minor")).longValue());
         body.put("currency", o.get("currency"));
         body.put("description", Shop.clip(o.get("item_name") + (((Number) o.get("quantity")).intValue() > 1 ? " x" + o.get("quantity") : ""), 200));
@@ -249,6 +268,7 @@ public class Payments {
         if ("PAID".equals(next)) {
             shop.event("order.paid", merchantId, String.valueOf(o.get("order_ref")), String.valueOf(o.get("amount_minor")));
             sell(orderId);
+            growth.orderConfirmed(String.valueOf(o.get("order_ref")));
             if (!"NONE".equals(o.get("delivery_method"))) jdbc.update("UPDATE orders SET delivery_status = 'PREPARING' WHERE id = ? AND delivery_status = 'NOT_NEEDED'", orderId);
             // A single-use link is closed once it is paid.
             if (o.get("link_id") != null) jdbc.update("UPDATE links SET status = 'USED', updated_at = ? WHERE id = ? AND reusable = FALSE AND status = 'ACTIVE'",
@@ -265,7 +285,8 @@ public class Payments {
     String reserve(long orderId) {
         List<Map<String, Object>> items = jdbc.queryForList("SELECT i.product_id, i.name, i.quantity, p.stock FROM order_items i JOIN products p ON p.id = i.product_id "
                 + "WHERE i.order_id = ? AND p.stock IS NOT NULL", orderId);
-        if (items.isEmpty()) return null;
+        boolean booked = growth.hasBooking(orderId);
+        if (items.isEmpty() && !booked) return null;
         List<Map<String, Object>> done = new ArrayList<>();
         for (Map<String, Object> it : items) {
             int q = ((Number) it.get("quantity")).intValue();
@@ -276,6 +297,13 @@ public class Payments {
             }
             done.add(it);
         }
+        if (booked) {
+            String taken = growth.hold(orderId);
+            if (taken != null) {
+                for (Map<String, Object> d : done) jdbc.update("UPDATE products SET stock = stock + ? WHERE id = ?", d.get("quantity"), d.get("product_id"));
+                return taken;
+            }
+        }
         jdbc.update("UPDATE orders SET stock_state = 'RESERVED', reserved_until = ? WHERE id = ?",
                 java.sql.Timestamp.valueOf(LocalDateTime.now().plusMinutes(HOLD_MINUTES)), orderId);
         return null;
@@ -283,6 +311,7 @@ public class Payments {
 
     /** Paid: the reservation becomes a sale. If it had been released meanwhile, the items are taken again or the order is flagged. */
     void sell(long orderId) {
+        growth.confirm(orderId);
         if (jdbc.update("UPDATE orders SET stock_state = 'SOLD', reserved_until = NULL WHERE id = ? AND stock_state = 'RESERVED'", orderId) > 0) return;
         if (jdbc.update("UPDATE orders SET stock_state = 'SOLD' WHERE id = ? AND stock_state = 'RELEASED'", orderId) == 0) return;
         boolean short_ = false;
@@ -300,6 +329,7 @@ public class Payments {
     /** Puts reserved (or, for a cancelled paid order, sold) items back on sale, once. */
     void release(long orderId) {
         if (jdbc.update("UPDATE orders SET stock_state = 'RELEASED', reserved_until = NULL WHERE id = ? AND stock_state IN ('RESERVED','SOLD')", orderId) == 0) return;
+        growth.release(orderId);
         for (Map<String, Object> it : jdbc.queryForList("SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL", orderId)) {
             jdbc.update("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL", it.get("quantity"), it.get("product_id"));
         }
@@ -453,6 +483,9 @@ public class Payments {
         v.put("orderStatus", o.get("order_status"));
         v.put("paymentStatus", o.get("payment_status"));
         v.put("refundStatus", o.get("refund_status"));
+        v.put("payChoice", o.get("pay_choice"));
+        v.put("deliveryZone", o.get("delivery_zone"));
+        v.put("booking", growth.bookingOf(((Number) o.get("id")).longValue()).orElse(null));
         v.put("refundedMinor", o.get("refunded_minor"));
         v.put("source", o.get("link_id") != null ? "LINK" : "STORE");
         v.put("deliveryMethod", o.get("delivery_method"));
@@ -526,6 +559,7 @@ public class Payments {
         jdbc.update("UPDATE orders SET delivery_status = ?, order_status = CASE WHEN ? THEN 'FULFILLED' ELSE order_status END, updated_at = ? WHERE id = ?",
                 s, done, Shop.now(), o.get("id"));
         shop.event("delivery." + s.toLowerCase(Locale.ROOT), merchantId, ref, method);
+        growth.deliveryStep(ref, s);
         return merchantOrder(merchantId, ref);
     }
 

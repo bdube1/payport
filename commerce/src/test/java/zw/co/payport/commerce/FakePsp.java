@@ -28,7 +28,8 @@ class FakePsp {
     final AtomicLong ids = new AtomicLong(500);
     final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();   // merchant:reference
     final List<Map<String, Object>> events = new ArrayList<>();
-    final Map<String, Long> users = Map.of("portal-token-A", 1001L, "portal-token-B", 2002L);
+    final Map<String, Long> users = Map.of("portal-token-A", 1001L, "portal-token-B", 2002L, "portal-token-C", 3003L);
+    volatile String lastMethod;
 
     FakePsp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -69,6 +70,17 @@ class FakePsp {
         event("refund.completed", merchant, reference);
     }
 
+    /** The methods each merchant accepts (tests switch them). */
+    final Map<Long, List<String>> accepted = new ConcurrentHashMap<>();
+    final List<String> messages = java.util.Collections.synchronizedList(new ArrayList<>());
+
+    List<Map<String, Object>> methods(long m) {
+        List<String> on = accepted.getOrDefault(m, List.of());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String c : List.of("ECOCASH", "ONEMONEY", "OMARI", "INNBUCKS", "ZIMSWITCH")) out.add(Map.of("code", c, "name", c, "enabled", on.contains(c)));
+        return out;
+    }
+
     void handle(HttpExchange x) throws IOException {
         try {
             if (down) {
@@ -80,8 +92,8 @@ class FakePsp {
                 String auth = x.getRequestHeaders().getFirst("Authorization");
                 Long m = auth == null ? null : users.get(auth.replace("Bearer ", ""));
                 if (m == null) { send(x, 401, Map.of("success", false, "error", Map.of("message", "Sign in"))); return; }
-                send(x, 200, Map.of("success", true, "data", Map.of("merchantId", m, "businessName", m == 1001L ? "Alpha Crafts" : "Bravo Foods", "status", "ACTIVE",
-                        "currencies", List.of("USD", "ZWG"), "userId", 7, "userName", "Owner", "role", "OWNER")));
+                send(x, 200, Map.of("success", true, "data", Map.of("merchantId", m, "businessName", m == 1001L ? "Alpha Crafts" : m == 2002L ? "Bravo Foods" : "Charlie Salon", "status", "ACTIVE",
+                        "currencies", List.of("USD", "ZWG"), "userId", 7, "userName", "Owner", "role", "OWNER", "methods", methods(m))));
                 return;
             }
             if (!KEY.equals(x.getRequestHeaders().getFirst("X-PayPort-Commerce-Key"))) { send(x, 403, Map.of("success", false, "error", Map.of("message", "Wrong service key"))); return; }
@@ -99,6 +111,7 @@ class FakePsp {
                     n.put("amountMinor", b.path("amountMinor").asLong());
                     n.put("currency", b.path("currency").asText());
                     n.put("checkoutUrl", "https://app.test/checkout/" + id);
+                    lastMethod = b.path("method").asText(null);
                     n.put("refunds", new ArrayList<Map<String, Object>>());
                     return n;
                 });
@@ -123,6 +136,17 @@ class FakePsp {
                 Map<String, Object> out = new LinkedHashMap<>(s);
                 out.put("refundId", id);
                 send(x, 200, Map.of("success", true, "data", out));
+                return;
+            }
+            if (method.equals("GET") && path.startsWith("/api/v1/commerce/merchants/")) {
+                long m = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
+                send(x, 200, Map.of("success", true, "data", Map.of("merchantId", m, "status", "ACTIVE", "methods", methods(m))));
+                return;
+            }
+            if (method.equals("POST") && path.equals("/api/v1/commerce/messages")) {
+                JsonNode b = json.readTree(x.getRequestBody());
+                messages.add(b.path("to").asText() + "|" + b.path("text").asText());
+                send(x, 200, Map.of("success", true, "data", Map.of("queued", true)));
                 return;
             }
             if (method.equals("GET") && path.equals("/api/v1/commerce/events")) {

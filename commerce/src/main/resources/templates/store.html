@@ -9,6 +9,7 @@
   <section class="hero">
     <h1 th:text="${store.name}">Store</h1>
     <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
+    <p th:if="${store.rating != null}" th:text="${store.rating}" class="stars"></p>
     <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
     <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
   </section>
@@ -40,6 +41,7 @@
         <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
         <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
         <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
+        <span th:if="${p.rating != null}" class="stars small card-stars" th:text="${p.rating}"></span>
       </a>
       </li>
     </ul>
@@ -55,6 +57,7 @@
         <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
         <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
         <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
+        <span th:if="${p.rating != null}" class="stars small card-stars" th:text="${p.rating}"></span>
       </a>
     </li>
   </ul>

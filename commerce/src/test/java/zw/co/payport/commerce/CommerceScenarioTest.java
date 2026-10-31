@@ -534,4 +534,126 @@ class CommerceScenarioTest {
         assertEquals("NONE", jdbc.queryForObject("SELECT delivery_method FROM orders WHERE idempotency_key = ?", String.class, sk));
         assertEquals(2_000L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE idempotency_key = ?", Long.class, sk));
     }
+
+    String waitForMessage(String startsWith) throws InterruptedException {
+        for (int i = 0; i < 50; i++) {
+            synchronized (PSP.messages) {
+                for (String m : PSP.messages) if (m.startsWith(startsWith)) return m;
+            }
+            Thread.sleep(100);
+        }
+        return null;
+    }
+
+    static String firstSlot(String html) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<option value=\"(20\\d\\d-\\d\\d-\\d\\dT\\d\\d:\\d\\d)\"").matcher(html);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** Owner, 31 Oct 2026: payment options, reviews from buyers, delivery areas, bookings in opening hours, order texts. */
+    @Test
+    void growth_methodsChosenByMerchant_bookingsHeldAndConfirmed_reviewsFromBuyers_deliveryAreas_orderTexts() throws Exception {
+        PSP.down = false;
+        String charlie = signIn("portal-token-C"), alpha = signIn("portal-token-A");
+        PSP.accepted.put(3003L, java.util.List.of("ECOCASH", "ZIMSWITCH"));
+        Res methods = api("POST", "/api/commerce/methods/refresh", charlie, null);
+        assertEquals(200, methods.status(), methods.body());
+        assertTrue(methods.body().contains("ECOCASH") && methods.body().contains("ZIMSWITCH") && !methods.body().contains("ONEMONEY"), methods.body());
+
+        assertEquals(200, api("PUT", "/api/commerce/store", charlie, Map.of("businessType", "SERVICES", "pickupEnabled", true, "deliveryEnabled", true,
+                "deliveryFeeMinor", 500, "alertsEnabled", true, "customerSms", true)).status());
+        java.util.List<Map<String, Object>> days = new java.util.ArrayList<>();
+        for (int d = 1; d <= 7; d++) days.add(Map.of("weekday", d, "opens", "06:00", "closes", "20:00"));
+        assertEquals(400, api("PUT", "/api/commerce/hours", charlie, Map.of("staff", 1, "days", java.util.List.of(Map.of("weekday", 1, "opens", "17:00", "closes", "08:00")))).status());
+        Res hours = api("PUT", "/api/commerce/hours", charlie, Map.of("staff", 1, "days", days));
+        assertEquals(200, hours.status(), hours.body());
+
+        Res cut = api("POST", "/api/commerce/products", charlie, Map.of("name", "Haircut", "priceMinor", 1_000, "currency", "USD", "kind", "SERVICE", "durationMin", 60));
+        assertEquals(200, cut.status(), cut.body());
+        assertEquals(60, cut.data().path("durationMin").asInt());
+        Res shampoo = api("POST", "/api/commerce/products", charlie, Map.of("name", "Argan shampoo", "priceMinor", 500, "currency", "USD", "stock", 5));
+        String cutUrl = cut.data().path("url").asText().replace("https://store.test", "");
+        String storePath = cutUrl.substring(0, cutUrl.lastIndexOf('/'));
+
+        // Delivery areas are the merchant's own.
+        Res zones = api("POST", "/api/commerce/zones", charlie, Map.of("name", "Avondale", "feeMinor", 200));
+        assertEquals(200, zones.status(), zones.body());
+        api("POST", "/api/commerce/zones", charlie, Map.of("name", "Borrowdale", "feeMinor", 400, "freeFromMinor", 1_000));
+        long avondale = zones.data().get(0).path("id").asLong();
+        assertEquals(404, api("DELETE", "/api/commerce/zones/" + avondale, alpha, null).status());
+
+        // A booking: only free times inside the opening hours; the time is held with the order.
+        String c1 = form(cutUrl + "/buy", Map.of("qty", "1"), null).cookie();
+        Res cart = page(storePath + "/cart", c1);
+        assertTrue(cart.body().contains("Appointment time") && cart.body().contains("EcoCash") && cart.body().contains("Card") && !cart.body().contains("OneMoney"), cart.body());
+        String slot = firstSlot(cart.body());
+        assertNotNull(slot, "free times are offered");
+        String k1 = key();
+        assertTrue(form(storePath + "/checkout", Map.of("k", k1, "name", "Rumbi", "phone", "0775000666", "pay", "ZIMSWITCH"), c1).body().contains("Choose a time"));
+        Res booked = form(storePath + "/checkout", Map.of("k", k1, "name", "Rumbi", "phone", "0775000666", "pay", "ZIMSWITCH", "slot", slot), c1);
+        assertEquals(302, booked.status(), booked.body());
+        assertEquals("ZIMSWITCH", PSP.lastMethod, "the customer's choice goes to the payment page");
+        String ref = orderRefOf(k1);
+        long orderId = jdbc.queryForObject("SELECT id FROM orders WHERE order_ref = ?", Long.class, ref);
+        assertEquals("HELD", jdbc.queryForObject("SELECT status FROM bookings WHERE order_id = ?", String.class, orderId));
+        // The same time for a second customer (one person serving): no longer offered, and refused if sent anyway.
+        String c2 = form(cutUrl + "/buy", Map.of("qty", "1"), null).cookie();
+        assertNotEquals(slot, firstSlot(page(storePath + "/cart", c2).body()), "a taken time is not offered");
+        String k2 = key();
+        assertTrue(form(storePath + "/checkout", Map.of("k", k2, "name", "Tino", "phone", "0775000777", "slot", slot), c2).body().contains("no longer free"));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE idempotency_key = ?", Integer.class, k2));
+
+        // Paid: the booking is confirmed, the merchant and the customer get a text.
+        PSP.set(3003, ref + "-1", "PAID", "PAID");
+        reader.poll();
+        assertEquals("CONFIRMED", jdbc.queryForObject("SELECT status FROM bookings WHERE order_id = ?", String.class, orderId));
+        String alert = waitForMessage("MERCHANT|New order " + ref);
+        assertNotNull(alert, "merchant alert: " + PSP.messages);
+        assertNotNull(waitForMessage("CUSTOMER|Thank you! Your order " + ref), "customer text: " + PSP.messages);
+        assertTrue(api("GET", "/api/commerce/bookings", charlie, null).body().contains(ref));
+        assertFalse(api("GET", "/api/commerce/bookings", alpha, null).body().contains(ref));
+
+        // A second booking whose payment fails gives its time back.
+        String c3 = form(cutUrl + "/buy", Map.of("qty", "1"), null).cookie();
+        String slot3 = firstSlot(page(storePath + "/cart", c3).body());
+        String k3 = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k3, "name", "Nyasha", "phone", "0775000888", "slot", slot3), c3).status());
+        String ref3 = orderRefOf(k3);
+        PSP.set(3003, ref3 + "-1", "FAILED", "FAILED");
+        reader.poll();
+        assertEquals("RELEASED", jdbc.queryForObject("SELECT b.status FROM bookings b JOIN orders o ON o.id = b.order_id WHERE o.order_ref = ?", String.class, ref3));
+
+        // Reviews: only from the buyer's own paid order, once per item; the merchant can reply or hide.
+        String token = payments.viewToken(k1);
+        Res orderPage = page("/o/" + ref + "?t=" + token);
+        assertTrue(orderPage.body().contains("Review your order"), orderPage.body());
+        long cutId = cut.data().path("id").asLong();
+        Res reviewed = form("/o/" + ref + "/review", Map.of("t", token, "product", String.valueOf(cutId), "rating", "5", "comment", "Great cut", "name", "Rumbi"));
+        assertTrue(reviewed.body().contains("Thank you for your review"), reviewed.body());
+        assertTrue(form("/o/" + ref + "/review", Map.of("t", token, "product", String.valueOf(cutId), "rating", "4")).body().contains("already reviewed"));
+        assertTrue(form("/o/" + ref3 + "/review", Map.of("t", payments.viewToken(k3), "product", String.valueOf(cutId), "rating", "1")).body().contains("once your order is paid"));
+        assertEquals(404, form("/o/" + ref + "/review", Map.of("t", "wrong-token", "product", String.valueOf(cutId), "rating", "1")).status());
+        Res product = page(cutUrl);
+        assertTrue(product.body().contains("Great cut") && product.body().contains("★ 5.0 (1)"), product.body());
+        long reviewId = api("GET", "/api/commerce/reviews", charlie, null).data().get(0).path("id").asLong();
+        assertEquals(404, api("POST", "/api/commerce/reviews/" + reviewId, alpha, Map.of("hidden", true)).status());
+        assertEquals(200, api("POST", "/api/commerce/reviews/" + reviewId, charlie, Map.of("reply", "Thank you, see you soon")).status());
+        assertTrue(page(cutUrl).body().contains("see you soon"));
+        api("POST", "/api/commerce/reviews/" + reviewId, charlie, Map.of("hidden", true));
+        assertFalse(page(cutUrl).body().contains("Great cut"), "hidden by the merchant");
+
+        // Delivery areas: the area's fee, chosen by the customer.
+        String shampooUrl = shampoo.data().path("url").asText().replace("https://store.test", "");
+        String c4 = form(shampooUrl + "/buy", Map.of("qty", "1"), null).cookie();
+        assertTrue(page(storePath + "/cart", c4).body().contains("Avondale"));
+        String k4 = key();
+        Map<String, String> f = new java.util.HashMap<>(Map.of("k", k4, "method", "DELIVERY", "name", "Kuda", "phone", "0775000999", "address", "5 Churchill Ave, Harare", "pay", "ECOCASH"));
+        assertTrue(form(storePath + "/checkout", f, c4).body().contains("delivery area"));
+        f.put("zone", String.valueOf(avondale));
+        assertEquals(302, form(storePath + "/checkout", f, c4).status());
+        Map<String, Object> o4 = jdbc.queryForMap("SELECT * FROM orders WHERE idempotency_key = ?", k4);
+        assertEquals("Avondale", o4.get("delivery_zone"));
+        assertEquals(700L, ((Number) o4.get("amount_minor")).longValue());
+        assertEquals("ECOCASH", o4.get("pay_choice"));
+    }
 }

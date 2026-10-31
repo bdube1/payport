@@ -34,6 +34,8 @@ public class MerchantApi {
     private final Domains domains;
     private final Insights insights;
     private final Catalog catalog;
+    @org.springframework.beans.factory.annotation.Autowired Options options;
+    @org.springframework.beans.factory.annotation.Autowired Growth growth;
 
     public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
         this.catalog = catalog;
@@ -108,6 +110,7 @@ public class MerchantApi {
         List<String> ccy = new ArrayList<>();
         who.path("currencies").forEach(c -> ccy.add(c.asText()));
         shop.rememberMerchant(merchantId, who.path("businessName").asText("Merchant " + merchantId), ccy, who.path("status").asText("ACTIVE"));
+        options.remember(merchantId, who.path("methods"));
         Tokens.Merchant m = new Tokens.Merchant(merchantId, who.path("userId").asLong(0), who.path("role").asText("OWNER"), who.path("userName").asText(""));
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("token", tokens.issue(m));
@@ -124,6 +127,7 @@ public class MerchantApi {
         v.put("store", shop.store(me(req).merchantId()));
         v.put("paymentsOnline", reader.pspUp());
         v.put("currencies", shop.currencies(me(req).merchantId()));
+        v.put("methods", options.choices(me(req).merchantId()));
         return ok(v);
     }
 
@@ -222,6 +226,45 @@ public class MerchantApi {
         catalog.setDiscountActive(manager(req).merchantId(), id, Boolean.TRUE.equals(b.get("active")));
         return ok(catalog.discounts(me(req).merchantId()));
     }
+
+    // ─── payment options, reviews, delivery areas, hours and bookings ─────────
+
+    /** After the merchant changed its payment methods in the portal: ask PayPort Payments again. */
+    @PostMapping("/api/commerce/methods/refresh")
+    public Map<String, Object> refreshMethods(HttpServletRequest req) {
+        long m = me(req).merchantId();
+        options.refresh(m);
+        return ok(options.choices(m));
+    }
+
+    @GetMapping("/api/commerce/reviews")
+    public Map<String, Object> reviews(HttpServletRequest req) { return ok(growth.merchantReviews(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/reviews/{id}")
+    public Map<String, Object> review(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(growth.updateReview(manager(req).merchantId(), id, b));
+    }
+
+    @GetMapping("/api/commerce/zones")
+    public Map<String, Object> zones(HttpServletRequest req) { return ok(growth.zones(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/zones")
+    public Map<String, Object> addZone(@RequestBody Map<String, Object> b, HttpServletRequest req) { return ok(growth.addZone(manager(req).merchantId(), b)); }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/commerce/zones/{id}")
+    public Map<String, Object> removeZone(@PathVariable long id, HttpServletRequest req) {
+        growth.removeZone(manager(req).merchantId(), id);
+        return ok(growth.zones(me(req).merchantId()));
+    }
+
+    @GetMapping("/api/commerce/hours")
+    public Map<String, Object> hours(HttpServletRequest req) { return ok(growth.hours(me(req).merchantId())); }
+
+    @PutMapping("/api/commerce/hours")
+    public Map<String, Object> setHours(@RequestBody Map<String, Object> b, HttpServletRequest req) { return ok(growth.setHours(manager(req).merchantId(), b)); }
+
+    @GetMapping("/api/commerce/bookings")
+    public Map<String, Object> bookings(HttpServletRequest req) { return ok(growth.merchantBookings(me(req).merchantId())); }
 
     @GetMapping("/api/commerce/business-types")
     public Map<String, Object> businessTypes() {

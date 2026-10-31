@@ -46,11 +46,14 @@ public class CommerceFacade {
     private final JdbcTemplate jdbc;
     private final String key;
     private final String consumerBase;
+    private final zw.co.payport.gateway.merchant.MerchantPaymentMethods methods;
 
     public CommerceFacade(CheckoutSessionService checkouts, CheckoutSessionRepository sessions, MerchantRepository merchants, RefundService refunds,
                           PlatformEvents events, TransactionOutcomeService outcomes, JdbcTemplate jdbc,
                           @Value("${payport.commerce.key:}") String key,
-                          @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase) {
+                          @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase,
+                          zw.co.payport.gateway.merchant.MerchantPaymentMethods methods) {
+        this.methods = methods;
         this.checkouts = checkouts;
         this.sessions = sessions;
         this.merchants = merchants;
@@ -77,7 +80,7 @@ public class CommerceFacade {
     }
 
     public record NewCheckout(Long merchantId, String reference, Long amountMinor, String currency, String description,
-                              String successUrl, String cancelUrl, String orderRef) {}
+                              String successUrl, String cancelUrl, String orderRef, String method) {}
 
     /** One checkout per merchant and reference: a retry returns the same checkout instead of a second one. */
     public Map<String, Object> checkout(NewCheckout b) {
@@ -91,8 +94,11 @@ public class CommerceFacade {
         String description = b.description() == null ? null : b.description().length() > 200 ? b.description().substring(0, 200) : b.description();
         CheckoutSession s;
         try {
+            // Store payments are test mode (sandbox) until PayPort switches them to live with the owner's approval.
             s = checkouts.createSession(m, null, new CheckoutSessionService.CreateSessionRequest(ref, b.amountMinor(), b.currency(), description,
-                    null, null, b.successUrl(), b.cancelUrl(), meta));
+                    null, null, b.successUrl(), b.cancelUrl(), meta), methods.commerceLive());
+            String pick = methods.preferred(m.getId(), b.method());
+            if (pick != null) jdbc.update("UPDATE checkout_sessions SET preferred_method = ? WHERE id = ?", pick, s.getId());
         } catch (CheckoutSessionService.CurrencyNotEnabledException e) {
             throw new IllegalStateException(e.getMessage());
         } catch (RuntimeException e) {
@@ -142,8 +148,8 @@ public class CommerceFacade {
         }
         v.put("outcome", outcome);
         List<Map<String, Object>> rf = jdbc.queryForList("SELECT r.id, r.amount_cents AS amountMinor, r.reversal_ref AS reversalRef, "
-                + "COALESCE(v.status, 'AWAITING_PAYOUT') AS payoutStatus, r.created_at AS createdAt FROM refunds r "
-                + "LEFT JOIN reversal_requests v ON v.reversal_ref = r.reversal_ref WHERE r.checkout_session_id = ? AND r.status = 'COMPLETED' ORDER BY r.id", s.getId());
+                + "COALESCE(v.status, CASE WHEN r.reversal_ref IS NULL AND ? = FALSE THEN 'EXECUTED' ELSE 'AWAITING_PAYOUT' END) AS payoutStatus, r.created_at AS createdAt FROM refunds r "
+                + "LEFT JOIN reversal_requests v ON v.reversal_ref = r.reversal_ref WHERE r.checkout_session_id = ? AND r.status = 'COMPLETED' ORDER BY r.id", Boolean.TRUE.equals(s.getLivemode()), s.getId());
         v.put("refunds", rf);
         return v;
     }
@@ -179,9 +185,39 @@ public class CommerceFacade {
         v.put("businessName", m.getBusinessName());
         v.put("status", m.getStatus());
         v.put("defaultCurrency", m.getDefaultCurrency());
+        v.put("methods", methods.forMerchant(m.getId()));
+        v.put("storePaymentsLive", methods.commerceLive());
         v.put("currencies", jdbc.queryForList("SELECT DISTINCT currency FROM merchant_enablements WHERE merchant_id = ? AND status = 'ENABLED' ORDER BY currency",
                 String.class, m.getId()));
         return v;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.service.SmsNotificationService sms;
+
+    static final int MESSAGES_PER_DAY = 500;
+
+    public record NewMessage(Long merchantId, String to, String phone, String text, String reference) {}
+
+    /**
+     * A text about a store order: to the merchant (its registered contact phone; Commerce never chooses that number) or
+     * to the customer who placed the order. Short, capped per merchant per day; the number is not stored.
+     */
+    public Map<String, Object> message(NewMessage b) {
+        Merchant m = merchant(b.merchantId());
+        if (!"ACTIVE".equals(m.getStatus())) throw new IllegalStateException("This merchant cannot send messages at the moment");
+        String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
+        if (text.isEmpty() || text.length() > 300) throw new IllegalArgumentException("A message is 1 to 300 characters");
+        boolean toMerchant = "MERCHANT".equals(b.to());
+        String phone = toMerchant ? m.getContactPhone() : b.phone() == null ? null : b.phone().replaceAll("[\\s()-]", "");
+        if (phone == null || !phone.matches("\\+?[0-9]{9,15}")) throw new IllegalArgumentException(toMerchant ? "The merchant has no contact phone" : "Invalid phone number");
+        Integer today = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = ? AND created_at >= CURDATE()", Integer.class, m.getId());
+        if (today != null && today >= MESSAGES_PER_DAY) throw new IllegalStateException("Today's message limit for this store has been reached");
+        String ref = b.reference() == null ? null : b.reference().replaceAll("[^A-Za-z0-9_-]", "");
+        if (ref != null && ref.length() > 60) ref = ref.substring(0, 60);
+        jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (?,?,?,NOW(6))", m.getId(), toMerchant ? "MERCHANT" : "CUSTOMER", ref);
+        if (sms != null) sms.sendText(phone, text, ref == null ? "STORE" : ref, toMerchant ? "STORE_ORDER_ALERT" : "STORE_ORDER_UPDATE");
+        return Map.of("queued", true);
     }
 
     /** For PayPort Commerce's sign-in: who the merchant user behind a merchant portal token is. */
