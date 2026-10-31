@@ -102,6 +102,32 @@ public class Carts {
         return Optional.of(new View(c.get(), ccy, lines, total, count, ok && !lines.isEmpty()));
     }
 
+    /** The same view for an order made in a channel (app, WhatsApp, USSD): product id to quantity, this store's products only. */
+    public View of(long storeId, Map<Long, Integer> quantities) {
+        List<Line> lines = new ArrayList<>();
+        long total = 0;
+        int count = 0;
+        boolean ok = !quantities.isEmpty();
+        java.util.Set<String> ccys = new java.util.HashSet<>();
+        for (Map.Entry<Long, Integer> e : quantities.entrySet()) {
+            int q = e.getValue() == null ? 0 : e.getValue();
+            if (q < 1 || q > 50) throw new IllegalArgumentException("Choose a quantity from 1 to 50");
+            Map<String, Object> r = jdbc.queryForList("SELECT id, name, slug, image_id, price_minor, currency, stock, status, kind FROM products WHERE id = ? AND store_id = ?",
+                    e.getKey(), storeId).stream().findFirst().orElseThrow(() -> new IllegalArgumentException("That item is not in this store"));
+            long unit = ((Number) r.get("price_minor")).longValue();
+            Integer stock = r.get("stock") == null ? null : ((Number) r.get("stock")).intValue();
+            String problem = !"ACTIVE".equals(r.get("status")) ? "No longer available" : stock != null && stock == 0 ? "Sold out" : stock != null && q > stock ? "Only " + stock + " left" : null;
+            if (problem != null) ok = false;
+            ccys.add((String) r.get("currency"));
+            lines.add(new Line(((Number) r.get("id")).longValue(), (String) r.get("name"), (String) r.get("slug"), r.get("image_id") == null ? null : "/img/" + r.get("image_id"),
+                    unit, q, stock, problem, "SERVICE".equals(r.get("kind"))));
+            total += unit * q;
+            count += q;
+        }
+        if (ccys.size() > 1) throw new IllegalArgumentException("Order items in one currency at a time");
+        return new View(0, ccys.isEmpty() ? null : ccys.iterator().next(), lines, total, count, ok);
+    }
+
     public int count(long storeId, String token) {
         return find(storeId, token).map(id -> jdbc.queryForObject("SELECT COALESCE(SUM(quantity), 0) FROM cart_items WHERE cart_id = ?", Integer.class, id)).orElse(0);
     }

@@ -119,6 +119,9 @@ public class SecurityConfig {
                         // PayPort Commerce, server to server: the service key is checked by CommerceFacade (closed without one).
                         .requestMatchers(HttpMethod.GET, "/api/v1/commerce/events", "/api/v1/commerce/checkouts/*/*", "/api/v1/commerce/merchants/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds", "/api/v1/commerce/messages").permitAll()
+                        // The PayPort Store in the app: browsing and prices are public; ordering needs a customer login (StoreController).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/stores", "/api/v1/store/stores/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/store/stores/*/slots", "/api/v1/store/quote").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()
 

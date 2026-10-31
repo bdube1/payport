@@ -153,6 +153,24 @@ public class Payments {
         return merchantOrder(merchantId, ref);
     }
 
+    /** Which channel the order came from (web unless a channel says otherwise). */
+    public void channel(String ref, String channel) {
+        jdbc.update("UPDATE orders SET channel = ? WHERE order_ref = ?", channel, ref);
+    }
+
+    /** The PSP checkout of the order's current payment try (what a channel pays). */
+    public Long lastSessionId(String ref) {
+        return jdbc.queryForList("SELECT a.psp_session_id FROM order_attempts a JOIN orders o ON o.id = a.order_id WHERE o.order_ref = ? ORDER BY a.id DESC LIMIT 1",
+                Long.class, ref).stream().findFirst().orElse(null);
+    }
+
+    /** Recent orders placed with this phone number (the last nine digits), newest first. */
+    public List<Map<String, Object>> ordersByPhone(String phone, int limit) {
+        String d = phone == null ? "" : phone.replaceAll("\\D", "");
+        if (d.length() < 9) return List.of();
+        return jdbc.queryForList("SELECT * FROM orders WHERE store_id IS NOT NULL AND customer_phone LIKE ? ORDER BY id DESC LIMIT ?", "%" + d.substring(d.length() - 9), Math.min(limit, 50));
+    }
+
     /** The customer's view of an order needs the token from their link (orders cannot be looked up by number alone). */
     public Optional<Map<String, Object>> orderForCustomer(String ref, String token) {
         if (token == null || token.isBlank()) return Optional.empty();

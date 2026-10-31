@@ -1798,6 +1798,34 @@
    "path": "/api/v1/session-timeouts"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/store/orders"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/orders"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/orders/{ref}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/quote"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores/{slug}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/stores/{slug}/slots"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/transactions/initiate"
   },

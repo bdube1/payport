@@ -663,4 +663,64 @@ class CommerceScenarioTest {
         assertEquals(700L, ((Number) o4.get("amount_minor")).longValue());
         assertEquals("ECOCASH", o4.get("pay_choice"));
     }
+
+    Res channel(String method, String path, Object body, String key) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30)).header("Content-Type", "application/json");
+        if (key != null) b.header("X-PayPort-Commerce-Key", key);
+        b.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+        HttpResponse<String> r = HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        return new Res(r.statusCode(), r.body(), null);
+    }
+
+    /** Owner, 31 Oct 2026: the app, WhatsApp and USSD order from the same stores, with the same rules, through the PSP. */
+    @Test
+    void channels_sameStoresAndRules_orderPlacedLikeTheWeb_paidOnThePspCheckout() throws Exception {
+        PSP.down = false;
+        String bravo = signIn("portal-token-B");
+        api("PUT", "/api/commerce/store", bravo, Map.of("pickupEnabled", true, "codEnabled", true, "listed", true));
+        Res p = api("POST", "/api/commerce/products", bravo, Map.of("name", "Chicken and chips", "priceMinor", 450, "currency", "USD", "stock", 3));
+        long pid = p.data().path("id").asLong();
+        String slug = p.data().path("url").asText().replaceAll(".*/s/([^/]+)/.*", "$1");
+        assertEquals(403, channel("GET", "/api/channel/stores", null, null).status(), "service key only");
+        assertEquals(403, channel("GET", "/api/channel/stores", null, "wrong").status());
+        Res stores = channel("GET", "/api/channel/stores", null, FakePsp.KEY);
+        assertEquals(200, stores.status(), stores.body());
+        assertTrue(stores.body().contains(slug));
+        Res one = channel("GET", "/api/channel/stores/" + slug, null, FakePsp.KEY);
+        assertTrue(one.body().contains("Chicken and chips") && one.data().path("payOnDelivery").asBoolean(), one.body());
+
+        Map<String, Object> base = new java.util.LinkedHashMap<>(Map.of("store", slug, "items", java.util.List.of(Map.of("productId", pid, "quantity", 2)),
+                "method", "PICKUP", "name", "Chipo", "phone", "+263774111222", "channel", "USSD"));
+        Res quote = channel("POST", "/api/channel/quote", base, FakePsp.KEY);
+        assertEquals(900, quote.data().path("totalMinor").asLong(), quote.body());
+        Map<String, Object> tooMany = new java.util.LinkedHashMap<>(base);
+        tooMany.put("items", java.util.List.of(Map.of("productId", pid, "quantity", 5)));
+        assertTrue(channel("POST", "/api/channel/quote", tooMany, FakePsp.KEY).body().contains("Only 3 left"), "same stock rules as the web");
+
+        Map<String, Object> cash = new java.util.LinkedHashMap<>(base);
+        cash.put("pay", "CASH");
+        cash.put("key", key());
+        Res placed = channel("POST", "/api/channel/orders", cash, FakePsp.KEY);
+        assertEquals(200, placed.status(), placed.body());
+        String ref = placed.data().path("orderRef").asText();
+        assertEquals("ON_DELIVERY", placed.data().path("paymentStatus").asText());
+        assertEquals("USSD", jdbc.queryForObject("SELECT channel FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals(1, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, pid), "held like a web order");
+        assertEquals(ref, channel("POST", "/api/channel/orders", cash, FakePsp.KEY).data().path("orderRef").asText(), "the same key gives the same order");
+
+        Map<String, Object> online = new java.util.LinkedHashMap<>(base);
+        online.put("items", java.util.List.of(Map.of("productId", pid, "quantity", 1)));
+        online.put("key", key());
+        online.put("channel", "APP");
+        Res paid = channel("POST", "/api/channel/orders", online, FakePsp.KEY);
+        assertEquals(200, paid.status(), paid.body());
+        assertTrue(paid.data().path("checkoutSessionId").asLong() > 0, "the PSP checkout the channel pays: " + paid.body());
+        String ref2 = paid.data().path("orderRef").asText();
+        PSP.set(2002, ref2 + "-1", "PAID", "PAID");
+        reader.poll();
+        Res mine = channel("GET", "/api/channel/orders?phone=0774111222", null, FakePsp.KEY);
+        assertTrue(mine.body().contains(ref) && mine.body().contains(ref2), mine.body());
+        assertEquals("PAID", channel("GET", "/api/channel/orders/" + ref2 + "?phone=%2B263774111222", null, FakePsp.KEY).data().path("paymentStatus").asText());
+        assertEquals(404, channel("GET", "/api/channel/orders/" + ref2 + "?phone=0779999999", null, FakePsp.KEY).status(), "only the phone that ordered");
+    }
 }
