@@ -2,14 +2,45 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PayPort Store</title>
+  <title th:text="${type != null} ? ${type} + ' | PayPort Store' : 'PayPort Store'">PayPort Store</title>
+  <meta name="description" content="Shops, food, drinks, clothing and services from PayPort merchants.">
   <link rel="stylesheet" href="/assets/store.css">
 </head>
-<body>
-<main class="wrap narrow center">
-  <h1>PayPort Store</h1>
-  <p class="muted">Shops and payment links from PayPort merchants.</p>
-  <p><a class="pay link-btn" href="https://www.payport.africa">payport.africa</a></p>
+<body class="dir">
+<header class="top">
+  <a class="brand" href="/"><span>PayPort Store</span></a>
+</header>
+<main class="wrap">
+  <section class="dir-hero">
+    <h1>Shop local, pay with PayPort</h1>
+    <form method="get" action="/" class="search" role="search">
+      <input type="hidden" name="t" th:if="${param.t != null}" th:value="${param.t}">
+      <input name="q" th:value="${q}" placeholder="Search stores and products" aria-label="Search stores and products" maxlength="80">
+    </form>
+  </section>
+  <nav th:if="${!#lists.isEmpty(types)}" class="chips">
+    <a href="/" th:classappend="${type == null} ? 'on'">All</a>
+    <a th:each="t : ${types}" th:href="@{/(t=${t.code})}" th:classappend="${t.on} ? 'on'">
+      <span th:text="${t.name}">Food</span> <span class="count" th:text="${t.count}">3</span></a>
+  </nav>
+  <p th:if="${q != null}" class="muted small"><span th:text="${#lists.size(stores)} + ' found for “' + ${q} + '”'"></span> · <a href="/">Show all</a></p>
+  <p th:if="${#lists.isEmpty(stores)}" class="muted">No stores here yet.</p>
+  <ul class="stores">
+    <li th:each="s : ${stores}">
+      <a th:href="${s.url}" class="store-card">
+        <img th:if="${s.banner != null}" th:src="${s.banner}" alt="" loading="lazy" class="store-banner">
+        <div th:if="${s.banner == null}" class="store-banner blank"></div>
+        <div class="store-body">
+          <img th:if="${s.logo != null}" th:src="${s.logo}" alt="" class="logo">
+          <div class="store-text">
+            <strong th:text="${s.name}">Store</strong>
+            <span class="muted small" th:text="${s.type} + ' · ' + ${s.products} + (${s.products == 1} ? ' item' : ' items')">Food · 4 items</span>
+            <span th:if="${s.line != null}" class="desc-line show" th:text="${s.line}"></span>
+          </div>
+        </div>
+      </a>
+    </li>
+  </ul>
 </main>
 <footer th:replace="~{fragments :: foot}"></footer>
 </body>

@@ -103,3 +103,26 @@ input{background:#0F1513;border-color:#33413A}.pic,.hero-pic{background:#1F2A26}
 .search input{max-width:420px}
 .also{margin-top:24px}
 .also .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+/* Store builder: announcement, featured, sale prices, the PayPort directory. */
+.announce{margin:0;padding:10px 16px;background:var(--brand);color:#fff;text-align:center;font-weight:600;font-size:14px}
+.card a{position:relative}
+.was{color:var(--muted);font-weight:400;font-size:.85em;margin-left:4px}
+.tag{position:absolute;top:8px;left:8px;background:#C2410C;color:#fff;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px}
+.featured{margin-bottom:20px}
+.featured .grid{grid-auto-flow:column;grid-auto-columns:minmax(180px,220px);grid-template-columns:none;overflow-x:auto;padding-bottom:6px}
+.d-local .featured .card a{display:flex;flex-direction:column}
+.d-local .featured .pic{width:100%;height:auto;aspect-ratio:1/1}
+.code-form{display:flex;gap:8px;margin:10px 0}
+.code-form input{padding:10px}
+.status.cash{border-color:var(--ok);background:#E8F5EF}
+.status.cash .state{color:var(--ok)}
+.chips .count{opacity:.7;font-size:12px;margin-left:2px}
+.dir-hero{padding:24px 0 8px}
+.dir-hero h1{font-size:28px}
+.stores{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.store-card{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;text-decoration:none;color:var(--ink);height:100%}
+.store-banner{display:block;width:100%;aspect-ratio:16/7;object-fit:cover;background:linear-gradient(135deg,#DDEBE4,#EEF2F0)}
+.store-body{display:flex;gap:12px;padding:12px;align-items:flex-start}
+.store-text{display:grid;gap:2px;min-width:0}
+.desc-line.show{display:block;color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (prefers-color-scheme:dark){.store-banner{background:linear-gradient(135deg,#1F2A26,#18211E)}.status.cash{background:#123326}}

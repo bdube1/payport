@@ -3,6 +3,7 @@
 <head th:replace="~{fragments :: head(${title}, ${description}, ${store.banner}, ${store.color}, ${share.url})}"></head>
 <body th:class="'d-' + ${store.design}">
 <header th:replace="~{fragments :: top(${store})}"></header>
+<p th:if="${store.announcement != null}" class="announce" th:text="${store.announcement}"></p>
 <div th:if="${store.banner != null}" class="banner"><img th:src="${store.banner}" alt=""></div>
 <main class="wrap">
   <section class="hero">
@@ -20,11 +21,31 @@
     <input name="q" th:value="${q}" placeholder="Search" aria-label="Search this store" maxlength="80">
   </form>
   <p th:if="${q != null}" class="muted small"><span th:text="${#lists.size(products)} + ' found for “' + ${q} + '”'"></span> · <a th:href="@{/s/{s}(s=${store.slug})}">Show all</a></p>
-  <nav th:if="${store.design == 'boutique' and !#sets.isEmpty(categories)}" class="chips">
+  <nav th:if="${!#lists.isEmpty(collections)}" class="chips">
+    <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
+    <a th:each="c : ${collections}" th:href="@{/s/{s}(s=${store.slug},c=${c.slug})}" th:text="${c.name}" th:classappend="${c.slug == category} ? 'on'">Collection</a>
+  </nav>
+  <nav th:if="${#lists.isEmpty(collections) and store.design == 'boutique' and !#sets.isEmpty(categories)}" class="chips">
     <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
     <a th:each="c : ${categories}" th:href="@{/s/{s}(s=${store.slug},c=${c})}" th:text="${c}" th:classappend="${c == category} ? 'on'">Category</a>
   </nav>
-  <p th:if="${#lists.isEmpty(products)}" class="muted">No products yet.</p>
+  <section th:if="${!#lists.isEmpty(featured)}" class="featured">
+    <h2>Featured</h2>
+    <ul class="grid">
+      <li th:each="p : ${featured}" class="card">
+      <a th:href="${p.url}">
+        <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
+        <div th:if="${p.image == null}" class="pic blank"></div>
+        <span class="name" th:text="${p.name}">Product</span>
+        <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
+        <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
+        <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
+      </a>
+      </li>
+    </ul>
+  </section>
+  <h2 th:if="${!#lists.isEmpty(featured)}">Everything</h2>
+  <p th:if="${#lists.isEmpty(products)}" class="muted">Nothing here yet.</p>
   <ul class="grid">
     <li th:each="p : ${products}" class="card">
       <a th:href="${p.url}">
@@ -32,7 +53,8 @@
         <div th:if="${p.image == null}" class="pic blank"></div>
         <span class="name" th:text="${p.name}">Product</span>
         <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
-        <span class="price" th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span>
+        <span class="price"><span th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span> <s th:if="${p.was != null and !p.soldOut}" class="was" th:text="${p.was}"></s></span>
+        <span th:if="${p.was != null and !p.soldOut}" class="tag">Sale</span>
       </a>
     </li>
   </ul>

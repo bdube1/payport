@@ -116,6 +116,25 @@ public class Payments {
         return jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ?", ref == null ? "" : ref).stream().findFirst();
     }
 
+    /** After placing: the discount used and how the customer pays. Pay on delivery holds the items until the cash is recorded. */
+    public void finish(String ref, boolean cash, String discountCode, long discountMinor) {
+        jdbc.update("UPDATE orders SET pay_method = ?, discount_code = ?, discount_minor = ?, payment_status = CASE WHEN ? THEN 'ON_DELIVERY' ELSE payment_status END, "
+                + "delivery_status = CASE WHEN ? AND delivery_method <> 'NONE' THEN 'PREPARING' ELSE delivery_status END, updated_at = ? WHERE order_ref = ? AND payment_status = 'NOT_STARTED'",
+                cash ? "CASH" : "ONLINE", discountCode, discountMinor, cash, cash, Shop.now(), ref);
+    }
+
+    /** The merchant received the cash for a pay-on-delivery order: it is paid (not through the PSP). */
+    public Map<String, Object> cashReceived(long merchantId, String ref) {
+        Map<String, Object> o = jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ? AND merchant_id = ?", ref, merchantId).stream().findFirst()
+                .orElseThrow(() -> new Shop.NotFound("No such order"));
+        if (!"ON_DELIVERY".equals(o.get("payment_status"))) throw new IllegalStateException("Only a pay-on-delivery order waiting for cash can be marked paid");
+        long id = ((Number) o.get("id")).longValue();
+        jdbc.update("UPDATE orders SET payment_status = 'PAID', paid_at = ?, updated_at = ? WHERE id = ? AND payment_status = 'ON_DELIVERY'", Shop.now(), Shop.now(), id);
+        sell(id);
+        shop.event("order.paid", merchantId, ref, "cash " + o.get("amount_minor"));
+        return merchantOrder(merchantId, ref);
+    }
+
     /** The customer's view of an order needs the token from their link (orders cannot be looked up by number alone). */
     public Optional<Map<String, Object>> orderForCustomer(String ref, String token) {
         if (token == null || token.isBlank()) return Optional.empty();
@@ -138,6 +157,7 @@ public class Payments {
         String ps = String.valueOf(o.get("payment_status"));
         if ("PAID".equals(ps)) return new Start(null, "This order is already paid.", false);
         if ("PENDING".equals(ps) || "CONFIRMING".equals(ps)) return new Start(null, "Your payment is being confirmed.", false);
+        if ("ON_DELIVERY".equals(ps)) return new Start(null, "You pay for this order on delivery or collection.", false);
         if ("CANCELLED".equals(o.get("order_status"))) return new Start(null, "This order was cancelled.", false);
         long orderId = ((Number) o.get("id")).longValue(), merchantId = ((Number) o.get("merchant_id")).longValue();
         String gone = reserveAgain(orderId);
@@ -339,6 +359,7 @@ public class Payments {
     public Map<String, Object> refund(Tokens.Merchant m, String ref, Map<String, Object> b) {
         Map<String, Object> o = jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ? AND merchant_id = ?", ref, m.merchantId()).stream().findFirst()
                 .orElseThrow(() -> new Shop.NotFound("No such order"));
+        if ("CASH".equals(o.get("pay_method"))) throw new IllegalStateException("This order was paid in cash: refund the customer directly");
         if (!"PAID".equals(o.get("payment_status"))) throw new IllegalStateException("Only a paid order can be refunded");
         long amount = Shop.money(b.get("amountMinor"), "amount");
         String reason = Shop.text(b.get("reason"), 300, true, "reason");
@@ -439,6 +460,9 @@ public class Payments {
         v.put("deliveryAddress", o.get("delivery_address"));
         v.put("deliveryStatus", o.get("delivery_status"));
         v.put("stockShort", Shop.bool(o.get("stock_short")));
+        v.put("payMethod", o.get("pay_method"));
+        v.put("discountCode", o.get("discount_code"));
+        v.put("discountMinor", o.get("discount_minor"));
         v.put("createdAt", String.valueOf(o.get("created_at")));
         v.put("paidAt", o.get("paid_at") == null ? null : String.valueOf(o.get("paid_at")));
         return v;
@@ -494,7 +518,7 @@ public class Payments {
         String s = String.valueOf(status).toUpperCase(Locale.ROOT);
         Map<String, Object> o = jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ? AND merchant_id = ?", ref, merchantId).stream().findFirst()
                 .orElseThrow(() -> new Shop.NotFound("No such order"));
-        if (!"PAID".equals(o.get("payment_status"))) throw new IllegalStateException("Only a paid order can be prepared or sent");
+        if (!"PAID".equals(o.get("payment_status")) && !"ON_DELIVERY".equals(o.get("payment_status"))) throw new IllegalStateException("Only a paid or pay-on-delivery order can be prepared or sent");
         String method = String.valueOf(o.get("delivery_method"));
         Set<String> allowed = "DELIVERY".equals(method) ? Set.of("PREPARING", "OUT", "DELIVERED") : "PICKUP".equals(method) ? Set.of("PREPARING", "READY", "COLLECTED") : Set.of();
         if (!allowed.contains(s)) throw new IllegalArgumentException("Choose the next step for this order");
@@ -526,7 +550,7 @@ public class Payments {
         v.put("sales", sales);
         Map<String, Object> c = jdbc.queryForMap("SELECT "
                 + "(SELECT COUNT(*) FROM orders WHERE merchant_id = ? AND payment_status IN ('PENDING','CONFIRMING')) AS confirming, "
-                + "(SELECT COUNT(*) FROM orders WHERE merchant_id = ? AND payment_status = 'PAID' AND order_status = 'OPEN') AS to_fulfil, "
+                + "(SELECT COUNT(*) FROM orders WHERE merchant_id = ? AND payment_status IN ('PAID','ON_DELIVERY') AND order_status = 'OPEN') AS to_fulfil, "
                 + "(SELECT COUNT(*) FROM links WHERE merchant_id = ? AND status = 'ACTIVE') AS links, "
                 + "(SELECT COUNT(*) FROM products WHERE merchant_id = ? AND status = 'ACTIVE') AS products", merchantId, merchantId, merchantId, merchantId);
         v.put("beingConfirmed", ((Number) c.get("confirming")).longValue());

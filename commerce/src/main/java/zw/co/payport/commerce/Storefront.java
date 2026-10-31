@@ -40,6 +40,8 @@ public class Storefront {
     private final Domains domains;
     @org.springframework.beans.factory.annotation.Autowired
     private Insights insights;
+    @org.springframework.beans.factory.annotation.Autowired
+    private Catalog catalog;
 
     public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
         this.delivery = delivery;
@@ -85,6 +87,7 @@ public class Storefront {
         m.put("design", "product");
         m.put("banner", null);
         m.put("tagline", null);
+        m.put("announcement", null);
         m.put("pickup", null);
         m.put("delivers", null);
         return m;
@@ -126,6 +129,7 @@ public class Storefront {
         m.put("design", s.get("design") == null ? "PRODUCT" : String.valueOf(s.get("design")).toLowerCase(Locale.ROOT));
         m.put("banner", s.get("banner_image") == null ? null : "/img/" + s.get("banner_image"));
         m.put("tagline", s.get("tagline"));
+        m.put("announcement", s.get("announcement"));
         m.put("pickup", Shop.bool(s.get("pickup_enabled")) ? (s.get("pickup_note") == null ? "Pickup available" : "Pickup: " + s.get("pickup_note")) : null);
         m.put("delivers", Shop.bool(s.get("delivery_enabled")) ? (s.get("delivery_note") == null ? "Delivery available" : "Delivery: " + s.get("delivery_note")) : null);
         return m;
@@ -141,6 +145,8 @@ public class Storefront {
         m.put("url", "/s/" + storeSlug + "/" + p.get("slug"));
         Integer stock = p.get("stock") == null ? null : ((Number) p.get("stock")).intValue();
         m.put("soldOut", stock != null && stock == 0);
+        m.put("was", p.get("compare_at_minor") == null ? null : price(((Number) p.get("compare_at_minor")).longValue(), (String) p.get("currency")));
+        m.put("service", "SERVICE".equals(p.get("kind")));
         m.put("few", stock != null && stock > 0 && stock <= 5 ? "Only " + stock + " left" : null);
         return m;
     }
@@ -157,6 +163,30 @@ public class Storefront {
                        @RequestParam(name = "c", required = false) String category, Model model, HttpServletResponse res) {
         Optional<String> slug = domains.storeFor(req.getHeader("Host"));
         if (slug.isPresent()) return store(slug.get(), cart, category, model, res);
+        String type = req.getParameter("t"), q = req.getParameter("q");
+        List<Map<String, Object>> stores = new ArrayList<>();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Map<String, Object> st : catalog.directory(null, null)) counts.merge(String.valueOf(st.get("business_type")), 1, Integer::sum);
+        for (Map<String, Object> st : catalog.directory(type, q == null ? null : q.length() > 80 ? q.substring(0, 80) : q)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", st.get("name"));
+            m.put("url", "/s/" + st.get("slug"));
+            m.put("line", st.get("tagline") != null ? st.get("tagline") : st.get("about"));
+            m.put("type", Catalog.TYPES.getOrDefault(String.valueOf(st.get("business_type")), "Other"));
+            m.put("logo", st.get("logo_image") == null ? null : "/img/" + st.get("logo_image"));
+            m.put("banner", st.get("banner_image") == null ? null : "/img/" + st.get("banner_image"));
+            m.put("products", st.get("products"));
+            stores.add(m);
+        }
+        List<Map<String, Object>> types = new ArrayList<>();
+        for (Map.Entry<String, String> e : Catalog.TYPES.entrySet()) {
+            if (!counts.containsKey(e.getKey())) continue;
+            types.add(Map.of("code", e.getKey(), "name", e.getValue(), "count", counts.get(e.getKey()), "on", e.getKey().equals(type)));
+        }
+        model.addAttribute("stores", stores);
+        model.addAttribute("types", types);
+        model.addAttribute("type", type == null || !Catalog.TYPES.containsKey(type) ? null : Catalog.TYPES.get(type));
+        model.addAttribute("q", q == null || q.isBlank() ? null : q.trim());
         model.addAttribute("title", "PayPort Store");
         return "home";
     }
@@ -182,10 +212,20 @@ public class Storefront {
         long merchant = ((Number) st.get("merchant_id")).longValue();
         List<Map<String, Object>> items = new ArrayList<>();
         java.util.TreeSet<String> categories = new java.util.TreeSet<>();
+        long storeId = ((Number) st.get("id")).longValue();
+        List<Map<String, Object>> cols = catalog.publicCollections(storeId);
+        boolean byCollection = category != null && cols.stream().anyMatch(c -> category.equals(c.get("slug")));
+        List<Long> inCol = byCollection ? catalog.productsIn(storeId, category) : List.of();
+        List<Map<String, Object>> featured = new ArrayList<>();
         for (Map<String, Object> p : shopProducts(merchant)) {
             if (p.get("category") != null) categories.add((String) p.get("category"));
-            if ((category == null || category.isBlank() || category.equals(p.get("category"))) && matches(p, q)) items.add(productModel(p, (String) st.get("slug")));
+            boolean pick = byCollection ? inCol.contains(((Number) p.get("id")).longValue())
+                    : category == null || category.isBlank() || category.equals(p.get("category"));
+            if (pick && matches(p, q)) items.add(productModel(p, (String) st.get("slug")));
+            if (Shop.bool(p.get("featured"))) featured.add(productModel(p, (String) st.get("slug")));
         }
+        model.addAttribute("collections", cols);
+        model.addAttribute("featured", (category == null || category.isBlank()) && (q == null || q.isBlank()) ? featured : List.of());
         model.addAttribute("q", q == null || q.isBlank() ? null : q.trim());
         model.addAttribute("categories", categories);
         model.addAttribute("category", category == null || category.isBlank() ? null : category);
@@ -219,8 +259,8 @@ public class Storefront {
 
     @GetMapping("/s/{slug}/{product}")
     public String product(@PathVariable String slug, @PathVariable String product, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
-                          Model model, HttpServletResponse res) {
-        if ("cart".equals(product)) return cartPage(slug, cart, null, model, res);
+                          @RequestParam(name = "code", required = false) String code, Model model, HttpServletResponse res) {
+        if ("cart".equals(product)) return cartPage(slug, cart, null, model, res, code);
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Optional<Map<String, Object>> p = shop.publicProduct(((Number) s.get().get("id")).longValue(), product).filter(x -> "ACTIVE".equals(x.get("status")));
@@ -300,6 +340,10 @@ public class Storefront {
     }
 
     String cartPage(String slug, String cart, String problem, Model model, HttpServletResponse res) {
+        return cartPage(slug, cart, problem, model, res, null);
+    }
+
+    String cartPage(String slug, String cart, String problem, Model model, HttpServletResponse res, String code) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Map<String, Object> st = s.get();
@@ -319,6 +363,24 @@ public class Storefront {
         cm.put("pickupNote", st.get("pickup_note"));
         cm.put("delivery", delivery);
         cm.put("deliveryNote", st.get("delivery_note"));
+        long off = 0;
+        if (code != null && !code.isBlank() && ccy != null) {
+            try {
+                Catalog.Applied a = catalog.apply(storeId, code, items);
+                off = a.discountMinor();
+                cm.put("code", a.code());
+                cm.put("discount", price(off, ccy));
+            } catch (IllegalArgumentException e) {
+                if (problem == null) problem = e.getMessage();
+            }
+        }
+        cm.putIfAbsent("code", null);
+        cm.putIfAbsent("discount", null);
+        items -= off;
+        boolean servicesOnly = v.map(x -> !x.lines().isEmpty() && x.lines().stream().allMatch(Carts.Line::service)).orElse(false);
+        cm.put("servicesOnly", servicesOnly);
+        cm.put("cod", Shop.bool(st.get("cod_enabled")));
+        cm.put("total", ccy == null ? null : price(items, ccy));
         long fee = deliveryFee(st, items);
         cm.put("fee", ccy == null ? null : fee == 0 ? "Free" : price(fee, ccy));
         cm.put("totalPickup", ccy == null ? null : price(items, ccy));
@@ -336,6 +398,7 @@ public class Storefront {
     public String checkout(@PathVariable String slug, @RequestParam(required = false) String name, @RequestParam(required = false) String phone,
                            @RequestParam(required = false) String method, @RequestParam(required = false) String address,
                            @RequestParam(required = false) String note, @RequestParam String k,
+                           @RequestParam(required = false) String code, @RequestParam(required = false) String pay,
                            @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                            Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
@@ -346,7 +409,8 @@ public class Storefront {
         Optional<Carts.View> v = carts.view(storeId, cart);
         if (v.isEmpty() || v.get().lines().isEmpty()) return cartPage(slug, cart, "Your cart is empty.", model, res);
         if (!v.get().ok()) return cartPage(slug, cart, "Change the items marked in your cart first.", model, res);
-        String how = "DELIVERY".equals(method) ? "DELIVERY" : "PICKUP".equals(method) ? "PICKUP" : null;
+        boolean servicesOnly = v.get().lines().stream().allMatch(Carts.Line::service);
+        String how = servicesOnly ? "NONE" : "DELIVERY".equals(method) ? "DELIVERY" : "PICKUP".equals(method) ? "PICKUP" : null;
         if (how == null || ("DELIVERY".equals(how) && !Shop.bool(st.get("delivery_enabled"))) || ("PICKUP".equals(how) && !Shop.bool(st.get("pickup_enabled"))))
             return cartPage(slug, cart, "Choose pickup or delivery.", model, res);
         Customer c;
@@ -359,6 +423,16 @@ public class Storefront {
         String addr = Shop.text(address, 300, false, "address");
         if ("DELIVERY".equals(how) && (addr == null || addr.length() < 6)) return cartPage(slug, cart, "Enter the delivery address.", model, res);
         long items = v.get().itemsMinor();
+        Catalog.Applied discount = null;
+        if (code != null && !code.isBlank()) {
+            try {
+                discount = catalog.apply(storeId, code, items);
+            } catch (IllegalArgumentException e) {
+                return cartPage(slug, cart, e.getMessage(), model, res, null);
+            }
+            items -= discount.discountMinor();
+        }
+        boolean cash = "CASH".equals(pay) && Shop.bool(st.get("cod_enabled"));
         DeliveryProvider.Quote quote = delivery.of(st.get("delivery_provider")).quote(st, items, addr);
         if ("DELIVERY".equals(how) && quote.problem() != null) return cartPage(slug, cart, quote.problem(), model, res);
         long fee = "DELIVERY".equals(how) ? quote.feeMinor() : 0;
@@ -372,6 +446,11 @@ public class Storefront {
             return cartPage(slug, cart, e.getMessage(), model, res);
         }
         carts.empty(v.get().cartId());
+        if (!placed.existing()) {
+            if (discount != null) catalog.use(discount.id());
+            payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor());
+        }
+        if (cash) return orderPage(placed.orderRef(), placed.viewToken(), null, model, res);
         return startPayment(placed, model, res);
     }
 
@@ -514,6 +593,7 @@ public class Storefront {
         om.put("quantity", o.get("quantity"));
         om.put("total", price(((Number) o.get("amount_minor")).longValue(), (String) o.get("currency")));
         om.put("state", switch (ps) {
+            case "ON_DELIVERY" -> "cash";
             case "PAID" -> "paid";
             case "PENDING", "CONFIRMING" -> "confirming";
             case "FAILED" -> "failed";
@@ -528,7 +608,7 @@ public class Storefront {
         });
         om.put("lines", payments.items(((Number) o.get("id")).longValue(), (String) o.get("currency")));
         om.put("deliveryFee", ((Number) o.get("delivery_fee_minor")).longValue() > 0 ? price(((Number) o.get("delivery_fee_minor")).longValue(), (String) o.get("currency")) : null);
-        om.put("delivery", "PAID".equals(ps) ? switch (String.valueOf(o.get("delivery_status"))) {
+        om.put("delivery", "PAID".equals(ps) || "ON_DELIVERY".equals(ps) ? switch (String.valueOf(o.get("delivery_status"))) {
             case "PREPARING" -> "The seller is preparing your order.";
             case "READY" -> "Your order is ready to collect.";
             case "OUT" -> "Your order is on its way.";
@@ -537,7 +617,8 @@ public class Storefront {
             default -> null;
         } : null);
         om.put("address", o.get("delivery_address"));
-        om.put("canPay", !"PAID".equals(ps) && !"PENDING".equals(ps) && !"CONFIRMING".equals(ps) && !"CANCELLED".equals(o.get("order_status")));
+        om.put("discount", ((Number) o.get("discount_minor")).longValue() > 0 ? o.get("discount_code") + " −" + price(((Number) o.get("discount_minor")).longValue(), (String) o.get("currency")) : null);
+        om.put("canPay", !"PAID".equals(ps) && !"PENDING".equals(ps) && !"CONFIRMING".equals(ps) && !"ON_DELIVERY".equals(ps) && !"CANCELLED".equals(o.get("order_status")));
         model.addAttribute("store", st.isEmpty() ? defaultStore() : storeModel(st));
         model.addAttribute("order", om);
         model.addAttribute("problem", problem);

@@ -15,6 +15,7 @@
   <div th:class="'status ' + ${order.state}">
     <p th:switch="${order.state}" class="state">
       <span th:case="'paid'">Paid</span>
+      <span th:case="'cash'">Order placed: pay on delivery or collection</span>
       <span th:case="'confirming'">Your payment is being confirmed</span>
       <span th:case="'failed'">The payment did not go through</span>
       <span th:case="'expired'">The payment was not completed</span>
@@ -35,6 +36,7 @@
     </th:block>
     <th:block th:if="${order.deliveryFee != null}"><dt>Delivery</dt><dd th:text="${order.deliveryFee}"></dd></th:block>
     <th:block th:if="${order.address != null}"><dt>Deliver to</dt><dd th:text="${order.address}"></dd></th:block>
+    <th:block th:if="${order.discount != null}"><dt>Discount</dt><dd th:text="${order.discount}"></dd></th:block>
     <dt>Total</dt><dd th:text="${order.total}"></dd>
   </dl>
   <form th:if="${order.canPay}" method="post" th:action="@{/o/{r}/pay(r=${order.ref})}">
