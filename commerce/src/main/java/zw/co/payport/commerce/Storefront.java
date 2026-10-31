@@ -35,11 +35,22 @@ public class Storefront {
     private final Shop shop;
     private final Payments payments;
     private final Settings settings;
+    private final Carts carts;
 
-    public Storefront(Shop shop, Payments payments, Settings settings) {
+    public Storefront(Shop shop, Payments payments, Settings settings, Carts carts) {
         this.shop = shop;
         this.payments = payments;
         this.settings = settings;
+        this.carts = carts;
+    }
+
+    /** The cart cookie: random, HttpOnly, 30 days; only its hash is stored. */
+    String cartToken(String current, HttpServletResponse res) {
+        if (Carts.valid(current)) return current;
+        String t = Shop.token() + Shop.token();
+        res.addHeader("Set-Cookie", org.springframework.http.ResponseCookie.from(Carts.COOKIE, t).httpOnly(true).secure(settings.publicUrl.startsWith("https"))
+                .sameSite("Lax").path("/").maxAge(java.time.Duration.ofDays(30)).build().toString());
+        return t;
     }
 
     @org.springframework.web.bind.annotation.ModelAttribute("publicUrl")
@@ -64,6 +75,7 @@ public class Storefront {
         m.put("logo", null);
         m.put("whatsapp", null);
         m.put("open", false);
+        m.put("cartCount", 0);
         return m;
     }
 
@@ -99,6 +111,7 @@ public class Storefront {
         m.put("logo", s.get("logo_image") == null ? null : "/img/" + s.get("logo_image"));
         m.put("whatsapp", s.get("whatsapp") == null ? null : "https://wa.me/" + String.valueOf(s.get("whatsapp")).replace("+", ""));
         m.put("open", "OPEN".equals(s.get("status")) && "ACTIVE".equals(s.get("psp_status") == null ? "ACTIVE" : s.get("psp_status")));
+        m.put("cartCount", 0);
         return m;
     }
 
@@ -110,6 +123,9 @@ public class Storefront {
         m.put("price", price(((Number) p.get("price_minor")).longValue(), (String) p.get("currency")));
         m.put("image", p.get("image_id") == null ? null : "/img/" + p.get("image_id"));
         m.put("url", "/s/" + storeSlug + "/" + p.get("slug"));
+        Integer stock = p.get("stock") == null ? null : ((Number) p.get("stock")).intValue();
+        m.put("soldOut", stock != null && stock == 0);
+        m.put("few", stock != null && stock > 0 && stock <= 5 ? "Only " + stock + " left" : null);
         return m;
     }
 
@@ -126,14 +142,17 @@ public class Storefront {
     }
 
     @GetMapping("/s/{slug}")
-    public String store(@PathVariable String slug, Model model, HttpServletResponse res) {
+    public String store(@PathVariable String slug, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                        Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Map<String, Object> st = s.get();
         long merchant = ((Number) st.get("merchant_id")).longValue();
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, Object> p : shopProducts(merchant)) items.add(productModel(p, (String) st.get("slug")));
-        model.addAttribute("store", storeModel(st));
+        Map<String, Object> sm = storeModel(st);
+        sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
+        model.addAttribute("store", sm);
         model.addAttribute("products", items);
         model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on PayPort"));
         model.addAttribute("title", st.get("name"));
@@ -146,17 +165,25 @@ public class Storefront {
     }
 
     @GetMapping("/s/{slug}/{product}")
-    public String product(@PathVariable String slug, @PathVariable String product, Model model, HttpServletResponse res) {
+    public String product(@PathVariable String slug, @PathVariable String product, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                          Model model, HttpServletResponse res) {
+        if ("cart".equals(product)) return cartPage(slug, cart, null, model, res);
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Optional<Map<String, Object>> p = shop.publicProduct(((Number) s.get().get("id")).longValue(), product).filter(x -> "ACTIVE".equals(x.get("status")));
         if (p.isEmpty()) return missing(model, res, "This product is not available");
-        return productPage(s.get(), p.get(), model, null);
+        return productPage(s.get(), p.get(), model, null, cart);
     }
 
     String productPage(Map<String, Object> st, Map<String, Object> p, Model model, String problem) {
+        return productPage(st, p, model, problem, null);
+    }
+
+    String productPage(Map<String, Object> st, Map<String, Object> p, Model model, String problem, String cart) {
         Map<String, Object> pm = productModel(p, (String) st.get("slug"));
-        model.addAttribute("store", storeModel(st));
+        Map<String, Object> sm = storeModel(st);
+        sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
+        model.addAttribute("store", sm);
         model.addAttribute("product", pm);
         model.addAttribute("key", Shop.token() + Shop.token());
         model.addAttribute("problem", problem);
@@ -167,38 +194,128 @@ public class Storefront {
         return "product";
     }
 
+    /** "Add to cart" (or "Buy now", which goes straight to the cart to choose pickup or delivery). */
     @PostMapping("/s/{slug}/{product}/buy")
     public String buy(@PathVariable String slug, @PathVariable String product, @RequestParam(defaultValue = "1") String qty,
-                      @RequestParam(required = false) String name, @RequestParam(required = false) String phone, @RequestParam(required = false) String note,
-                      @RequestParam String k, Model model, HttpServletResponse res) {
+                      @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                      Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Map<String, Object> st = s.get();
         Optional<Map<String, Object>> p = shop.publicProduct(((Number) st.get("id")).longValue(), product).filter(x -> "ACTIVE".equals(x.get("status")));
         if (p.isEmpty()) return missing(model, res, "This product is not available");
-        if (!Boolean.TRUE.equals(storeModel(st).get("open"))) return productPage(st, p.get(), model, "This store is not taking orders at the moment.");
+        if (!Boolean.TRUE.equals(storeModel(st).get("open"))) return productPage(st, p.get(), model, "This store is not taking orders at the moment.", cart);
         int q;
         try {
             q = Integer.parseInt(qty.trim());
         } catch (NumberFormatException e) {
             q = 0;
         }
-        if (q < 1 || q > 20) return productPage(st, p.get(), model, "Choose a quantity from 1 to 20.");
+        if (q < 1 || q > 20) return productPage(st, p.get(), model, "Choose a quantity from 1 to 20.", cart);
+        String token = cartToken(cart, res);
+        try {
+            carts.set(((Number) st.get("id")).longValue(), token, ((Number) p.get().get("id")).longValue(), q, true);
+        } catch (IllegalArgumentException e) {
+            return productPage(st, p.get(), model, e.getMessage(), token);
+        }
+        return "redirect:/s/" + st.get("slug") + "/cart";
+    }
+
+    /** Change a quantity in the cart (0 removes the item). */
+    @PostMapping("/s/{slug}/cart/{productId}")
+    public String cartSet(@PathVariable String slug, @PathVariable long productId, @RequestParam(defaultValue = "0") String qty,
+                          @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                          Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty() || !Carts.valid(cart)) return "redirect:/s/" + slug;
+        int q;
+        try { q = Integer.parseInt(qty.trim()); } catch (NumberFormatException e) { q = 0; }
+        try {
+            carts.set(((Number) s.get().get("id")).longValue(), cart, productId, q, false);
+        } catch (IllegalArgumentException e) {
+            return cartPage(slug, cart, e.getMessage(), model, res);
+        }
+        return "redirect:/s/" + s.get().get("slug") + "/cart";
+    }
+
+    /** The delivery fee for a cart: the store's fee, or nothing above the free-delivery amount. */
+    static long deliveryFee(Map<String, Object> st, long itemsMinor) {
+        long fee = st.get("delivery_fee_minor") == null ? 0 : ((Number) st.get("delivery_fee_minor")).longValue();
+        Object free = st.get("free_delivery_from_minor");
+        return free != null && itemsMinor >= ((Number) free).longValue() ? 0 : fee;
+    }
+
+    String cartPage(String slug, String cart, String problem, Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty()) return missing(model, res, "This store does not exist");
+        Map<String, Object> st = s.get();
+        long storeId = ((Number) st.get("id")).longValue();
+        Optional<Carts.View> v = carts.view(storeId, cart);
+        Map<String, Object> sm = storeModel(st);
+        sm.put("cartCount", v.map(Carts.View::count).orElse(0));
+        Map<String, Object> cm = new LinkedHashMap<>();
+        String ccy = v.map(Carts.View::currency).orElse(null);
+        long items = v.map(Carts.View::itemsMinor).orElse(0L);
+        cm.put("lines", v.map(x -> x.lines().stream().map(l -> Carts.line(l, ccy)).toList()).orElse(List.of()));
+        cm.put("empty", v.map(x -> x.lines().isEmpty()).orElse(true));
+        cm.put("ok", v.map(Carts.View::ok).orElse(false));
+        cm.put("items", ccy == null ? null : price(items, ccy));
+        boolean pickup = Shop.bool(st.get("pickup_enabled")), delivery = Shop.bool(st.get("delivery_enabled"));
+        cm.put("pickup", pickup);
+        cm.put("pickupNote", st.get("pickup_note"));
+        cm.put("delivery", delivery);
+        cm.put("deliveryNote", st.get("delivery_note"));
+        long fee = deliveryFee(st, items);
+        cm.put("fee", ccy == null ? null : fee == 0 ? "Free" : price(fee, ccy));
+        cm.put("totalPickup", ccy == null ? null : price(items, ccy));
+        cm.put("totalDelivery", ccy == null ? null : price(items + fee, ccy));
+        model.addAttribute("store", sm);
+        model.addAttribute("cart", cm);
+        model.addAttribute("key", Shop.token() + Shop.token());
+        model.addAttribute("problem", problem);
+        model.addAttribute("title", "Cart | " + st.get("name"));
+        return "cart";
+    }
+
+    /** Pay for the cart: one order with every item, the delivery choice and the fee; then the PSP's checkout. */
+    @PostMapping("/s/{slug}/checkout")
+    public String checkout(@PathVariable String slug, @RequestParam(required = false) String name, @RequestParam(required = false) String phone,
+                           @RequestParam(required = false) String method, @RequestParam(required = false) String address,
+                           @RequestParam(required = false) String note, @RequestParam String k,
+                           @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                           Model model, HttpServletResponse res) {
+        Optional<Map<String, Object>> s = shop.publicStore(slug);
+        if (s.isEmpty()) return missing(model, res, "This store does not exist");
+        Map<String, Object> st = s.get();
+        long storeId = ((Number) st.get("id")).longValue();
+        if (!Boolean.TRUE.equals(storeModel(st).get("open"))) return cartPage(slug, cart, "This store is not taking orders at the moment.", model, res);
+        Optional<Carts.View> v = carts.view(storeId, cart);
+        if (v.isEmpty() || v.get().lines().isEmpty()) return cartPage(slug, cart, "Your cart is empty.", model, res);
+        if (!v.get().ok()) return cartPage(slug, cart, "Change the items marked in your cart first.", model, res);
+        String how = "DELIVERY".equals(method) ? "DELIVERY" : "PICKUP".equals(method) ? "PICKUP" : null;
+        if (how == null || ("DELIVERY".equals(how) && !Shop.bool(st.get("delivery_enabled"))) || ("PICKUP".equals(how) && !Shop.bool(st.get("pickup_enabled"))))
+            return cartPage(slug, cart, "Choose pickup or delivery.", model, res);
         Customer c;
         try {
             c = customer(name, phone, note);
         } catch (IllegalArgumentException e) {
-            return productPage(st, p.get(), model, e.getMessage());
+            return cartPage(slug, cart, e.getMessage(), model, res);
         }
-        long unit = ((Number) p.get().get("price_minor")).longValue();
+        if (c.name() == null || c.phone() == null) return cartPage(slug, cart, "Enter your name and phone number so the seller can reach you.", model, res);
+        String addr = Shop.text(address, 300, false, "address");
+        if ("DELIVERY".equals(how) && (addr == null || addr.length() < 6)) return cartPage(slug, cart, "Enter the delivery address.", model, res);
+        long items = v.get().itemsMinor();
+        long fee = "DELIVERY".equals(how) ? deliveryFee(st, items) : 0;
+        List<Payments.Item> lines = v.get().lines().stream().map(l -> new Payments.Item(l.productId(), l.name(), l.unitMinor(), l.quantity())).toList();
+        String summary = lines.size() == 1 ? lines.get(0).name() : lines.size() + " items from " + st.get("name");
         Payments.Placed placed;
         try {
-            placed = payments.place(new Payments.NewOrder(((Number) st.get("merchant_id")).longValue(), ((Number) st.get("id")).longValue(), null,
-                    ((Number) p.get().get("id")).longValue(), (String) p.get().get("name"), q, Math.multiplyExact(unit, q), (String) p.get().get("currency"),
-                    c.name(), c.phone(), c.note(), k));
+            placed = payments.place(new Payments.NewOrder(((Number) st.get("merchant_id")).longValue(), storeId, null, lines.size() == 1 ? lines.get(0).productId() : null,
+                    summary, v.get().count(), items + fee, v.get().currency(), c.name(), c.phone(), c.note(), k, lines, how, fee, "DELIVERY".equals(how) ? addr : null));
         } catch (IllegalArgumentException e) {
-            return productPage(st, p.get(), model, e.getMessage());
+            return cartPage(slug, cart, e.getMessage(), model, res);
         }
+        carts.empty(v.get().cartId());
         return startPayment(placed, model, res);
     }
 
@@ -353,6 +470,17 @@ public class Storefront {
             case "REFUNDED" -> "This payment has been refunded.";
             default -> null;
         });
+        om.put("lines", payments.items(((Number) o.get("id")).longValue(), (String) o.get("currency")));
+        om.put("deliveryFee", ((Number) o.get("delivery_fee_minor")).longValue() > 0 ? price(((Number) o.get("delivery_fee_minor")).longValue(), (String) o.get("currency")) : null);
+        om.put("delivery", "PAID".equals(ps) ? switch (String.valueOf(o.get("delivery_status"))) {
+            case "PREPARING" -> "The seller is preparing your order.";
+            case "READY" -> "Your order is ready to collect.";
+            case "OUT" -> "Your order is on its way.";
+            case "DELIVERED" -> "Your order has been delivered.";
+            case "COLLECTED" -> "Your order has been collected.";
+            default -> null;
+        } : null);
+        om.put("address", o.get("delivery_address"));
         om.put("canPay", !"PAID".equals(ps) && !"PENDING".equals(ps) && !"CONFIRMING".equals(ps) && !"CANCELLED".equals(o.get("order_status")));
         model.addAttribute("store", st.isEmpty() ? defaultStore() : storeModel(st));
         model.addAttribute("order", om);

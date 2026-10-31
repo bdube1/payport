@@ -22,7 +22,10 @@
     <img th:if="${store.logo != null}" th:src="${store.logo}" alt="" class="logo">
     <span th:text="${store.name}">Store</span>
   </a>
-  <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="chat" rel="noopener" target="_blank">WhatsApp</a>
+  <span class="top-right">
+    <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="chat" rel="noopener" target="_blank">WhatsApp</a>
+    <a th:if="${store.slug != null and store.cartCount > 0}" th:href="@{/s/{s}/cart(s=${store.slug})}" class="chat cartlink" th:text="'Cart ' + ${store.cartCount}">Cart</a>
+  </span>
 </header>
 
 <section th:fragment="share(share)" class="share">

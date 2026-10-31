@@ -167,6 +167,12 @@ public class Shop {
         v.put("status", r.get("status"));
         v.put("url", settings.publicUrl + "/s/" + r.get("slug"));
         v.put("id", ((Number) r.get("id")).longValue());
+        v.put("pickupEnabled", bool(r.get("pickup_enabled")));
+        v.put("pickupNote", r.get("pickup_note"));
+        v.put("deliveryEnabled", bool(r.get("delivery_enabled")));
+        v.put("deliveryFeeMinor", r.get("delivery_fee_minor") == null ? 0L : ((Number) r.get("delivery_fee_minor")).longValue());
+        v.put("freeDeliveryFromMinor", r.get("free_delivery_from_minor"));
+        v.put("deliveryNote", r.get("delivery_note"));
         return v;
     }
 
@@ -184,9 +190,21 @@ public class Shop {
         String logo = b.containsKey("logoImage") ? text(b.get("logoImage"), 32, false, "logo") : (String) cur.get("logoImage");
         if (logo != null) ownImage(merchantId, logo);
         String status = "CLOSED".equals(b.get("status")) ? "CLOSED" : "OPEN";
+        boolean pickup = b.containsKey("pickupEnabled") ? bool(b.get("pickupEnabled")) : (Boolean) cur.get("pickupEnabled");
+        boolean delivery = b.containsKey("deliveryEnabled") ? bool(b.get("deliveryEnabled")) : (Boolean) cur.get("deliveryEnabled");
+        if (!pickup && !delivery) throw new IllegalArgumentException("Offer pickup, delivery or both");
+        String pickupNote = text(b.getOrDefault("pickupNote", cur.get("pickupNote")), 300, false, "pickup details");
+        String deliveryNote = text(b.getOrDefault("deliveryNote", cur.get("deliveryNote")), 300, false, "delivery details");
+        Object feeIn = b.getOrDefault("deliveryFeeMinor", cur.get("deliveryFeeMinor"));
+        long fee;
+        try { fee = feeIn == null || String.valueOf(feeIn).isBlank() ? 0 : Long.parseLong(String.valueOf(feeIn)); } catch (NumberFormatException e) { throw new IllegalArgumentException("Enter the delivery fee"); }
+        if (fee < 0 || fee > 100_000_000L) throw new IllegalArgumentException("Enter the delivery fee");
+        Long freeFrom = optionalMoney(b.getOrDefault("freeDeliveryFromMinor", cur.get("freeDeliveryFromMinor")), "free delivery amount");
         try {
-            jdbc.update("UPDATE stores SET name = ?, about = ?, whatsapp = ?, theme_color = ?, slug = ?, logo_image = ?, status = ?, updated_at = ? WHERE merchant_id = ?",
-                    name, about, wa == null ? null : wa.replaceAll("[\\s-]", ""), color.toUpperCase(Locale.ROOT), slug, logo, status, now(), merchantId);
+            jdbc.update("UPDATE stores SET name = ?, about = ?, whatsapp = ?, theme_color = ?, slug = ?, logo_image = ?, status = ?, pickup_enabled = ?, pickup_note = ?, "
+                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, updated_at = ? WHERE merchant_id = ?",
+                    name, about, wa == null ? null : wa.replaceAll("[\\s-]", ""), color.toUpperCase(Locale.ROOT), slug, logo, status, pickup, pickupNote,
+                    delivery, fee, freeFrom, deliveryNote, now(), merchantId);
         } catch (DuplicateKeyException e) {
             throw new IllegalArgumentException("That store address is taken");
         }
@@ -232,6 +250,7 @@ public class Shop {
         v.put("price", major(((Number) r.get("price_minor")).longValue()));
         v.put("currency", r.get("currency"));
         v.put("imageId", r.get("image_id"));
+        v.put("stock", r.get("stock") == null ? null : ((Number) r.get("stock")).intValue());
         v.put("status", r.get("status"));
         String storeSlug = jdbc.queryForList("SELECT slug FROM stores WHERE id = ?", String.class, r.get("store_id")).stream().findFirst().orElse("");
         v.put("url", settings.publicUrl + "/s/" + storeSlug + "/" + r.get("slug"));
@@ -254,13 +273,20 @@ public class Shop {
         String image = text(b.get("imageId"), 32, false, "picture");
         if (image != null) ownImage(merchantId, image);
         String status = "HIDDEN".equals(b.get("status")) ? "HIDDEN" : "ACTIVE";
+        Integer stock = null;
+        Object st = b.get("stock");
+        if (st != null && !String.valueOf(st).isBlank()) {
+            try { stock = Integer.valueOf(String.valueOf(st).trim()); } catch (NumberFormatException e) { throw new IllegalArgumentException("Enter the number in stock, or leave it empty"); }
+            if (stock < 0 || stock > 1_000_000) throw new IllegalArgumentException("Enter the number in stock, or leave it empty");
+        }
         if (id == null) {
             String base = slug(name);
+            if (java.util.Set.of("cart", "checkout").contains(base)) base = base + "-item";
             for (int i = 0; i < 20; i++) {
                 String s = i == 0 ? base : base + "-" + code(3).toLowerCase(Locale.ROOT);
                 try {
-                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, created_at, updated_at) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, now(), now());
+                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, created_at, updated_at) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, now(), now());
                     long nid = jdbc.queryForObject("SELECT id FROM products WHERE store_id = ? AND slug = ?", Long.class, store, s);
                     event("product.created", merchantId, String.valueOf(nid), null);
                     return product(merchantId, nid);
@@ -270,8 +296,8 @@ public class Shop {
             }
             throw new IllegalStateException("Please try again");
         }
-        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
-                name, description, price, ccy, image, status, now(), id, merchantId);
+        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
+                name, description, price, ccy, image, status, stock, now(), id, merchantId);
         if (n == 0) throw new NotFound("No such product");
         return product(merchantId, id);
     }
@@ -411,6 +437,38 @@ public class Shop {
 
     public Optional<Map<String, Object>> publicProductById(long id) {
         return jdbc.queryForList("SELECT * FROM products WHERE id = ?", id).stream().findFirst();
+    }
+
+    static boolean bool(Object o) {
+        return Boolean.TRUE.equals(o) || Integer.valueOf(1).equals(o) || "true".equals(String.valueOf(o)) || (o instanceof Number n && n.intValue() == 1);
+    }
+
+    /** The merchant's customers (from paid orders), most recent first. */
+    public List<Map<String, Object>> customers(long merchantId, String q) {
+        StringBuilder sql = new StringBuilder("SELECT c.id, c.name, c.phone, c.orders, c.first_order_at, c.last_order_at, "
+                + "(SELECT GROUP_CONCAT(CONCAT(currency, ' ', FORMAT(spent_minor / 100, 2)) SEPARATOR ' · ') FROM customer_spend s WHERE s.customer_id = c.id) AS spent "
+                + "FROM customers c WHERE c.merchant_id = ?");
+        List<Object> args = new ArrayList<>(List.of(merchantId));
+        if (q != null && !q.isBlank()) {
+            sql.append(" AND (c.name LIKE ? OR c.phone LIKE ?)");
+            String like = "%" + q.trim().replace("%", "") + "%";
+            args.add(like);
+            args.add(like);
+        }
+        sql.append(" ORDER BY c.last_order_at DESC LIMIT 1000");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : jdbc.queryForList(sql.toString(), args.toArray())) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("id", ((Number) r.get("id")).longValue());
+            v.put("name", r.get("name"));
+            v.put("phone", r.get("phone"));
+            v.put("orders", r.get("orders"));
+            v.put("spent", r.get("spent"));
+            v.put("firstOrderAt", String.valueOf(r.get("first_order_at")));
+            v.put("lastOrderAt", String.valueOf(r.get("last_order_at")));
+            out.add(v);
+        }
+        return out;
     }
 
     static String clip(String s, int n) {

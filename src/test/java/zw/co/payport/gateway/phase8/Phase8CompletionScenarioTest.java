@@ -857,6 +857,7 @@ class Phase8CompletionScenarioTest {
     }
 
     @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.intelligence.FraudShadow fraudShadow;
+    @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.whatsapp.ChannelResults channelResults;
 
     /** Owner, 2026-10-31: PayPort Intelligence starts read-only, behind switches that only administrators turn on. */
     @Test
@@ -942,6 +943,16 @@ class Phase8CompletionScenarioTest {
         whatsapp(wa, p + 9, "menu", true);
         whatsapp(wa, p + 10, "1111", true);
         assertTrue(reply(p + 10).contains("Wrong PIN"), reply(p + 10));
+        // The answer of a WhatsApp payment comes into the chat, with the provider's reason (like the app).
+        String failed = "PP-WA-" + java.time.LocalDate.now().toString().replace("-", "") + "-" + String.format("%08X", (int) (System.nanoTime() & 0x7fffffff));
+        Res init = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", failed, "productTypeCode", "AIRTIME_ECONET", "recipientIdentifier", "+" + wa,
+                "amountCents", 500, "currency", "USD", "customerPhone", "+" + wa, "channel", "WHATSAPP"));
+        assertEquals(201, init.status(), init.body().toString());
+        jdbc.update("UPDATE transactions SET status = 'PAYMENT_FAILED', failure_reason = 'Insufficient funds' WHERE reference = ?", failed);
+        String sent = channelResults.watchNow(wa, failed, 1);
+        assertTrue(sent != null && sent.contains("Insufficient funds") && sent.contains("No money was taken"), sent);
+        assertTrue(channelResults.answered(failed));
+
         // Leave the channel as it ships (off) for the other tests.
         call("POST", "/api/v1/admin/channels/WHATSAPP", staff("Wa Reset", "OPS"), Map.of("enabled", false, "reason", "test finished"));
     }

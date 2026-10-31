@@ -1,6 +1,6 @@
 # PayPort Commerce: status
 
-**Current phase:** 1 (links, product pages, mini-store, sharing, PSP events). Built 31 October 2026.
+**Current phase:** 2a (stock, cart, pickup or delivery, customers), on top of Phase 1 (links, product pages, mini-store, sharing, PSP events). Built 31 October 2026.
 
 ## Built
 - PSP: platform event stream (payments, checkouts, refunds), Commerce API with service key, merchant identity for
@@ -16,8 +16,13 @@
 - Commerce: `CommerceScenarioTest` (three scenarios against real MySQL and a stand-in PSP, including the PSP down).
 - Results are in the CI runs of the pull request; nothing here is claimed as passed unless CI ran it.
 
+## Phase 2a
+- Stock per product (taken when the PSP confirms payment, returned on cancellation; an order paid as an item sold out is flagged).
+- Cart (several items, one store and currency), pickup or delivery with a fee and free delivery above an amount, delivery steps
+  (preparing, ready or out, collected or delivered), and the merchant's customers from paid orders.
+
 ## Not built yet (later phases or decisions)
-- Inventory, cart, delivery, store templates and custom domains (Phase 2).
+- Courier integrations, store templates and custom domains (Phase 2b).
 - Refund of a payment already paid out to the merchant (needs a settlement adjustment).
 - Merchant webhooks moved onto the event stream.
 

@@ -79,7 +79,8 @@ class CommerceScenarioTest {
     static final ObjectMapper JSON = new ObjectMapper();
     static final HttpClient HTTP = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
 
-    record Res(int status, String body, String location) {
+    record Res(int status, String body, String location, String cookie) {
+        Res(int status, String body, String location) { this(status, body, location, null); }
         JsonNode json() {
             try { return JSON.readTree(body); } catch (Exception e) { return JSON.createObjectNode(); }
         }
@@ -101,10 +102,23 @@ class CommerceScenarioTest {
     }
 
     Res form(String path, Map<String, String> fields) throws Exception {
+        return form(path, fields, null);
+    }
+
+    /** A form post as a browser with the cart cookie (returns the cookie it was given, if any). */
+    Res form(String path, Map<String, String> fields, String cookie) throws Exception {
         String body = fields.entrySet().stream().map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8)).collect(Collectors.joining("&"));
-        HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                .header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
-        return new Res(r.statusCode(), r.body(), r.headers().firstValue("Location").orElse(null));
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(body));
+        if (cookie != null) b.header("Cookie", cookie);
+        HttpResponse<String> r = HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        String set = r.headers().firstValue("Set-Cookie").map(c -> c.split(";")[0]).orElse(cookie);
+        return new Res(r.statusCode(), r.body(), r.headers().firstValue("Location").orElse(null), set);
+    }
+
+    Res page(String path, String cookie) throws Exception {
+        HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Cookie", cookie).GET().build(), HttpResponse.BodyHandlers.ofString());
+        return new Res(r.statusCode(), r.body(), r.headers().firstValue("Location").orElse(null), cookie);
     }
 
     String signIn(String portalToken) throws Exception {
@@ -233,18 +247,61 @@ class CommerceScenarioTest {
         assertEquals("USED", api("GET", "/api/commerce/links/" + once.data().path("id").asLong(), alpha, null).data().path("status").asText());
         assertTrue(form("/l/" + once.data().path("code").asText() + "/pay", Map.of("k", key())).body().contains("already been paid"));
 
-        // Products, the mini-store and buying from it.
-        Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Woven basket", "description", "Handmade in Binga", "priceMinor", 1_800, "currency", "USD"));
+        // Products, the mini-store, the cart, stock, pickup or delivery, and customers (Phase 2a).
+        Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Woven basket", "description", "Handmade in Binga", "priceMinor", 1_800, "currency", "USD", "stock", 5));
         assertEquals(200, p.status(), p.body());
+        assertEquals(5, p.data().path("stock").asInt());
+        Res p2 = api("POST", "/api/commerce/products", alpha, Map.of("name", "Clay pot", "priceMinor", 1_200, "currency", "USD"));
+        assertEquals(200, api("PUT", "/api/commerce/store", alpha, Map.of("deliveryEnabled", true, "deliveryFeeMinor", 300, "freeDeliveryFromMinor", 10_000,
+                "deliveryNote", "Harare only", "pickupEnabled", true)).status());
+        assertEquals(400, api("PUT", "/api/commerce/store", alpha, Map.of("deliveryEnabled", false, "pickupEnabled", false)).status(), "at least one way to get the order");
         String productUrl = p.data().path("url").asText().replace("https://store.test", "");
-        Res store = page(productUrl.substring(0, productUrl.lastIndexOf('/')));
+        String potUrl = p2.data().path("url").asText().replace("https://store.test", "");
+        String storePath = productUrl.substring(0, productUrl.lastIndexOf('/'));
+        Res store = page(storePath);
         assertTrue(store.status() == 200 && store.body().contains("Woven basket") && store.body().contains("USD 18.00"), store.body());
         Res product = page(productUrl);
-        assertTrue(product.body().contains("og:title") && product.body().contains("Handmade in Binga"));
-        Res bought = form(productUrl + "/buy", Map.of("k", key(), "qty", "3"));
+        assertTrue(product.body().contains("og:title") && product.body().contains("Handmade in Binga") && product.body().contains("Only 5 left"));
+
+        Res added = form(productUrl + "/buy", Map.of("qty", "3"), null);
+        assertEquals(302, added.status(), added.body());
+        assertTrue(added.location().endsWith(storePath + "/cart"), added.location());
+        String cookie = added.cookie();
+        assertTrue(cookie != null && cookie.startsWith("pp_cart="), "a cart cookie");
+        assertEquals(302, form(potUrl + "/buy", Map.of("qty", "1"), cookie).status());
+        Res cart = page(storePath + "/cart", cookie);
+        assertTrue(cart.body().contains("Woven basket") && cart.body().contains("Clay pot") && cart.body().contains("USD 66.00"), cart.body());
+        assertTrue(cart.body().contains("USD 69.00") && cart.body().contains("delivery USD 3.00") && cart.body().contains("Harare only"), "delivery fee shown: " + cart.body());
+        assertTrue(form(productUrl + "/buy", Map.of("qty", "3"), cookie).body().contains("Only 5 left"), "never more than in stock");
+        assertTrue(form(productUrl + "/buy", Map.of("qty", "0"), cookie).body().contains("quantity"));
+        String k = key();
+        assertTrue(form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo"), cookie).body().contains("name and phone"));
+        assertTrue(form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111"), cookie).body().contains("delivery address"));
+        Res bought = form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111", "address", "12 Samora Machel Ave, Harare"), cookie);
         assertEquals(302, bought.status(), bought.body());
-        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE item_name = 'Woven basket' AND amount_minor = 5400 AND quantity = 3", Integer.class));
-        assertTrue(form(productUrl + "/buy", Map.of("k", key(), "qty", "0")).body().contains("quantity"));
+        String ref = orderRefOf(k);
+        assertEquals(6_900L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE order_ref = ?", Long.class, ref), "items plus delivery");
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.order_ref = ?", Integer.class, ref));
+        assertTrue(page(storePath + "/cart", cookie).body().contains("Your cart is empty"));
+        PSP.set(1001, ref + "-1", "PAID", "PAID");
+        reader.poll();
+        assertEquals(2, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, p.data().path("id").asLong()), "paid: stock goes down");
+        Res o = api("GET", "/api/commerce/orders/" + ref, alpha, null);
+        assertEquals("DELIVERY", o.data().path("deliveryMethod").asText());
+        assertEquals("PREPARING", o.data().path("deliveryStatus").asText());
+        assertEquals(2, o.data().path("items").size());
+        String bravoSession = signIn("portal-token-B");
+        assertEquals(404, api("POST", "/api/commerce/orders/" + ref + "/delivery", bravoSession, Map.of("status", "OUT")).status());
+        assertEquals(400, api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "COLLECTED")).status(), "collected is for pickup");
+        assertEquals(200, api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "OUT")).status());
+        assertTrue(page("/o/" + ref + "?t=" + payments.viewToken(k)).body().contains("on its way"));
+        assertEquals("FULFILLED", api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "DELIVERED")).data().path("orderStatus").asText());
+        Res customers = api("GET", "/api/commerce/customers", alpha, null);
+        assertTrue(customers.body().contains("Rudo") && customers.body().contains("0772000111"), customers.body());
+        assertFalse(api("GET", "/api/commerce/customers", bravoSession, null).body().contains("Rudo"), "customers belong to their merchant");
+        jdbc.update("UPDATE products SET stock = 0 WHERE id = ?", p.data().path("id").asLong());
+        assertTrue(page(productUrl).body().contains("Sold out"));
+
         String bravo = signIn("portal-token-B");
         assertEquals(404, api("PUT", "/api/commerce/products/" + p.data().path("id").asLong(), bravo, Map.of("name", "Mine", "priceMinor", 1, "currency", "USD")).status());
         Res ov = api("GET", "/api/commerce/overview", alpha, null);
