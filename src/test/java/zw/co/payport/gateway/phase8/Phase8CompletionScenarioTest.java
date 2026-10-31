@@ -776,7 +776,7 @@ class Phase8CompletionScenarioTest {
         whatsapp(from, "wamid.2", "1", true);
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM whatsapp_messages_seen WHERE message_id = 'wamid.2'", Integer.class), "Meta retries are answered once");
         whatsapp(from, "wamid.2b", "1", true);
-        assertTrue(reply("wamid.2b").startsWith("Currency:"), reply("wamid.2b"));
+        assertTrue(reply("wamid.2b").startsWith("Econet Airtime\nCurrency:"), reply("wamid.2b"));
         whatsapp(from, "wamid.3", "1", true);
         assertTrue(reply("wamid.3").startsWith("Amount (USD)"), reply("wamid.3"));
         whatsapp(from, "wamid.4", "menu", true);
@@ -856,37 +856,94 @@ class Phase8CompletionScenarioTest {
         assertTrue(failed.data().path("error").asText().contains("no longer holds"), failed.body().toString());
     }
 
-    /** Owner, 2026-10-30: a PIN is never typed into WhatsApp; a one-time PayPort page takes it and the chat carries on. */
+    @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.intelligence.FraudShadow fraudShadow;
+
+    /** Owner, 2026-10-31: PayPort Intelligence starts read-only, behind switches that only administrators turn on. */
     @Test
-    void whatsapp_pinIsEnteredOnPayPortsPage_neverInTheChat() throws Exception {
+    void intelligence_offUntilSwitchedOn_triageSuggests_helperExplains_fraudScoresInShadow() throws Exception {
+        String ops = staff("Ai Ops", "OPS"), admin = staff("Ai Admin", "ADMIN");
+        jdbc.update("UPDATE ai_features SET enabled = FALSE");
+        assertEquals(409, call("POST", "/api/v1/admin/complaints/triage", ops, Map.of("text", "I was charged twice for one purchase")).status(), "off by default");
+        assertFalse(call("GET", "/api/v1/admin/complaints/assist", ops, null).data().path("triage").asBoolean());
+        assertEquals(403, call("POST", "/api/v1/admin/intelligence/features/COMPLAINT_TRIAGE", ops, Map.of("enabled", true)).status(), "administrators only");
+        for (String f : List.of("COMPLAINT_TRIAGE", "INVESTIGATION_HELPER", "FRAUD_SHADOW")) {
+            assertEquals(200, call("POST", "/api/v1/admin/intelligence/features/" + f, admin, Map.of("enabled", true)).status());
+        }
+
+        Res s = call("POST", "/api/v1/admin/complaints/triage", ops, Map.of("text", "The customer was charged twice for one purchase at the shop"));
+        assertEquals(200, s.status(), s.body().toString());
+        assertEquals(3, s.data().path("suggestions").size());
+        assertTrue(s.data().path("suggestions").toString().contains("M_CHARGED_TWICE"), s.body().toString());
+
+        // A complaint opened while triage is on: the suggestion is kept next to the type staff chose.
+        Customer c = customer("Tino Triage");
+        Res cmp = call("POST", "/api/v1/admin/complaints", ops, Map.of("category", "M_CHARGED_TWICE", "channel", "PHONE", "customerPhone", c.phone(),
+                "description", "Charged twice for one purchase at the supermarket"));
+        assertEquals(200, cmp.status(), cmp.body().toString());
+        assertEquals("M_CHARGED_TWICE", jdbc.queryForObject("SELECT outcome FROM ai_predictions WHERE feature = 'COMPLAINT_TRIAGE' AND subject_ref = ?",
+                String.class, cmp.data().path("complaint_ref").asText()));
+
+        // The helper explains a payment in plain words, with a draft reply, and cannot change anything.
+        ensureOn("WALLETS", null);
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
+        String w = openWallet(c, "USD");
+        topUp(w, 2_000);
+        String paid = jdbc.queryForObject("SELECT reference FROM transactions WHERE recipient_identifier = ? ORDER BY id DESC LIMIT 1", String.class, w);
+        Res ex = call("GET", "/api/v1/admin/complaints/explain?ref=" + paid, ops, null);
+        assertEquals(200, ex.status(), ex.body().toString());
+        assertTrue(ex.data().path("findings").size() > 0 && ex.data().path("draftReply").asText().contains(paid), ex.body().toString());
+        assertTrue(call("GET", "/api/v1/admin/complaints/explain?ref=NOPE-1234", ops, null).data().path("draftReply").asText().contains("could not find"));
+
+        // Shadow fraud scoring: completed payments get a score that does nothing but get measured.
+        int scored = fraudShadow.run();
+        assertTrue(scored > 0, "completed payments are scored");
+        Res ov = call("GET", "/api/v1/admin/intelligence", admin, null);
+        assertEquals(200, ov.status(), ov.body().toString());
+        assertTrue(ov.data().path("fraud").path("scored30d").size() > 0);
+        assertEquals(403, call("GET", "/api/v1/admin/intelligence", ops, null).status());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM ai_predictions WHERE detail LIKE ?", Integer.class, "%771234567%"), "no phone numbers kept");
+        jdbc.update("UPDATE ai_features SET enabled = FALSE");
+    }
+
+    /**
+     * Owner, 2026-10-31: a WhatsApp bundle may have no internet for a web page, so the PIN is typed in the chat. It is
+     * checked once and never kept: the session keeps "#", and PayPort records only its own replies.
+     */
+    @Test
+    void whatsapp_pinTypedInTheChat_neverKept_wrongAmountAskedAgain_00GoesHome() throws Exception {
         ensureOn("WHATSAPP_CHANNEL", "WHATSAPP");
         String wa = String.format("263778%06d", 700000 + (int) (System.nanoTime() % 99999));
         jdbc.update("INSERT INTO users (full_name, phone, pin_hash, role, is_active, is_verified) VALUES ('Chipo Banda', ?, ?, 'CUSTOMER', TRUE, TRUE)",
                 "+" + wa, new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("4826"));
-        whatsapp(wa, "wamid.pin1." + wa, "hi", true);
-        String hello = reply("wamid.pin1." + wa);
-        assertTrue(hello.contains("Welcome to PayPort, Chipo") && hello.contains("/pin/") && !hello.contains("Enter your wallet PIN"), hello);
+        String p = "wamid.pin." + wa + ".";
+        whatsapp(wa, p + 1, "hi", true);
+        String hello = reply(p + 1);
+        assertTrue(hello.contains("Welcome to PayPort, Chipo") && hello.contains("Enter your PayPort PIN") && !hello.contains("http"), hello);
 
-        whatsapp(wa, "wamid.pin2." + wa, "4826", true);
-        String warned = reply("wamid.pin2." + wa);
-        assertTrue(warned.contains("never type your PIN"), warned);
-        assertFalse(jdbc.queryForObject("SELECT path FROM whatsapp_sessions WHERE wa_id = ?", String.class, wa).contains("4826"), "a typed PIN is not kept");
+        whatsapp(wa, p + 2, "4826", true);
+        String menu = reply(p + 2);
+        assertTrue(menu.contains("what would you like to do") && menu.contains("My wallet") && menu.contains("00 for the main menu"), menu);
+        assertEquals("#", jdbc.queryForObject("SELECT path FROM whatsapp_sessions WHERE wa_id = ?", String.class, wa), "the PIN is never kept");
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM whatsapp_messages_seen WHERE wa_id = ? AND reply LIKE '%4826%'", Integer.class, wa));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM channel_session_secrets WHERE value = '4826'", Integer.class));
 
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("/pin/([A-Za-z0-9_-]+)").matcher(warned);
-        assertTrue(m.find());
-        String token = m.group(1);
-        Res info = call("GET", "/api/v1/channel-pin/" + token, null, null);
-        assertEquals(200, info.status(), info.body().toString());
-        assertEquals("LOGIN", info.data().path("purpose").asText());
-        assertEquals("Chipo", info.data().path("firstName").asText());
-        assertFalse(info.body().toString().contains(wa), "the page is not told the phone number");
-        assertEquals(400, call("POST", "/api/v1/channel-pin/" + token, null, Map.of("pin", "1111")).status(), "wrong PIN");
-        assertEquals(200, call("POST", "/api/v1/channel-pin/" + token, null, Map.of("pin", "4826")).status());
-        assertEquals(409, call("POST", "/api/v1/channel-pin/" + token, null, Map.of("pin", "4826")).status(), "single use");
+        whatsapp(wa, p + 3, "1", true);
+        whatsapp(wa, p + 4, "1", true);
+        whatsapp(wa, p + 5, "1", true);
+        assertTrue(reply(p + 5).startsWith("Amount (USD)"), reply(p + 5));
+        whatsapp(wa, p + 6, "abc", true);
+        assertTrue(reply(p + 6).contains("Enter another amount (USD)") && reply(p + 6).contains("0. Cancel"), reply(p + 6));
+        whatsapp(wa, p + 7, "2.50", true);
+        assertTrue(reply(p + 7).startsWith("Pay with:\n1. PayPort wallet"), "the corrected amount carries on: " + reply(p + 7));
+        whatsapp(wa, p + 8, "00", true);
+        assertTrue(reply(p + 8).contains("what would you like to do"), "00 goes back to the main menu, still logged in: " + reply(p + 8));
         assertEquals("#", jdbc.queryForObject("SELECT path FROM whatsapp_sessions WHERE wa_id = ?", String.class, wa));
-        String next = jdbc.queryForObject("SELECT body FROM whatsapp_outbox WHERE wa_id = ? ORDER BY id DESC LIMIT 1", String.class, wa);
-        assertTrue(next.contains("what would you like to do") && next.contains("My wallet"), next);
-        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM channel_pin_requests WHERE token_hash = ?", Integer.class, token), "only the hash of the link is stored");
+
+        whatsapp(wa, p + 9, "menu", true);
+        whatsapp(wa, p + 10, "1111", true);
+        assertTrue(reply(p + 10).contains("Wrong PIN"), reply(p + 10));
+        // Leave the channel as it ships (off) for the other tests.
+        call("POST", "/api/v1/admin/channels/WHATSAPP", staff("Wa Reset", "OPS"), Map.of("enabled", false, "reason", "test finished"));
     }
 
     // ─── provider settlements on the bank statement ─────────────────────────

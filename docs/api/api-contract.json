@@ -119,7 +119,15 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/complaints/assist"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/complaints/catalog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/explain"
   },
   {
    "method": "GET",
@@ -128,6 +136,10 @@
   {
    "method": "GET",
    "path": "/api/v1/admin/complaints/trace"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/triage"
   },
   {
    "method": "GET",
@@ -528,6 +540,18 @@
   {
    "method": "POST",
    "path": "/api/v1/admin/integrations/{code}/verifications"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/intelligence"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/features/{feature}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/triage/retrain"
   },
   {
    "method": "GET",
@@ -1323,14 +1347,6 @@
   },
   {
    "method": "GET",
-   "path": "/api/v1/channel-pin/{token}"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/channel-pin/{token}"
-  },
-  {
-   "method": "GET",
    "path": "/api/v1/charges/quote"
   },
   {
@@ -1348,6 +1364,26 @@
   {
    "method": "GET",
    "path": "/api/v1/codes/scan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/checkouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/checkouts/{merchantId}/{reference}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/events"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/merchants/{merchantId}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/refunds"
   },
   {
    "method": "GET",
@@ -1488,6 +1524,10 @@
   {
    "method": "GET",
    "path": "/api/v1/merchant/collections-by-method"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/commerce/identity"
   },
   {
    "method": "GET",

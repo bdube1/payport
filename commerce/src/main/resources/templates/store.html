@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head th:replace="~{fragments :: head(${title}, ${description}, null, ${store.color}, ${share.url})}"></head>
+<body>
+<header th:replace="~{fragments :: top(${store})}"></header>
+<main class="wrap">
+  <section class="hero">
+    <h1 th:text="${store.name}">Store</h1>
+    <p th:if="${store.about != null}" th:text="${store.about}" class="muted"></p>
+    <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
+  </section>
+  <p th:if="${#lists.isEmpty(products)}" class="muted">No products yet.</p>
+  <ul class="grid">
+    <li th:each="p : ${products}" class="card">
+      <a th:href="${p.url}">
+        <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
+        <div th:if="${p.image == null}" class="pic blank"></div>
+        <span class="name" th:text="${p.name}">Product</span>
+        <span class="price" th:text="${p.price}">USD 1.00</span>
+      </a>
+    </li>
+  </ul>
+  <section th:replace="~{fragments :: share(${share})}"></section>
+</main>
+<footer th:replace="~{fragments :: foot}"></footer>
+</body>
+</html>

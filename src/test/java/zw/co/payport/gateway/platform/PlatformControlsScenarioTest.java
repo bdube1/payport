@@ -355,14 +355,29 @@ class PlatformControlsScenarioTest {
         assertTrue(menu.startsWith("CON PayPort") && menu.contains("1. Buy airtime") && menu.contains("5. Check a payment"), menu);
         assertTrue(ussd(s, ph, "1", true).body().path("text").asText().startsWith("CON Airtime for:"));
         String ccy = ussd(s, ph, "1*1", true).body().path("text").asText();
-        assertTrue(ccy.startsWith("CON Currency:") && ccy.contains("USD"), ccy);
+        assertTrue(ccy.startsWith("CON Econet Airtime\nCurrency:") && ccy.contains("USD"), "the product is named: " + ccy);
         assertTrue(ussd(s, ph, "1*1*1", true).body().path("text").asText().startsWith("CON Amount (USD)"));
-        assertTrue(ussd(s, ph, "1*1*1*abc", true).body().path("text").asText().startsWith("END Invalid amount"));
-        String with = ussd(s, ph, "1*1*1*2.50", true).body().path("text").asText();
-        assertTrue(with.startsWith("CON Pay with:") && !with.contains("PayPort wallet"), "guests pay with the four wallets only: " + with);
-        String confirm = ussd(s, ph, "1*1*1*2.50*1", true).body().path("text").asText();
-        assertTrue(confirm.contains("Buy USD 2.50 airtime") && confirm.contains("1. Confirm"), confirm);
-        assertTrue(ussd(s, ph, "1*1*1*2.50*1*2", true).body().path("text").asText().startsWith("END Cancelled"));
+        // Owner, 2026-10-31: a wrong amount is explained and asked again (change it, or 0 to cancel); the session goes on.
+        String again = ussd(s, ph, "1*1*1*abc", true).body().path("text").asText();
+        assertTrue(again.startsWith("CON Invalid amount") && again.contains("Enter another amount (USD)") && again.contains("0. Cancel"), again);
+        assertTrue(ussd(s, ph, "1*1*1*abc*0", true).body().path("text").asText().startsWith("END Cancelled"));
+        String with = ussd(s, ph, "1*1*1*abc*2.50", true).body().path("text").asText();
+        assertTrue(with.startsWith("CON Pay with:") && !with.contains("PayPort wallet"), "the amended amount carries on; guests pay with the four wallets only: " + with);
+        assertTrue(ussd(s, ph, "1*1*1*2.50*x", true).body().path("text").asText().startsWith("CON Invalid choice.\nPay with:"), "a wrong choice asks again");
+        // Owner, 2026-10-31: the paying number is never assumed.
+        String from = ussd(s, ph, "1*1*1*2.50*1", true).body().path("text").asText();
+        String local = "0" + ph.substring(4);
+        assertTrue(from.contains("Pay from which EcoCash number?") && from.contains("1. " + local + " (this phone)") && from.contains("2. Another number"), from);
+        String confirm = ussd(s, ph, "1*1*1*2.50*1*1", true).body().path("text").asText();
+        assertTrue(confirm.contains("Econet Airtime USD 2.50 for " + local) && confirm.contains("EcoCash " + local) && confirm.contains("1. Confirm"), confirm);
+        assertTrue(ussd(s, ph, "1*1*1*2.50*1*1*2", true).body().path("text").asText().startsWith("END Cancelled"));
+        assertTrue(ussd(s, ph, "1*1*1*2.50*1*2", true).body().path("text").asText().contains("Enter the EcoCash number to pay from"));
+        String notEcoCash = ussd(s, ph, "1*1*1*2.50*1*2*0712345678", true).body().path("text").asText();
+        assertTrue(notEcoCash.contains("cannot pay with EcoCash") && notEcoCash.contains("0. Cancel"), notEcoCash);
+        String other = ussd(s, ph, "1*1*1*2.50*1*2*0712345678*0771000111", true).body().path("text").asText();
+        assertTrue(other.contains("EcoCash 0771000111") && other.contains("1. Confirm"), "another person's number pays: " + other);
+        String home = ussd(s, ph, "1*1*1*2.50*00", true).body().path("text").asText();
+        assertTrue(home.startsWith("CON PayPort") && home.contains("1. Buy airtime"), "00 goes back to the main menu: " + home);
         assertTrue(ussd(s, ph, "5*PP-NOT-MINE", true).body().path("text").asText().contains("No payment with that reference"));
         assertTrue(ussd(s, "+1555000111", "", true).body().path("text").asText().contains("not supported"), "numbers outside configured markets");
 
@@ -410,7 +425,8 @@ class PlatformControlsScenarioTest {
         assertTrue(says(s5, ph, "1357*1").contains("3. Saved number"));
         assertTrue(says(s5, ph, "1357*1*3").contains("Mum"));
         String ccy = says(s5, ph, "1357*1*3*1");
-        assertTrue(ccy.startsWith("CON Currency:"), ccy);
+        assertTrue(ccy.contains("Currency:"), ccy);
+        assertTrue(says(s5, ph, "1357*1*3*1*00").contains("what would you like to do"), "00 keeps a logged-in customer logged in");
         String with = says(s5, ph, "1357*1*3*1*1*2.50");
         assertTrue(with.startsWith("CON Pay with:\n1. PayPort wallet"), "the wallet is the first way to pay: " + with);
 
@@ -458,7 +474,7 @@ class PlatformControlsScenarioTest {
         assertTrue(econet(key, tx, guest, "1", "PENDING").contains("Airtime for:"));
         assertTrue(econet(key, tx, guest, "1", "PENDING").contains("Currency:"));
         String bad = econet(key, tx, guest, "x", "PENDING");
-        assertTrue(bad.contains("<stage>COMPLETE</stage>") && bad.contains("Invalid choice"), bad);
+        assertTrue(bad.contains("<stage>PENDING</stage>") && bad.contains("Invalid choice"), "a wrong choice is asked again: " + bad);
 
         String holder = String.format("263778%06d", 400000 + SEQ.incrementAndGet());
         jdbc.update("INSERT INTO users (full_name, phone, pin_hash, role, is_active, is_verified) VALUES ('Tendai Moyo', ?, ?, 'CUSTOMER', TRUE, TRUE)",
@@ -493,7 +509,7 @@ class PlatformControlsScenarioTest {
         String t1 = JSON.writeValueAsString(Map.of("source_addr", guest, "destination_addr", "123", "short_message", Map.of("message", "80 T" + tx + " 0 *123#")));
         JsonNode j1 = JSON.readTree(raw("/api/v1/ussd/telecel?key=" + tkey, t1, "application/json").body().path("text").asText());
         assertTrue(j1.path("short_message").asText().startsWith("72 T" + tx + " 0 ") && j1.path("short_message").asText().contains("1. Buy airtime"), j1.toString());
-        String t2 = JSON.writeValueAsString(Map.of("source_addr", guest, "destination_addr", "123", "short_message", Map.of("message", "74 T" + tx + " 0 9")));
+        String t2 = JSON.writeValueAsString(Map.of("source_addr", guest, "destination_addr", "123", "short_message", Map.of("message", "74 T" + tx + " 0 7")));
         JsonNode j2 = JSON.readTree(raw("/api/v1/ussd/telecel?key=" + tkey, t2, "application/json").body().path("text").asText());
         assertTrue(j2.path("short_message").asText().startsWith("81 T" + tx + " 0 "), j2.toString());
     }

@@ -25,8 +25,10 @@ import java.util.Set;
 /**
  * WhatsApp over the WhatsApp Cloud API webhook. The conversation is the same engine as USSD with channel WHATSAPP
  * (guest and registered features, the same services as the website and the app): each message the customer sends is
- * the next answer; "menu", "hi" or "start" start again. A registered customer logs in with the PayPort PIN; PINs are
- * never stored (the kept path carries "#"). Payment updates are also sent back into the chat.
+ * the next answer; "menu", "hi" or "start" start again, "00" goes back to the main menu. A registered customer logs in
+ * with the PayPort PIN typed in the chat (a WhatsApp bundle may have no internet for a web page); the PIN is checked
+ * once and never stored (the kept path carries "#", and only replies are recorded, never what the customer typed).
+ * Payment updates are also sent back into the chat.
  *
  * Webhook security: X-Hub-Signature-256 = sha256=HMAC-SHA256(app secret, raw body), checked in
  * constant time; without a configured app secret every delivery is refused (fails closed).
@@ -128,24 +130,12 @@ public class WhatsAppService {
             jdbc.update("DELETE FROM whatsapp_sessions WHERE wa_id = ?", waId);
             engine.forget(session);
         } else {
-            // PINs are never in the kept path: they are entered on PayPort's PIN page ("#" marks the step).
+            // PINs are never in the kept path: the engine keeps "#" in their place.
             jdbc.update("INSERT INTO whatsapp_sessions (wa_id, session_id, path, updated_at) VALUES (?,?,?,?) "
                     + "ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), path = VALUES(path), updated_at = VALUES(updated_at)", waId, session, t.storedPath(), now());
         }
         String body = t.text();
-        return t.end() ? body + "\n\nSend MENU to start again." : body + "\n\nReply with a number, or MENU to start again.";
-    }
-
-    /**
-     * After the PIN page: the conversation carries on by itself (the step is marked "#") and the next screen is sent
-     * to the customer in WhatsApp. Nothing happens if the customer has since started again.
-     */
-    public void continueAfterPin(String waId, String session) {
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT path FROM whatsapp_sessions WHERE wa_id = ? AND session_id = ?", waId, session);
-        if (rows.isEmpty()) return;
-        String path = (String) rows.get(0).get("path");
-        String reply = step(waId, session, path == null || path.isEmpty() ? UssdService.MASK_TOKEN : path + "*" + UssdService.MASK_TOKEN);
-        outbox(waId, reply, "AFTER_PIN");
+        return t.end() ? body + "\n\nSend MENU to start again." : body + "\n\nReply with your answer. 00 for the main menu, MENU to start again.";
     }
 
     /** Sends a message PayPort starts (not a direct answer) and records it. */

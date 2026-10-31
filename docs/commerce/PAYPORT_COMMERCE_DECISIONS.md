@@ -1,23 +1,31 @@
 # PayPort Commerce: decision records
 
-## D-001 Commerce runs as a module of the gateway with its own schema (proposed, 30 Oct 2026)
-**Context.** The brief asks for a modular monolith, a hard financial boundary and no shared database access.
-**Options.** (a) Separate service with its own database; (b) module in the gateway sharing the PSP schema;
-(c) module in the gateway with its own schema and database user.
-**Recommendation.** (c). One deployment and one CI, like today, while the boundary is enforced by the database
-(Commerce's user has no rights on PSP tables) and by an architecture test in the build. Moving Commerce out later
-is a deployment change, not a rewrite, because it already talks to the PSP only through `PspPaymentsApi` and events.
-**Status.** Waiting for approval.
+## D-001 Commerce is its own service with its own database (decided by the owner, 31 Oct 2026)
+**Context.** Phase 0 proposed a module inside the gateway. The owner decided: "PayPort Commerce must be able to operate
+independently of PayPort Payments. If the PSP goes down, Commerce must remain available."
+**Decision.** A separate Spring Boot service (`commerce/` in this repository, its own build and CI workflow), its own
+database and database user (no rights on PSP tables), its own port (8086) and address (store.payport.africa).
+Pages render from Commerce's own data; paying needs the PSP and is retried by the customer when the PSP is back.
+Payment results come from the PSP's event stream, read with a cursor, and are checked against the PSP's status.
+**Status.** Accepted and built (Phase 1).
 
-## D-002 One event outbox for the PSP and Commerce (proposed, 30 Oct 2026)
-**Context.** Reporting, merchant webhooks and later AI need one reliable record of what happened.
-**Recommendation.** A `platform_events` outbox written in the same transaction as each change; versioned events
-with stable IDs; idempotent consumers; merchant webhooks become one consumer. It never replaces the transaction
-tables or the ledger.
-**Status.** Waiting for approval.
+## D-002 One event stream for the PSP (accepted, 31 Oct 2026)
+`platform_events`, written when the change happens; one event per state change (unique dedupe key); versioned; no
+personal data in payloads; read in order through `/api/v1/commerce/events`. Merchant webhooks keep their own outbox for
+now (moving them onto the stream is a later, separate change).
+**Status.** Accepted and built.
 
-## D-003 AI features start read-only, behind flags, with cost limits (proposed, 30 Oct 2026)
-**Context.** The owner wants AI and machine learning embedded now; the brief puts AI at Phase 3 and ML at Phase 4.
-**Recommendation.** Build the data foundation and AI guard-rails in Phase 1; start complaint triage, the ops
-investigation helper and shadow fraud scoring behind flags; keep the brief's order for commerce AI.
-**Status.** Waiting for approval.
+## D-003 AI features start read-only, behind switches (accepted, 31 Oct 2026)
+**Status.** Accepted. Complaint triage, the investigation helper and shadow fraud scoring start behind switches; store
+AI stays in Phase 3.
+
+## D-004 Merchant refunds (decided by the owner, 31 Oct 2026)
+"A merchant can refund its own customer from its own balance." The refund is allowed while PayPort still holds the
+payment for the merchant (not yet paid out), reduces the merchant's balance at once, and the payout to the customer is
+listed in the central reversal register (MERCHANT_REFUND, awaiting payout) for Finance to pay and record.
+**Status.** Accepted and built. A refund of a payment already paid out to the merchant (to be recovered from the next
+settlement) is not built; it needs a settlement adjustment and is a separate decision.
+
+## D-005 Storefront address and server (accepted, 31 Oct 2026)
+`store.payport.africa` (`store-staging.payport.africa` on staging) until custom domains (Phase 2b). A second server for
+monitoring and Commerce staging is agreed.

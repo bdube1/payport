@@ -177,11 +177,42 @@ public class ReversalService {
         Map<String, Object> r = pending(ref, "AWAITING_PAYOUT");
         if (payoutReference == null || payoutReference.isBlank()) throw new IllegalArgumentException("Enter the payout reference");
         String m = method == null || method.isBlank() ? "PROVIDER" : method.trim().toUpperCase(Locale.ROOT);
-        orchestrator.completeManualRefund((String) r.get("target_ref"), by, payoutReference.trim(), m, ref + ": " + r.get("reason"));
-        done(ref, payoutReference.trim());
+        if ("MERCHANT_REFUND".equals(r.get("kind"))) {
+            // The merchant's balance was already reduced when it refunded; this records the money reaching the customer.
+            done(ref, payoutReference.trim());
+            merchantRefundPaid(r, payoutReference.trim(), m);
+        } else {
+            orchestrator.completeManualRefund((String) r.get("target_ref"), by, payoutReference.trim(), m, ref + ": " + r.get("reason"));
+            done(ref, payoutReference.trim());
+        }
         audit.record(by, "REVERSAL_PAYOUT_RECORDED", "reversal:" + ref, m + " " + payoutReference.trim());
         complaintNote(r, "Refund " + ref + " paid to the customer (" + m + " " + payoutReference.trim() + ")", by);
         return get(ref);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.events.PlatformEvents events;
+
+    /** refund.completed on the event stream, for the merchant's records and PayPort Commerce. */
+    private void merchantRefundPaid(Map<String, Object> r, String payoutReference, String method) {
+        if (events == null) return;
+        String target = String.valueOf(r.get("target_ref"));
+        long refundId;
+        try { refundId = Long.parseLong(target.substring(target.indexOf(':') + 1)); } catch (RuntimeException e) { return; }
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT r.id, r.amount_cents, cs.id AS session_id, cs.reference, cs.currency, cs.merchant_id, cs.livemode "
+                + "FROM refunds r JOIN checkout_sessions cs ON cs.id = r.checkout_session_id WHERE r.id = ?", refundId);
+        if (rows.isEmpty()) return;
+        Map<String, Object> x = rows.get(0);
+        Map<String, Object> p = new java.util.LinkedHashMap<>();
+        p.put("refundId", refundId);
+        p.put("checkoutSessionId", x.get("session_id"));
+        p.put("reference", x.get("reference"));
+        p.put("amountMinor", x.get("amount_cents"));
+        p.put("currency", x.get("currency"));
+        p.put("reversalRef", r.get("reversal_ref"));
+        p.put("payoutMethod", method);
+        events.record("refund.completed", ((Number) x.get("merchant_id")).longValue(), "refund_" + refundId, "refund:" + refundId + ":completed",
+                Boolean.TRUE.equals(x.get("livemode")) || Integer.valueOf(1).equals(x.get("livemode")), p);
     }
 
     private void done(String ref, String result) {

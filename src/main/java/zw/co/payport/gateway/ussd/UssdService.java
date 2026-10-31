@@ -82,6 +82,12 @@ import java.util.function.Supplier;
  * account is greeted by name and logs in with its PIN (0 continues as a guest); then the PayPort wallet is the first
  * way to pay and the wallet, saved numbers, cards, history and PIN are offered as well.
  *
+ * Easy to use (owner, 2026-10-31): the number that pays is always asked (this phone or another number), never
+ * assumed; a wrong answer shows why and asks the same question again (an amount below the minimum can be changed,
+ * 0 cancels); "00" goes back to the main menu without logging in again. On WhatsApp the PIN is typed in the chat,
+ * because a WhatsApp bundle may not include internet for a web page; it is used once, never kept, and shown as dots
+ * wherever PayPort shows the conversation (only the customer's own phone shows what they typed).
+ *
  * The whole input path is the state ("1*2*0771234567*1*5*1*1"): every hop re-reads it, so a gateway retry gets the
  * same answer, and a confirmed step runs once per session (ussd_sessions). PINs are never stored: the stored path
  * carries "#" in their place and only a hash or a "checked" flag is kept (channel_session_secrets).
@@ -96,6 +102,10 @@ public class UssdService {
     /** The mark a completed PIN step leaves in a session path. */
     public static final String MASK_TOKEN = MASK;
     static final String MORE = "0";
+    /** After a wrong answer: cancel. */
+    static final String CANCEL = "0";
+    /** Back to the main menu (a logged-in customer stays logged in). */
+    public static final String HOME = "00";
     static final String HELP = "Help: WhatsApp +263 719 183 557, email support@payport.africa, web www.payport.africa";
     static final String TERMS = "payport.africa/terms";
 
@@ -132,7 +142,6 @@ public class UssdService {
     private final CardService cards;
     private final PasswordEncoder encoder;
     private final SmsNotificationService sms;
-    private final zw.co.payport.gateway.whatsapp.ChannelPinService pinLinks;
     private final String consumerBase;
 
     public UssdService(JdbcTemplate jdbc, ChannelService channels, MarketRegistry markets, BillerRegistry billers, BillerController billerLookups,
@@ -141,7 +150,7 @@ public class UssdService {
                        CheckoutSessionService checkout, BundleService bundles, ProductTypeRepository products, ProductCurrencyRepository productCurrencies,
                        MerchantCodePayments merchantCodes, ChargeQuoteController chargeQuotes, AuthService auth, BeneficiaryRepository beneficiaries,
                        TransactionRepository transactions, Counterparties counterparties, CardService cards, PasswordEncoder encoder,
-                       SmsNotificationService sms, zw.co.payport.gateway.whatsapp.ChannelPinService pinLinks, @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase) {
+                       SmsNotificationService sms, @Value("${payport.consumer.base-url:https://app.payport.africa}") String consumerBase) {
         this.jdbc = jdbc;
         this.channels = channels;
         this.markets = markets;
@@ -168,7 +177,6 @@ public class UssdService {
         this.cards = cards;
         this.encoder = encoder;
         this.sms = sms;
-        this.pinLinks = pinLinks;
         this.consumerBase = consumerBase == null ? "" : consumerBase.replaceAll("/+$", "");
     }
 
@@ -237,17 +245,30 @@ public class UssdService {
 
     public Turn turn(String channel, String sessionId, String phoneNumber, String text) {
         SECRETS.set(new HashSet<>());
-        DROP.remove();
         try {
-            String reply = menu(channel, sessionId, phoneNumber, text);
-            String kept = mask(text, SECRETS.get());
-            // A PIN typed into a WhatsApp chat is never used or kept: that answer is dropped from the path.
-            if (Boolean.TRUE.equals(DROP.get())) kept = kept.contains("*") ? kept.substring(0, kept.lastIndexOf('*')) : "";
-            return new Turn(reply, kept);
+            String path = home(phoneNumber, text);
+            String reply = menu(channel, sessionId, phoneNumber, path);
+            return new Turn(reply, mask(path, SECRETS.get()));
         } finally {
             SECRETS.remove();
-            DROP.remove();
         }
+    }
+
+    /**
+     * "00" goes back to the main menu: everything answered before it is dropped, except a logged-in customer's PIN
+     * step (kept as "#" or "0" for guest), so the main menu shows again without logging in again.
+     */
+    String home(String phoneNumber, String text) {
+        if (text == null || text.isEmpty()) return text == null ? "" : text;
+        String[] t = text.split("\\*", -1);
+        int last = -1;
+        for (int i = 0; i < t.length; i++) if (HOME.equals(t[i].trim())) last = i;
+        if (last < 0) return text;
+        int keep = holder(phoneNumber == null ? "" : phoneNumber.replaceAll("[^0-9]", "")).isPresent() ? 1 : 0;
+        if (last < keep) return text;   // "00" in place of the PIN is just a wrong PIN
+        List<String> out = new ArrayList<>(java.util.Arrays.asList(t).subList(0, keep));
+        out.addAll(java.util.Arrays.asList(t).subList(last + 1, t.length));
+        return String.join("*", out);
     }
 
     static String mask(String path, Set<Integer> secret) {
@@ -258,7 +279,6 @@ public class UssdService {
     }
 
     private static final ThreadLocal<Set<Integer>> SECRETS = new ThreadLocal<>();
-    private static final ThreadLocal<Boolean> DROP = new ThreadLocal<>();
 
     /** One conversation: who, where, and (once the PIN is checked) whose wallet. */
     private record Ctx(String channel, String session, String msisdn, MarketRegistry.Market market, String network, User holder) {
@@ -304,33 +324,20 @@ public class UssdService {
             Optional<User> holder = holder(msisdn);
             if (holder.isEmpty()) {
                 Ctx c = new Ctx(channel, sessionId, msisdn, market.get(), network, null);
-                In in = new In(tokens, 0);
-                if (!in.has()) return "CON PayPort\n" + numbered(GUEST_MENU);
-                return guest(c, in.next(), in);
+                return guest(c, new In(tokens, 0));
             }
             User u = holder.get();
-            boolean chat = !"USSD".equals(channel);
-            if (tokens.length == 0) {
-                if (chat) return "CON Welcome to PayPort, " + firstName(u) + "\nTap the link to enter your PIN:\n"
-                        + pinLinks.link(sessionId, msisdn, zw.co.payport.gateway.whatsapp.ChannelPinService.LOGIN, u.getId()) + "\n0. Continue as guest";
-                return "CON Welcome to PayPort, " + firstName(u) + "\nEnter your wallet PIN\n0. Continue as guest";
-            }
+            if (tokens.length == 0) return "CON Welcome to PayPort, " + firstName(u) + "\nEnter your PayPort PIN\n0. Continue as guest";
             In in = new In(tokens, 1);
-            if (chat && !GUEST.equals(tokens[0].trim()) && !MASK.equals(tokens[0].trim())) {
-                DROP.set(true);
-                return "CON For your safety, never type your PIN in WhatsApp. Tap the link to enter it:\n"
-                        + pinLinks.link(sessionId, msisdn, zw.co.payport.gateway.whatsapp.ChannelPinService.LOGIN, u.getId()) + "\n0. Continue as guest";
-            }
             if (GUEST.equals(tokens[0].trim())) {
                 Ctx c = new Ctx(channel, sessionId, msisdn, market.get(), network, null);
-                if (!in.has()) return "CON PayPort\n" + numbered(GUEST_MENU);
-                return guest(c, in.next(), in);
+                return guest(c, in);
             }
+            // The PIN, typed on the keypad (USSD) or in the chat (WhatsApp): checked once, kept as "#".
             SECRETS.get().add(0);
             User verified = login(sessionId, u, tokens[0].trim());
             Ctx c = new Ctx(channel, sessionId, msisdn, market.get(), network, verified);
-            if (!in.has()) return "CON " + firstName(u) + ", what would you like to do?\n" + numbered(WALLET_MENU);
-            return wallet(c, in.next(), in);
+            return wallet(c, in);
         } catch (Web.PinRejectedException e) {
             return "END " + clip(e.getMessage(), 150);
         } catch (Exception e) {
@@ -345,55 +352,57 @@ public class UssdService {
     static final List<String> WALLET_SUBMENU = List.of("Balances", "Statement", "Top up", "Convert currency", "Open a wallet");
     static final List<String> MORE_MENU = List.of("History", "Check a payment", "Saved numbers", "Cards", "Change PIN", "Help");
 
-    private String guest(Ctx c, String choice, In in) {
-        return switch (choice) {
-            case "1" -> airtime(c, in);
-            case "2" -> data(c, in);
-            case "3" -> bill(c, in);
-            case "4" -> merchant(c, in);
-            case "5" -> status(c, in);
-            case "6" -> register(c, in);
-            case "7" -> "END " + HELP;
-            default -> "END Invalid choice.";
+    private String guest(Ctx c, In in) {
+        Step<Integer> k = option(c, in, "PayPort", GUEST_MENU);
+        if (k.asking()) return k.prompt();
+        return switch (k.value()) {
+            case 1 -> airtime(c, in);
+            case 2 -> data(c, in);
+            case 3 -> bill(c, in);
+            case 4 -> merchant(c, in);
+            case 5 -> status(c, in);
+            case 6 -> register(c, in);
+            default -> "END " + HELP;
         };
     }
 
-    private String wallet(Ctx c, String choice, In in) {
-        return switch (choice) {
-            case "1" -> airtime(c, in);
-            case "2" -> data(c, in);
-            case "3" -> bill(c, in);
-            case "4" -> merchant(c, in);
-            case "5" -> send(c, in);
-            case "6" -> walletMenu(c, in);
-            case "7" -> cashOut(c, in);
-            case "8" -> more(c, in);
-            default -> "END Invalid choice.";
+    private String wallet(Ctx c, In in) {
+        Step<Integer> k = option(c, in, firstName(c.holder()) + ", what would you like to do?", WALLET_MENU);
+        if (k.asking()) return k.prompt();
+        return switch (k.value()) {
+            case 1 -> airtime(c, in);
+            case 2 -> data(c, in);
+            case 3 -> bill(c, in);
+            case 4 -> merchant(c, in);
+            case 5 -> send(c, in);
+            case 6 -> walletMenu(c, in);
+            case 7 -> cashOut(c, in);
+            default -> more(c, in);
         };
     }
 
     private String walletMenu(Ctx c, In in) {
-        if (!in.has()) return "CON My wallet\n" + numbered(WALLET_SUBMENU);
-        return switch (in.next()) {
-            case "1" -> balances(c);
-            case "2" -> statement(c, in);
-            case "3" -> topUp(c, in);
-            case "4" -> convert(c, in);
-            case "5" -> openWallet(c, in);
-            default -> "END Invalid choice.";
+        Step<Integer> k = option(c, in, "My wallet", WALLET_SUBMENU);
+        if (k.asking()) return k.prompt();
+        return switch (k.value()) {
+            case 1 -> balances(c);
+            case 2 -> statement(c, in);
+            case 3 -> topUp(c, in);
+            case 4 -> convert(c, in);
+            default -> openWallet(c, in);
         };
     }
 
     private String more(Ctx c, In in) {
-        if (!in.has()) return "CON More\n" + numbered(MORE_MENU);
-        return switch (in.next()) {
-            case "1" -> history(c);
-            case "2" -> status(c, in);
-            case "3" -> saved(c, in);
-            case "4" -> cardsMenu(c, in);
-            case "5" -> changePin(c, in);
-            case "6" -> "END " + HELP;
-            default -> "END Invalid choice.";
+        Step<Integer> k = option(c, in, "More", MORE_MENU);
+        if (k.asking()) return k.prompt();
+        return switch (k.value()) {
+            case 1 -> history(c);
+            case 2 -> status(c, in);
+            case 3 -> saved(c, in);
+            case 4 -> cardsMenu(c, in);
+            case 5 -> changePin(c, in);
+            default -> "END " + HELP;
         };
     }
 
@@ -437,31 +446,23 @@ public class UssdService {
 
     private String register(Ctx c, In in) {
         if (users.findByPhone(c.phone()).isPresent()) return "END This number already has a PayPort account. Start again and enter your PIN.";
-        if (!in.has()) return "CON Register with PayPort\nEnter your full name:";
-        String name = in.next().replaceAll("\\s+", " ").trim();
-        if (name.length() < 2 || name.length() > 200 || !name.matches("[\\p{L} .'-]+")) return "END Enter your full name in letters only.";
-        if (!in.has()) return "CON Enter your national ID number:";
-        String id = in.next().trim();
-        if (!id.matches("^[A-Za-z0-9][A-Za-z0-9 /-]{3,39}$")) return "END Enter a valid ID number.";
-        if (!in.has()) return "CON By registering you accept the PayPort Terms and Privacy Policy (" + TERMS + ").\n1. Accept\n2. Cancel";
-        if (!"1".equals(in.next())) return "END Cancelled. Nothing was saved.";
-        if (!c.ussd()) {
-            // WhatsApp: the PIN is chosen on PayPort's PIN page, never typed into the chat.
-            if (!in.has()) return "CON Tap the link to choose your PIN:\n" + pinLinks.link(c.session(), c.msisdn(), zw.co.payport.gateway.whatsapp.ChannelPinService.REGISTER, null);
-            String t = in.next();
-            in.secret();
-            if (!MASK.equals(t)) return typedPin(c, zw.co.payport.gateway.whatsapp.ChannelPinService.REGISTER, null);
-            String chosen = getSecret(c, "register_pin");
-            if (chosen == null) throw expired();
-            return once(c, () -> {
-                try {
-                    auth.registerWithPinHash(name, c.phone(), id, chosen);
-                    return "END Welcome to PayPort, " + clip(name.split(" ")[0], 20) + ". Send MENU to log in and open your wallet.";
-                } catch (RuntimeException e) {
-                    return "END " + clip(e.getMessage() == null ? "Registration failed. Please try again." : e.getMessage(), 150);
-                }
-            });
-        }
+        Step<String> pn = ask(in, "Register with PayPort\nEnter your full name:", "Enter your full name:", "END Cancelled. Nothing was saved.", t -> {
+            String n = t.replaceAll("\\s+", " ").trim();
+            if (n.length() < 2 || n.length() > 200 || !n.matches("[\\p{L} .'-]+")) throw new IllegalArgumentException("Use letters only.");
+            return n;
+        });
+        if (pn.asking()) return pn.prompt();
+        String name = pn.value();
+        Step<String> pid = ask(in, "Enter your national ID number:", "Enter your national ID number:", "END Cancelled. Nothing was saved.", t -> {
+            String v = t.trim();
+            if (!v.matches("^[A-Za-z0-9][A-Za-z0-9 /-]{3,39}$")) throw new IllegalArgumentException("That ID number is not valid.");
+            return v;
+        });
+        if (pid.asking()) return pid.prompt();
+        String id = pid.value();
+        Step<Boolean> ok = confirm(c, in, "By registering you accept the PayPort Terms and Privacy Policy (" + TERMS + ").", "Accept", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled. Nothing was saved.";
         if (!in.has()) return "CON Choose a 4-digit PIN:";
         String first = in.next();
         in.secret();
@@ -498,56 +499,66 @@ public class UssdService {
     // ─── airtime (product AIRTIME_<network>) ─────────────────────────────────
 
     private String airtime(Ctx c, In in) {
-        if (!in.has()) return "CON Airtime for:\n" + recipientMenu(c);
-        Step<String> who = recipient(c, in);
+        Step<String> who = recipient(c, in, "Airtime for:", "airtime");
         if (who.asking()) return who.prompt();
         String recipient = who.value();
         String network = networkOf(local(recipient, c.market()));
-        if (network == null) return "END That network is not supported for airtime.";
         String product = "AIRTIME_" + network;
-        List<String> ccys = currencies(c, product);
-        if (!in.has()) return "CON Currency:\n" + numbered(ccys);
-        String ccy = pick(ccys, in.next());
-        if (!in.has()) return "CON Amount (" + ccy + "):";
-        long amount = minor(in.next());
-        String limit = limits(product, ccy, amount);
-        if (limit != null) return "END " + limit;
-        return pay(c, in, product, "+" + recipient, amount, ccy, "Buy " + ccy + " " + major(amount) + " airtime for " + local(recipient, c.market()), "airtime", true);
+        String label = productName(product, capital(network) + " Airtime");
+        Step<String> pc = choose(c, in, label + "\nCurrency:", currencies(c, product), x -> x);
+        if (pc.asking()) return pc.prompt();
+        String ccy = pc.value();
+        Step<Long> pa = amount(in, ccy, a -> limits(product, ccy, a));
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
+        return pay(c, in, product, "+" + recipient, amount, ccy, label + " " + ccy + " " + major(amount) + " for " + local(recipient, c.market()), label, true);
     }
 
-    private String recipientMenu(Ctx c) {
-        return "1. My number\n2. Another number" + (savedPhones(c).isEmpty() ? "" : "\n3. Saved number");
+    /** The product's name as the catalogue has it ("Econet Airtime"), for every screen and the payment prompt. */
+    private String productName(String code, String fallback) {
+        return products.findByCodeAndIsActiveTrue(code).map(ProductType::getName).filter(n -> n != null && !n.isBlank()).orElse(fallback);
     }
 
-    /** "1. My number / 2. Another number / 3. Saved number": the recipient's digits, or the next prompt. */
-    private Step<String> recipient(Ctx c, In in) {
-        String who = in.next();
-        if ("1".equals(who)) return Step.of(c.msisdn());
-        if ("3".equals(who) && !savedPhones(c).isEmpty()) {
+    /**
+     * My number, another number or a saved number: the recipient's digits, or the next prompt. A number on a
+     * network PayPort does not serve, or not valid, is explained and asked again.
+     */
+    private Step<String> recipient(Ctx c, In in, String title, String what) {
+        List<String> options = new ArrayList<>(List.of("My number", "Another number"));
+        if (!savedPhones(c).isEmpty()) options.add("Saved number");
+        Step<Integer> k = option(c, in, title, options);
+        if (k.asking()) return Step.ask(k.prompt());
+        if (k.value() == 1) {
+            if (networkOf(local(c.msisdn(), c.market())) == null) return Step.ask("END This number's network is not supported for " + what + ".");
+            return Step.of(c.msisdn());
+        }
+        if (k.value() == 3) {
             Step<Beneficiary> b = choose(c, in, "Saved numbers:", savedPhones(c), x -> clip(x.getName(), 18) + " " + x.getPhone());
             if (b.asking()) return Step.ask(b.prompt());
-            return Step.of(phone(b.value().getPhone(), c.market()));
+            String n = phone(b.value().getPhone(), c.market());
+            if (networkOf(local(n, c.market())) == null) return Step.ask("END That network is not supported for " + what + ".");
+            return Step.of(n);
         }
-        if (!"2".equals(who)) throw new IllegalArgumentException("Invalid choice.");
-        if (!in.has()) return Step.ask("CON Enter the phone number:");
-        String n = phone(in.next(), c.market());
-        if (markets.forMsisdn("+" + n).isEmpty()) throw new IllegalArgumentException("Invalid phone number.");
-        return Step.of(n);
+        return ask(in, "Enter the phone number:", "Enter the phone number again:", "END Cancelled. No money was taken.", t -> {
+            String n = phone(t, c.market());
+            if (markets.forMsisdn("+" + n).isEmpty()) throw new IllegalArgumentException("That phone number is not valid.");
+            if (networkOf(local(n, c.market())) == null) throw new IllegalArgumentException("That network is not supported for " + what + ".");
+            return n;
+        });
     }
 
     // ─── data (product DATA_<network>, bundles as /api/v1/bundles) ───────────
 
     private String data(Ctx c, In in) {
-        if (!in.has()) return "CON Data for:\n" + recipientMenu(c);
-        Step<String> who = recipient(c, in);
+        Step<String> who = recipient(c, in, "Data for:", "data");
         if (who.asking()) return who.prompt();
         String recipient = who.value();
         String network = networkOf(local(recipient, c.market()));
-        if (network == null) return "END That network is not supported for data.";
         String product = "DATA_" + network;
-        List<String> ccys = currencies(c, product);
-        if (!in.has()) return "CON Currency:\n" + numbered(ccys);
-        String ccy = pick(ccys, in.next());
+        String label = productName(product, capital(network) + " Data Bundle");
+        Step<String> pc = choose(c, in, label + "\nCurrency:", currencies(c, product), x -> x);
+        if (pc.asking()) return pc.prompt();
+        String ccy = pc.value();
         List<BundleResponse> list = new ArrayList<>();
         for (BundleResponse b : bundles.getActiveBundles(network, ccy, null)) if (b.getPriceValue() != null && b.getPriceValue() > 0) list.add(b);
         if (list.isEmpty()) return "END No " + capital(network) + " data bundles in " + ccy + " at the moment.";
@@ -556,7 +567,7 @@ public class UssdService {
         BundleResponse b = pickB.value();
         long amount = cents(b.getPriceValue());
         return pay(c, in, product, "+" + recipient, amount, ccy,
-                "Buy " + clip(b.getBundleName(), 30) + " (" + ccy + " " + major(amount) + ") for " + local(recipient, c.market()), clip(b.getBundleName(), 30), true,
+                label + " " + clip(b.getBundleName(), 30) + " " + ccy + " " + major(amount) + " for " + local(recipient, c.market()), label, true,
                 b.getBundleCode() == null ? null : Map.of("bundleCode", b.getBundleCode()));
     }
 
@@ -579,20 +590,19 @@ public class UssdService {
         String label = accountLabel(p);
         List<Beneficiary> saved = savedAccounts(c, p.getProviderCode());
         String account;
+        boolean typed = true;
         if (!saved.isEmpty()) {
-            if (!in.has()) return "CON " + label + ":\n1. Enter a new one\n2. Saved account";
-            String how = in.next();
-            if ("2".equals(how)) {
-                Step<Beneficiary> b = choose(c, in, "Saved accounts:", saved, x -> clip(x.getName(), 18) + " " + x.getAccountRef());
-                if (b.asking()) return b.prompt();
-                account = b.value().getAccountRef();
-            } else if ("1".equals(how)) {
-                if (!in.has()) return "CON " + label + ":";
-                account = in.next();
-            } else return "END Invalid choice.";
-        } else {
-            if (!in.has()) return "CON " + label + ":";
+            Step<Integer> how = option(c, in, p.getName() + " " + label + ":", List.of("Enter a new one", "Saved account"));
+            if (how.asking()) return how.prompt();
+            typed = how.value() == 1;
+        }
+        if (typed) {
+            if (!in.has()) return "CON " + p.getName() + "\n" + label + ":";
             account = in.next();
+        } else {
+            Step<Beneficiary> b = choose(c, in, "Saved accounts:", saved, x -> clip(x.getName(), 18) + " " + x.getAccountRef());
+            if (b.asking()) return b.prompt();
+            account = b.value().getAccountRef();
         }
         account = account.trim().replaceAll("\\s+", "");
         Optional<BillerAdaptor> biller = billers.find(p.getProviderCode());
@@ -614,51 +624,59 @@ public class UssdService {
             if (ccys.isEmpty()) return "END This account cannot be paid in the currencies offered.";
             holderName = a.holderName();
         }
-        if (!in.has()) return "CON " + clip(holderName == null ? account : holderName, 40) + "\nCurrency:\n" + numbered(ccys);
-        String ccy = pick(ccys, in.next());
-        if (!in.has()) return "CON Amount (" + ccy + "):";
-        long amount = minor(in.next());
-        String limit = biller.map(b -> b.validateAmount(amount, ccy)).orElse(null);
-        if (limit == null) limit = limits(p.getCode(), ccy, amount);
-        if (limit != null) return "END " + clip(limit, 150);
-        return pay(c, in, p.getCode(), account, amount, ccy, "Pay " + ccy + " " + major(amount) + " to " + p.getName() + " " + account, p.getName(), true);
+        Step<String> pc = choose(c, in, clip(holderName == null ? account : holderName, 40) + "\nCurrency:", ccys, x -> x);
+        if (pc.asking()) return pc.prompt();
+        String ccy = pc.value();
+        Step<Long> pa = amount(in, ccy, a -> {
+            String limit = biller.map(b -> b.validateAmount(a, ccy)).orElse(null);
+            return limit != null ? clip(limit, 120) : limits(p.getCode(), ccy, a);
+        });
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
+        return pay(c, in, p.getCode(), account, amount, ccy, p.getName() + " " + ccy + " " + major(amount) + " to " + account, p.getName(), true);
     }
 
     // ─── merchant (six-digit merchant code, as /api/v1/wallet/pay-merchant) ──
 
     private String merchant(Ctx c, In in) {
-        if (!in.has()) return "CON Enter the merchant code:";
-        String code = in.next().replaceAll("[^0-9]", "");
-        Map<String, Object> m;
-        try {
-            m = merchantCodes.lookup(code);
-        } catch (RuntimeException e) {
-            return "END " + clip(e.getMessage() == null ? "No merchant with that code." : e.getMessage(), 150);
-        }
+        Step<Map<String, Object>> pm = ask(in, "Enter the merchant code:", "Enter the merchant code again:", "END Cancelled. No money was taken.", t -> {
+            try {
+                Map<String, Object> found = merchantCodes.lookup(t.replaceAll("[^0-9]", ""));
+                Map<String, Object> out = new java.util.HashMap<>(found);
+                out.put("code", t.replaceAll("[^0-9]", ""));
+                return out;
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException(e.getMessage() == null ? "No merchant with that code." : clip(e.getMessage(), 90));
+            }
+        });
+        if (pm.asking()) return pm.prompt();
+        Map<String, Object> m = pm.value();
+        String code = String.valueOf(m.get("code"));
         String name = clip(String.valueOf(m.get("name")), 30);
-        if (!in.has()) return "CON Pay " + name + (m.get("address") == null ? "" : ", " + clip(String.valueOf(m.get("address")), 40)) + "?\n1. Yes\n2. No";
-        if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
+        Step<Boolean> right = confirm(c, in, "Pay " + name + (m.get("address") == null ? "" : ", " + clip(String.valueOf(m.get("address")), 40)) + "?", "Yes", "No");
+        if (right.asking()) return right.prompt();
+        if (!right.value()) return "END Cancelled. No money was taken.";
         @SuppressWarnings("unchecked") List<String> ccys = (List<String>) m.get("currencies");
         if (ccys == null || ccys.isEmpty()) return "END " + name + " cannot take payments at the moment.";
-        if (!in.has()) return "CON Currency:\n" + numbered(ccys);
-        String ccy = pick(ccys, in.next());
-        if (!in.has()) return "CON Amount (" + ccy + "):";
-        long amount = minor(in.next());
-        return payMerchant(c, in, code, name, amount, ccy);
+        Step<String> pc = choose(c, in, "Currency:", ccys, x -> x);
+        if (pc.asking()) return pc.prompt();
+        String ccy = pc.value();
+        Step<Long> pa = amount(in, ccy, null);
+        if (pa.asking()) return pa.prompt();
+        return payMerchant(c, in, code, name, pa.value(), ccy);
     }
 
     private String payMerchant(Ctx c, In in, String code, String merchant, long amount, String ccy) {
-        List<String> methods = methods(c.wallet());
-        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(amount) + " with:\n" + numbered(methods.stream().map(this::methodName).toList());
-        String method = pick(methods, in.next());
-        String payer = c.phone();
-        if (needsOwnNumber(method, c.network())) {
-            if (!in.has()) return "CON Enter your " + methodName(method) + " number:";
-            payer = "+" + phone(in.next(), c.market());
-        }
+        Step<String> pm = choose(c, in, "Pay " + merchant + " " + ccy + " " + major(amount) + " with:", methods(c.wallet()), this::methodName);
+        if (pm.asking()) return pm.prompt();
+        String method = pm.value();
+        Step<String> pp = payer(c, in, method);
+        if (pp.asking()) return pp.prompt();
+        String payer = pp.value();
         long due = WalletService.RAIL.equals(method) ? withCharge(c, List.of("MERCHANT_PAYMENT"), ccy, amount) : amount;
-        if (!in.has()) return "CON Pay " + merchant + " " + ccy + " " + major(due) + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
-        if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
+        Step<Boolean> ok = confirm(c, in, "Pay " + merchant + " " + ccy + " " + major(due) + "\nWith " + payingWith(c, method, payer), "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());
         final String from = payer;
         return once(c, () -> {
@@ -697,30 +715,34 @@ public class UssdService {
         wallets.requireOn();
         List<Beneficiary> saved = savedPhones(c);
         String to;
+        boolean typed = true;
         if (!saved.isEmpty()) {
-            if (!in.has()) return "CON Send to:\n1. A phone or wallet number\n2. Saved number";
-            String how = in.next();
-            if ("2".equals(how)) {
-                Step<Beneficiary> b = choose(c, in, "Saved numbers:", saved, x -> clip(x.getName(), 18) + " " + x.getPhone());
-                if (b.asking()) return b.prompt();
-                to = "+" + phone(b.value().getPhone(), c.market());
-            } else if ("1".equals(how)) {
-                if (!in.has()) return "CON Send to (phone or wallet number):";
-                to = in.next();
-            } else return "END Invalid choice.";
-        } else {
-            if (!in.has()) return "CON Send to (phone or wallet number):";
-            to = in.next();
+            Step<Integer> how = option(c, in, "Send to:", List.of("A phone or wallet number", "Saved number"));
+            if (how.asking()) return how.prompt();
+            typed = how.value() == 1;
         }
-        if (!to.toUpperCase(Locale.ROOT).startsWith("W") && !to.startsWith("+")) to = "+" + phone(to, c.market());
+        if (typed) {
+            Step<String> pt = ask(in, "Send to (phone or wallet number):", "Enter the phone or wallet number again:", "END Cancelled. No money was sent.", t -> {
+                String v = t.trim();
+                return v.toUpperCase(Locale.ROOT).startsWith("W") ? v.toUpperCase(Locale.ROOT) : "+" + phone(v, c.market());
+            });
+            if (pt.asking()) return pt.prompt();
+            to = pt.value();
+        } else {
+            Step<Beneficiary> b = choose(c, in, "Saved numbers:", saved, x -> clip(x.getName(), 18) + " " + x.getPhone());
+            if (b.asking()) return b.prompt();
+            to = "+" + phone(b.value().getPhone(), c.market());
+        }
         List<WalletService.Wallet> mine = mine(c);
         Step<WalletService.Wallet> pw = choose(c, in, "From which wallet?", mine, w -> w.currency() + " " + major(wallets.balance(w)));
         if (pw.asking()) return pw.prompt();
         WalletService.Wallet w = pw.value();
-        if (!in.has()) return "CON Amount (" + w.currency() + "):";
-        long amount = minor(in.next());
-        if (!in.has()) return "CON Send " + w.currency() + " " + major(amount) + " to " + to + totalNote(c, List.of("P2P_TRANSFER"), w.currency(), amount) + "?\n1. Confirm\n2. Cancel";
-        if (!"1".equals(in.next())) return "END Cancelled. No money was sent.";
+        Step<Long> pa = amount(in, w.currency(), null);
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
+        Step<Boolean> ok = confirm(c, in, "Send " + w.currency() + " " + major(amount) + " to " + to + totalNote(c, List.of("P2P_TRANSFER"), w.currency(), amount) + "?", "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled. No money was sent.";
         final String recipient = to;
         return once(c, () -> {
             try {
@@ -765,9 +787,10 @@ public class UssdService {
         Step<WalletService.Wallet> pw = choose(c, in, "Top up which wallet?", mine, w -> w.currency() + " " + w.ref());
         if (pw.asking()) return pw.prompt();
         WalletService.Wallet w = pw.value();
-        if (!in.has()) return "CON Amount (" + w.currency() + "):";
-        long amount = minor(in.next());
-        return pay(c, in, "WALLET_TOPUP", w.ref(), amount, w.currency(), "Top up " + w.currency() + " " + major(amount) + " to your wallet", "wallet top-up", false);
+        Step<Long> pa = amount(in, w.currency(), a -> limits("WALLET_TOPUP", w.currency(), a));
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
+        return pay(c, in, "WALLET_TOPUP", w.ref(), amount, w.currency(), "Top up your " + w.currency() + " wallet with " + w.currency() + " " + major(amount), "PayPort wallet top-up", false);
     }
 
     /** As /api/v1/wallet/fx/quotes and /conversions: the rate shown is the rate used (the quote is kept for the session). */
@@ -781,15 +804,19 @@ public class UssdService {
         Step<WalletService.Wallet> pt = choose(c, in, "Convert to:", others, w -> w.currency());
         if (pt.asking()) return pt.prompt();
         WalletService.Wallet to = pt.value();
-        if (!in.has()) return "CON Amount (" + from.currency() + "):";
-        long amount = minor(in.next());
+        Step<Long> pa = amount(in, from.currency(), null);
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
         if (!in.has()) {
             Map<String, Object> q = wallets.quoteConversion(c.holder().getId(), from.currency(), to.currency(), amount);
             putSecret(c, "fx_quote", String.valueOf(q.get("quoteRef")));
             long converted = ((Number) q.get("convertedMinor")).longValue();
-            return "CON Convert " + from.currency() + " " + major(amount) + " to " + to.currency() + " " + major(converted) + "?\n1. Confirm\n2. Cancel";
+            putSecret(c, "fx_shown", from.currency() + " " + major(amount) + " to " + to.currency() + " " + major(converted));
         }
-        if (!"1".equals(in.next())) return "END Cancelled.";
+        String shown = getSecret(c, "fx_shown");
+        Step<Boolean> ok = confirm(c, in, "Convert " + (shown == null ? from.currency() + " " + major(amount) + " to " + to.currency() : shown) + "?", "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled.";
         String quote = getSecret(c, "fx_quote");
         if (quote == null) throw expired();
         return once(c, () -> {
@@ -809,8 +836,9 @@ public class UssdService {
         List<String> can = new ArrayList<>(liveCurrencies(c.market()));
         can.removeAll(have);
         if (can.isEmpty()) return "END You already have a wallet in every currency.";
-        if (!in.has()) return "CON Open a wallet in:\n" + numbered(can);
-        String ccy = pick(can, in.next());
+        Step<String> pc = choose(c, in, "Open a wallet in:", can, x -> x);
+        if (pc.asking()) return pc.prompt();
+        String ccy = pc.value();
         return once(c, () -> {
             try {
                 WalletService.Wallet w = wallets.open(c.holder().getId(), c.holder().getPhone(), ccy, "customer:" + c.holder().getPhone());
@@ -823,25 +851,32 @@ public class UssdService {
 
     /** Cash-out at an agent (as /api/v1/wallet/cash-out): the agent's name is shown before the amount. */
     private String cashOut(Ctx c, In in) {
-        if (!in.has()) return "CON Enter the agent code:";
-        String code = in.next().replaceAll("[^0-9]", "");
-        Map<String, Object> a;
-        try {
-            a = agents.lookup(code);
-        } catch (RuntimeException e) {
-            return "END " + clip(e.getMessage() == null ? "No agent with that code." : e.getMessage(), 150);
-        }
+        Step<Map<String, Object>> pg = ask(in, "Enter the agent code:", "Enter the agent code again:", "END Cancelled.", t -> {
+            try {
+                Map<String, Object> found = new java.util.HashMap<>(agents.lookup(t.replaceAll("[^0-9]", "")));
+                found.put("code", t.replaceAll("[^0-9]", ""));
+                return found;
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException(e.getMessage() == null ? "No agent with that code." : clip(e.getMessage(), 90));
+            }
+        });
+        if (pg.asking()) return pg.prompt();
+        Map<String, Object> a = pg.value();
+        String code = String.valueOf(a.get("code"));
         String name = clip(String.valueOf(a.get("name")), 30);
-        if (!in.has()) return "CON Agent: " + name + (a.get("location") == null ? "" : ", " + clip(String.valueOf(a.get("location")), 40)) + "\nIs this correct?\n1. Yes\n2. No";
-        if (!"1".equals(in.next())) return "END Cancelled. Check the agent code and try again.";
+        Step<Boolean> right = confirm(c, in, "Agent: " + name + (a.get("location") == null ? "" : ", " + clip(String.valueOf(a.get("location")), 40)) + "\nIs this correct?", "Yes", "No");
+        if (right.asking()) return right.prompt();
+        if (!right.value()) return "END Cancelled. Check the agent code and try again.";
         List<WalletService.Wallet> mine = mine(c);
         Step<WalletService.Wallet> pw = choose(c, in, "Cash out from which wallet?", mine, w -> w.currency() + " " + major(wallets.balance(w)));
         if (pw.asking()) return pw.prompt();
         WalletService.Wallet w = pw.value();
-        if (!in.has()) return "CON Amount (" + w.currency() + "):";
-        long amount = minor(in.next());
-        if (!in.has()) return "CON Cash out " + w.currency() + " " + major(amount) + " at " + name + totalNote(c, List.of("CASH_OUT"), w.currency(), amount) + "?\n1. Confirm\n2. Cancel";
-        if (!"1".equals(in.next())) return "END Cancelled.";
+        Step<Long> pa = amount(in, w.currency(), null);
+        if (pa.asking()) return pa.prompt();
+        long amount = pa.value();
+        Step<Boolean> ok = confirm(c, in, "Cash out " + w.currency() + " " + major(amount) + " at " + name + totalNote(c, List.of("CASH_OUT"), w.currency(), amount) + "?", "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled.";
         return once(c, () -> {
             try {
                 Map<String, Object> r = agents.customerCashOut(c.holder(), code, w.currency(), amount, c.channel().toLowerCase(Locale.ROOT) + ":" + c.session(), c.rules());
@@ -898,9 +933,10 @@ public class UssdService {
     }
 
     private String saved(Ctx c, In in) {
-        if (!in.has()) return "CON Saved numbers\n1. View\n2. Add a phone number\n3. Add a bill account\n4. Remove";
-        switch (in.next()) {
-            case "1": {
+        Step<Integer> k = option(c, in, "Saved numbers", List.of("View", "Add a phone number", "Add a bill account", "Remove"));
+        if (k.asking()) return k.prompt();
+        switch (k.value()) {
+            case 1: {
                 List<Beneficiary> all = savedAll(c);
                 if (all.isEmpty()) return "END Nothing saved yet.";
                 StringBuilder sb = new StringBuilder("END ");
@@ -908,12 +944,13 @@ public class UssdService {
                         ? clip(b.getBillerName(), 14) + " " + b.getAccountRef() : b.getPhone()).append("\n");
                 return fit(c, sb.toString().trim());
             }
-            case "2": {
+            case 2: {
                 if (!in.has()) return "CON Name:";
                 String name = clip(in.next().trim(), 100);
                 if (name.isBlank()) return "END Enter a name.";
-                if (!in.has()) return "CON Phone number:";
-                String n = phone(in.next(), c.market());
+                Step<String> pn = ask(in, "Phone number:", "Enter the phone number again:", "END Cancelled.", t -> phone(t, c.market()));
+                if (pn.asking()) return pn.prompt();
+                String n = pn.value();
                 String network = networkOf(local(n, c.market()));
                 return once(c, () -> {
                     beneficiaries.save(Beneficiary.builder().userPhone(c.holder().getPhone()).type("PHONE").name(name).phone("+" + n)
@@ -921,7 +958,7 @@ public class UssdService {
                     return "END Saved " + name + " (" + local(n, c.market()) + ").";
                 });
             }
-            case "3": {
+            case 3: {
                 List<ProductType> list = billProducts();
                 if (list.isEmpty()) return "END No bills can be paid here at the moment.";
                 Step<ProductType> pp = choose(c, in, "Which bill?", list, ProductType::getName);
@@ -940,21 +977,20 @@ public class UssdService {
                     return "END Saved " + name + " (" + p.getName() + " " + account + ").";
                 });
             }
-            case "4": {
+            default: {
                 List<Beneficiary> all = savedAll(c);
                 if (all.isEmpty()) return "END Nothing saved yet.";
                 Step<Beneficiary> b = choose(c, in, "Remove which?", all, x -> clip(x.getName(), 18) + " " + ("BILLS".equals(x.getType()) ? x.getAccountRef() : x.getPhone()));
                 if (b.asking()) return b.prompt();
                 Beneficiary x = b.value();
-                if (!in.has()) return "CON Are you sure?\n1. Yes\n2. No";
-                if (!"1".equals(in.next())) return "END Cancelled.";
+                Step<Boolean> sure = confirm(c, in, "Are you sure?", "Yes", "No");
+                if (sure.asking()) return sure.prompt();
+                if (!sure.value()) return "END Cancelled.";
                 return once(c, () -> {
                     beneficiaries.findByIdAndUserPhone(x.getId(), c.holder().getPhone()).ifPresent(beneficiaries::delete);
                     return "END Removed " + x.getName() + ".";
                 });
             }
-            default:
-                return "END Invalid choice.";
         }
     }
 
@@ -983,11 +1019,13 @@ public class UssdService {
         if ("ACTIVE".equals(status)) actions.add("FREEZE");
         if ("FROZEN".equals(status)) actions.add("UNFREEZE");
         actions.add("CANCEL");
-        if (!in.has()) return "CON " + cardLabel(k) + "\n" + numbered(actions.stream().map(a -> switch (a) {
-            case "FREEZE" -> "Block card"; case "UNFREEZE" -> "Unblock card"; default -> "Cancel card"; }).toList());
-        String action = pick(actions, in.next());
-        if (!in.has()) return "CON Are you sure?\n1. Yes\n2. No";
-        if (!"1".equals(in.next())) return "END Cancelled.";
+        Step<String> pa = choose(c, in, cardLabel(k), actions, a -> switch (a) {
+            case "FREEZE" -> "Block card"; case "UNFREEZE" -> "Unblock card"; default -> "Cancel card"; });
+        if (pa.asking()) return pa.prompt();
+        String action = pa.value();
+        Step<Boolean> sure = confirm(c, in, "Are you sure?", "Yes", "No");
+        if (sure.asking()) return sure.prompt();
+        if (!sure.value()) return "END Cancelled.";
         return once(c, () -> {
             try {
                 Map<String, Object> r = cards.customerAction(c.holder().getId(), String.valueOf(k.get("cardRef")), action, c.holder().getPhone());
@@ -1000,10 +1038,12 @@ public class UssdService {
 
     /** VISA links to the USD wallet only; ZimSwitch to the USD and ZWG wallets. */
     private String requestCard(Ctx c, In in) {
-        if (!in.has()) return "CON Card:\n1. VISA (USD wallet)\n2. ZimSwitch (USD and ZWG wallets)";
-        String scheme = pick(List.of("VISA", "ZIMSWITCH"), in.next());
-        if (!in.has()) return "CON Type:\n1. Virtual\n2. Physical";
-        String form = pick(List.of("VIRTUAL", "PHYSICAL"), in.next());
+        Step<String> ps = choose(c, in, "Card:", List.of("VISA", "ZIMSWITCH"), x -> "VISA".equals(x) ? "VISA (USD wallet)" : "ZimSwitch (USD and ZWG wallets)");
+        if (ps.asking()) return ps.prompt();
+        String scheme = ps.value();
+        Step<String> pf = choose(c, in, "Type:", List.of("VIRTUAL", "PHYSICAL"), x -> "VIRTUAL".equals(x) ? "Virtual" : "Physical");
+        if (pf.asking()) return pf.prompt();
+        String form = pf.value();
         String address = null;
         if ("PHYSICAL".equals(form)) {
             if (!in.has()) return "CON Delivery address:";
@@ -1011,8 +1051,9 @@ public class UssdService {
             if (address.length() < 5) return "END Enter the delivery address.";
         }
         String label = ("ZIMSWITCH".equals(scheme) ? "ZimSwitch" : "VISA") + " " + form.toLowerCase(Locale.ROOT) + " card";
-        if (!in.has()) return "CON Request a " + label + " in the name " + clip(c.holder().getFullName(), 26) + "?\n1. Confirm\n2. Cancel";
-        if (!"1".equals(in.next())) return "END Cancelled.";
+        Step<Boolean> ok = confirm(c, in, "Request a " + label + " in the name " + clip(c.holder().getFullName(), 26) + "?", "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled.";
         final String deliver = address;
         return once(c, () -> {
             try {
@@ -1026,22 +1067,7 @@ public class UssdService {
 
     // ─── change PIN (as /api/v1/account/change-pin) ──────────────────────────
 
-    /** A PIN typed into the chat: not used, not kept, and a fresh link instead. */
-    private String typedPin(Ctx c, String purpose, Long userId) {
-        DROP.set(true);
-        return "CON For your safety, never type your PIN in WhatsApp. Tap the link instead:\n" + pinLinks.link(c.session(), c.msisdn(), purpose, userId);
-    }
-
     private String changePin(Ctx c, In in) {
-        if (!c.ussd()) {
-            String change = zw.co.payport.gateway.whatsapp.ChannelPinService.CHANGE;
-            if (!in.has()) return "CON Tap the link to change your PIN:\n" + pinLinks.link(c.session(), c.msisdn(), change, c.holder().getId());
-            String t = in.next();
-            in.secret();
-            if (!MASK.equals(t)) return typedPin(c, change, c.holder().getId());
-            if (getSecret(c, "pin_changed") == null) throw expired();
-            return "END Your PIN has been changed.";
-        }
         if (!in.has()) return "CON Enter your current PIN:";
         String current = in.next();
         in.secret();
@@ -1097,23 +1123,20 @@ public class UssdService {
         return pay(c, in, product, recipient, amount, ccy, summary, what, walletAllowed, null);
     }
 
-    /** Method, payer number (when the method needs one on another network), confirmation, then payment. */
+    /** Method, the number that pays (always asked), confirmation, then payment. */
     private String pay(Ctx c, In in, String product, String recipient, long amount, String ccy, String summary, String what, boolean walletAllowed, Map<String, Object> productConfig) {
-        List<String> methods = methods(c.wallet() && walletAllowed);
-        if (!in.has()) return "CON Pay with:\n" + numbered(methods.stream().map(this::methodName).toList());
-        String method = pick(methods, in.next());
-        String payer = c.phone();
-        if (needsOwnNumber(method, c.network())) {
-            if (!in.has()) return "CON Enter your " + methodName(method) + " number:";
-            payer = "+" + phone(in.next(), c.market());
-        }
-        if (!in.has()) {
-            var ch = chargeQuotes == null ? PartyRules.Charge.NONE : chargeQuotes.quote(product, ccy, amount, c.channel());
-            // The customer sees only what they pay: the total replaces the face value in the summary.
-            String shown = ch.total() > 0 ? summary.replace(ccy + " " + major(amount), ccy + " " + major(amount + ch.total())) : summary;
-            return "CON " + shown + " with " + methodName(method) + "?\n1. Confirm\n2. Cancel";
-        }
-        if (!"1".equals(in.next())) return "END Cancelled. No money was taken.";
+        Step<String> pm = choose(c, in, "Pay with:", methods(c.wallet() && walletAllowed), this::methodName);
+        if (pm.asking()) return pm.prompt();
+        String method = pm.value();
+        Step<String> pp = payer(c, in, method);
+        if (pp.asking()) return pp.prompt();
+        String payer = pp.value();
+        var ch = chargeQuotes == null ? PartyRules.Charge.NONE : chargeQuotes.quote(product, ccy, amount, c.channel());
+        // The customer sees only what they pay: the total replaces the face value in the summary.
+        String shown = ch.total() > 0 ? summary.replace(ccy + " " + major(amount), ccy + " " + major(amount + ch.total())) : summary;
+        Step<Boolean> ok = confirm(c, in, shown + "\nPay with " + payingWith(c, method, payer), "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled. No money was taken.";
         if (in.has()) return omari(c, in.last());
         final String from = payer;
         return once(c, () -> start(c, product, recipient, amount, ccy, method, from, what, productConfig));
@@ -1164,7 +1187,7 @@ public class UssdService {
     /** What the customer does next, per method. */
     private String afterSubmit(String ref, String method, String payer, String ccy, long amount, String what, String code) {
         String m = methodName(method);
-        if ("OMARI".equals(method)) return "CON Enter the code " + m + " sent to " + payer + " to pay " + ccy + " " + major(amount) + ":";
+        if ("OMARI".equals(method)) return "CON Enter the code " + m + " sent to " + shortPhone(payer) + " to pay " + ccy + " " + major(amount) + ":";
         if ("INNBUCKS".equals(method)) {
             if (code == null && ref != null) {
                 List<String> c = jdbc.queryForList("SELECT provider_reference FROM transactions WHERE reference = ?", String.class, ref);
@@ -1173,7 +1196,7 @@ public class UssdService {
             return "END Your InnBucks payment code is " + (code == null ? "on its way by SMS" : code) + ". Approve it in the InnBucks app to pay "
                     + ccy + " " + major(amount) + " for " + clip(what, 30) + ". Ref " + ref;
         }
-        return "END Approve the " + m + " prompt to pay " + ccy + " " + major(amount) + " for " + clip(what, 30)
+        return "END Approve the " + m + " prompt on " + shortPhone(payer) + " to pay " + ccy + " " + major(amount) + " for " + clip(what, 30)
                 + ". You will get a message when it is done. Ref " + ref;
     }
 
@@ -1222,10 +1245,83 @@ public class UssdService {
         jdbc.update("UPDATE ussd_sessions SET reference = ?, updated_at = ? WHERE session_id = ?", reference, Timestamp.valueOf(LocalDateTime.now()), c.session());
     }
 
-    /** EcoCash works on Econet numbers, OneMoney on NetOne and Telecash on Telecel: from another network the payer's number is asked. */
-    private static boolean needsOwnNumber(String method, String network) {
+    /**
+     * The number that pays is never assumed (owner, 2026-10-31): the customer chooses this phone or types another
+     * number. EcoCash works on Econet numbers, OneMoney on NetOne and Telecash on Telecel, so this phone is only offered
+     * when it can pay with the method, and a typed number must be on the method's network. The wallet pays from the
+     * logged-in wallet and a card on the card page, so neither asks.
+     */
+    private Step<String> payer(Ctx c, In in, String method) {
+        if (WalletService.RAIL.equals(method) || CARD.contains(method)) return Step.of(c.phone());
+        String m = methodName(method);
         String home = HOME_NETWORK.get(method);
-        return home != null && !home.equals(network);
+        if (home == null || home.equals(c.network())) {
+            Step<Integer> k = option(c, in, "Pay from which " + m + " number?", List.of(local(c.msisdn(), c.market()) + " (this phone)", "Another number"));
+            if (k.asking()) return Step.ask(k.prompt());
+            if (k.value() == 1) return Step.of(c.phone());
+        }
+        return ask(in, "Enter the " + m + " number to pay from:", "Enter the " + m + " number again:", "END Cancelled. No money was taken.", t -> {
+            String n = phone(t, c.market());
+            if (markets.forMsisdn("+" + n).isEmpty()) throw new IllegalArgumentException("That phone number is not valid.");
+            if (home != null && !home.equals(networkOf(local(n, c.market())))) throw new IllegalArgumentException("That number cannot pay with " + m + ".");
+            return "+" + n;
+        });
+    }
+
+    /** "EcoCash 0772 123 456", "PayPort wallet", "card": how the confirmation names what pays. */
+    private String payingWith(Ctx c, String method, String payer) {
+        if (WalletService.RAIL.equals(method)) return "your PayPort wallet";
+        if (CARD.contains(method)) return methodName(method) + " card";
+        return methodName(method) + " " + shortPhone(payer);
+    }
+
+    /** +263771234567 as 0771234567 (the way people write their own numbers). */
+    private String shortPhone(String phone) {
+        if (phone == null) return "";
+        String d = phone.replaceAll("[^0-9]", "");
+        return markets.forMsisdn("+" + d).map(m -> local(d, m)).orElse(phone);
+    }
+
+    /** A numbered menu: the option number chosen (1-based), asked again after a wrong answer. */
+    private Step<Integer> option(Ctx c, In in, String title, List<String> items) {
+        List<Integer> idx = new ArrayList<>();
+        for (int i = 1; i <= items.size(); i++) idx.add(i);
+        return choose(c, in, title, idx, i -> items.get(i - 1));
+    }
+
+    /** A yes/no question: true for the first answer, asked again after a wrong answer. */
+    private Step<Boolean> confirm(Ctx c, In in, String question, String yes, String no) {
+        Step<Integer> k = option(c, in, question, List.of(yes, no));
+        if (k.asking()) return Step.ask(k.prompt());
+        return Step.of(k.value() == 1);
+    }
+
+    /**
+     * One typed answer. A wrong one shows why and asks again ("The minimum is USD 0.50. Enter another amount"), with
+     * 0 to cancel, instead of ending the session.
+     */
+    private <T> Step<T> ask(In in, String question, String again, String cancelled, Function<String, T> parse) {
+        String error = null;
+        while (true) {
+            if (!in.has()) return Step.ask("CON " + (error == null ? question : clip(error, 100) + "\n" + again + "\n" + CANCEL + ". Cancel"));
+            String t = in.next();
+            if (error != null && CANCEL.equals(t.trim())) return Step.ask(cancelled);
+            try {
+                return Step.of(parse.apply(t));
+            } catch (IllegalArgumentException e) {
+                error = e.getMessage() == null || e.getMessage().isBlank() ? "That is not valid." : e.getMessage();
+            }
+        }
+    }
+
+    /** An amount, checked against the product's limits: below the minimum or above the maximum, the customer changes it or cancels. */
+    private Step<Long> amount(In in, String ccy, Function<Long, String> check) {
+        return ask(in, "Amount (" + ccy + "):", "Enter another amount (" + ccy + "):", "END Cancelled. No money was taken.", t -> {
+            long v = minor(t);
+            String problem = check == null ? null : check.apply(v);
+            if (problem != null) throw new IllegalArgumentException(problem);
+            return v;
+        });
     }
 
     private static String capital(String c) {
@@ -1325,12 +1421,17 @@ public class UssdService {
         return n.isEmpty() ? code : n.get(0);
     }
 
-    /** A list to choose from, a page at a time when it does not fit on one screen ("0. More"). */
+    /**
+     * A list to choose from, a page at a time when it does not fit on one screen ("0. More"). A wrong answer shows the
+     * same page again, marked "Invalid choice", instead of ending the session.
+     */
     private <T> Step<T> choose(Ctx c, In in, String title, List<T> items, Function<T, String> label) {
         if (items.isEmpty()) throw new IllegalArgumentException("Nothing to choose from.");
         int start = 0;
+        boolean wrong = false;
         while (true) {
-            int budget = c.room() - title.length() - 1;
+            String head = wrong ? "Invalid choice.\n" + title : title;
+            int budget = c.room() - head.length() - 1;
             List<String> lines = new ArrayList<>();
             int used = 0, end = start;
             while (end < items.size()) {
@@ -1342,30 +1443,18 @@ public class UssdService {
                 end++;
             }
             boolean more = end < items.size();
-            if (!in.has()) return Step.ask("CON " + title + "\n" + String.join("\n", lines) + (more ? "\n" + MORE + ". More" : ""));
-            String tok = in.next();
+            if (!in.has()) return Step.ask("CON " + head + "\n" + String.join("\n", lines) + (more ? "\n" + MORE + ". More" : ""));
+            String tok = in.next().trim();
             if (MORE.equals(tok) && more) {
                 start = end;
+                wrong = false;
                 continue;
             }
-            int k;
-            try { k = Integer.parseInt(tok.trim()); } catch (NumberFormatException e) { throw new IllegalArgumentException("Invalid choice."); }
-            if (k < 1 || k > end - start) throw new IllegalArgumentException("Invalid choice.");
-            return Step.of(items.get(start + k - 1));
+            int k = -1;
+            try { k = Integer.parseInt(tok); } catch (NumberFormatException e) { /* asked again below */ }
+            if (k >= 1 && k <= end - start) return Step.of(items.get(start + k - 1));
+            wrong = true;
         }
-    }
-
-    private static <T> T pick(List<T> options, String choice) {
-        int i;
-        try { i = Integer.parseInt(choice.trim()); } catch (NumberFormatException e) { throw new IllegalArgumentException("Invalid choice."); }
-        if (i < 1 || i > options.size()) throw new IllegalArgumentException("Invalid choice.");
-        return options.get(i - 1);
-    }
-
-    private static String numbered(List<String> options) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < options.size(); i++) sb.append(i + 1).append(". ").append(options.get(i)).append(i < options.size() - 1 ? "\n" : "");
-        return sb.toString();
     }
 
     /** A final screen that fits the channel (USSD screens are short). */

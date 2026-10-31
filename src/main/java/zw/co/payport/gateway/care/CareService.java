@@ -178,6 +178,9 @@ public class CareService {
 
     public record NewComplaint(String category, String channel, String customerPhone, String customerName, String reference, String description) {}
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.intelligence.ComplaintTriage triage;
+
     public Map<String, Object> create(NewComplaint b, String by) {
         ComplaintCatalog.Category cat = ComplaintCatalog.find(b.category()).orElseThrow(() -> new IllegalArgumentException("Choose the type of complaint"));
         String channel = b.channel() == null || b.channel().isBlank() ? "PHONE" : b.channel().trim().toUpperCase(Locale.ROOT);
@@ -203,6 +206,7 @@ public class CareService {
         if (ref == null) throw new IllegalStateException("Please try again");
         long id = jdbc.queryForObject("SELECT id FROM complaints WHERE complaint_ref = ?", Long.class, ref);
         audit.record(by, "COMPLAINT_OPENED", "complaint:" + ref, cat.code());
+        if (triage != null) triage.record(ref, description, cat.code());   // measured against what staff chose
         if (phone != null) sms.sendText(phone, "PayPort: we have received your complaint. Your reference is " + ref
                 + ". We will update you by SMS. Quote this reference when you contact us.", ref, "COMPLAINT_OPENED");
         return get(id);
