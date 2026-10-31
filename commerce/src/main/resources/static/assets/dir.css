@@ -170,3 +170,28 @@ a{color:inherit}
   .d-found{grid-template-columns:1fr}
   .d-item-text,.d-item-text strong{font-size:14px}
 }
+
+/* Shopper account */
+.d-signout{font:inherit;font-weight:600;font-size:1.4rem;color:var(--blue);background:var(--sky);border:0;border-radius:999px;padding:.7rem 1.4rem;cursor:pointer}
+.d-account{max-width:80rem}
+.d-hello{font-size:3rem;font-weight:800;letter-spacing:-.03em;margin:1rem 0 .2rem;color:var(--ink-2)}
+.d-sub{color:var(--muted);font-size:1.4rem;margin:0}
+.d-orders,.d-list{list-style:none;margin:0;padding:0;display:grid;gap:1rem}
+.d-order{display:flex;justify-content:space-between;gap:1.5rem;background:#fff;border-radius:1.4rem;padding:1.4rem 1.6rem;box-shadow:0 .5rem 1.6rem rgba(16,72,120,.07)}
+.d-order-main{display:grid;gap:.3rem;min-width:0}
+.d-order-store{font-weight:700;font-size:1.6rem;color:var(--ink-2);text-decoration:none}
+.d-order-meta{color:var(--muted);font-size:1.25rem;overflow-wrap:anywhere}
+.d-order-side{display:grid;justify-items:end;gap:.4rem;text-align:right}
+.d-order-side strong{font-size:1.5rem;color:var(--blue)}
+.d-state{font-size:1.2rem;font-weight:600;color:var(--open);background:#E7F6EE;border-radius:999px;padding:.2rem .8rem}
+.d-order-acts{display:flex;gap:.6rem;align-items:center}
+.d-order-acts form{margin:0}
+.d-btn{display:inline-block;font:inherit;font-weight:600;font-size:1.25rem;color:#fff;background:linear-gradient(180deg,#1784BC,#0B6493);border:0;border-radius:.8rem;padding:.6rem 1.1rem;text-decoration:none;cursor:pointer}
+.d-btn.ghost{background:var(--sky);color:var(--blue)}
+.d-two{display:grid;grid-template-columns:1fr 1fr;gap:2.5rem}
+.d-list li{display:flex;justify-content:space-between;align-items:center;gap:1rem;background:#fff;border-radius:1.1rem;padding:1rem 1.3rem;font-size:1.35rem}
+.d-list li a{text-decoration:none;color:var(--ink-2)}
+.d-list li a span{color:var(--muted);font-size:1.2rem;margin-left:.4rem}
+.d-list form{margin:0}
+@media (max-width:700px){.d-two{grid-template-columns:1fr}.d-order{flex-direction:column}.d-order-side{justify-items:start;text-align:left}.d-hello{font-size:26px}
+  .d-signout{font-size:14px}.d-order-store{font-size:16px}.d-order-meta,.d-list li{font-size:14px}.d-btn{font-size:14px}}

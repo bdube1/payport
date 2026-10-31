@@ -10,6 +10,9 @@
     <h1 th:text="${store.name}">Store</h1>
     <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
     <p th:if="${store.rating != null}" th:text="${store.rating}" class="stars"></p>
+    <form method="post" th:action="@{/s/{s}/favourite(s=${store.slug})}" class="fav-form">
+      <button type="submit" class="sh fav" th:classappend="${store.favourite} ? 'on'" th:text="${store.favourite} ? '♥ Favourite' : '♡ Add to favourites'">♡ Add to favourites</button>
+    </form>
     <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
     <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
   </section>

@@ -56,9 +56,11 @@
           <option value="">Choose your area</option>
           <option th:each="z : ${cart.zones}" th:value="${z.id}" th:text="${z.label}">Area</option>
         </select></label>
-      <label th:if="${cart.delivery and !cart.servicesOnly}">Delivery address <input name="address" maxlength="300" autocomplete="street-address"></label>
-      <label>Your name <input name="name" maxlength="120" autocomplete="name" required></label>
-      <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel" required></label>
+      <label th:if="${cart.delivery and !cart.servicesOnly}">Delivery address <input name="address" maxlength="300" autocomplete="street-address" list="saved-addresses" th:value="${#lists.isEmpty(addresses) ? '' : addresses[0].address}"></label>
+      <datalist id="saved-addresses"><option th:each="a : ${addresses}" th:value="${a.address}"></option></datalist>
+      <label>Your name <input name="name" maxlength="120" autocomplete="name" required th:value="${me != null ? me.name : ''}"></label>
+      <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel" required th:value="${me != null ? me.phone : ''}"></label>
+      <p th:if="${me == null}" class="muted small"><a th:href="@{/signin(next=${'/s/' + store.slug + '/cart'})}">Sign in with PayPort</a> to fill this in and keep your orders.</p>
       <label>Note for the seller <input name="note" maxlength="300"></label>
       <label th:if="${cart.booking}">Appointment time
         <select name="slot" required>

@@ -28,6 +28,7 @@ public class StoreController {
     private final StoreClient store;
     private final zw.co.payport.gateway.channels.ChannelService channels;
     private final zw.co.payport.gateway.repository.UserRepository users;
+    @org.springframework.beans.factory.annotation.Autowired StoreSignIn signIn;
 
     public StoreController(StoreClient store, zw.co.payport.gateway.channels.ChannelService channels, zw.co.payport.gateway.repository.UserRepository users) {
         this.store = store;
@@ -79,6 +80,13 @@ public class StoreController {
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<JsonNode>> get(@PathVariable String ref, HttpServletRequest req) {
         return Web.run(() -> store.order(ref, me().getPhone()), req);
+    }
+
+    /** "Sign in with PayPort" on the store: where to send the customer (the store's own address, with a one-time code). */
+    @PostMapping("/api/v1/store/sign-in")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> signIn(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> signIn.code(me(), b == null || b.get("next") == null ? null : String.valueOf(b.get("next"))), req);
     }
 
     /** Only the order's own fields; the customer's name and phone come from the signed-in account, never the request. */

@@ -723,4 +723,61 @@ class CommerceScenarioTest {
         assertEquals("PAID", channel("GET", "/api/channel/orders/" + ref2 + "?phone=%2B263774111222", null, FakePsp.KEY).data().path("paymentStatus").asText());
         assertEquals(404, channel("GET", "/api/channel/orders/" + ref2 + "?phone=0779999999", null, FakePsp.KEY).status(), "only the phone that ordered");
     }
+
+    /** Owner, 31 Oct 2026: shoppers sign in with PayPort; their orders, saved addresses, favourites and reorder. */
+    @Test
+    void shopperAccounts_signInWithPayPort_ordersAddressesFavouritesReorder() throws Exception {
+        PSP.down = false;
+        String bravo = signIn("portal-token-B");
+        api("PUT", "/api/commerce/store", bravo, Map.of("pickupEnabled", true, "deliveryEnabled", true, "deliveryFeeMinor", 100, "listed", true));
+        Res p = api("POST", "/api/commerce/products", bravo, Map.of("name", "Beef stew", "priceMinor", 700, "currency", "USD", "stock", 20));
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+
+        Res go = page("/signin?next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8));
+        assertEquals(302, go.status());
+        assertTrue(go.location().startsWith("https://app.test/store-signin?next="), go.location());
+        assertTrue(page("/signin?next=" + URLEncoder.encode("//evil.example", StandardCharsets.UTF_8)).location().endsWith("next=%2Fme"), "never another site");
+        assertEquals(302, page("/me").status(), "the account page needs a sign-in");
+
+        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8))).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(302, cb.statusCode());
+        assertEquals(storePath, cb.headers().firstValue("Location").orElse(""));
+        String me = cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
+        assertTrue(cb.headers().allValues("Set-Cookie").stream().anyMatch(c -> c.startsWith("pp_me=") && c.contains("HttpOnly")), "HttpOnly session cookie");
+        assertEquals(302, HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=%2Fme")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode());
+
+        // Signed in: name and phone filled in at checkout; the order and the address are the shopper's.
+        String cookie = form(url + "/buy", Map.of("qty", "2"), me).cookie();
+        String both = cookie + "; " + me;
+        Res cart = page(storePath + "/cart", both);
+        assertTrue(cart.body().contains("value=\"Rudo Moyo\"") && cart.body().contains("value=\"0776000333\""), cart.body());
+        String k = key();
+        Res placed = form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "address", "7 Fife Avenue, Harare"), both);
+        assertEquals(302, placed.status(), placed.body());
+        String ref = orderRefOf(k);
+        assertNotNull(jdbc.queryForObject("SELECT shopper_id FROM orders WHERE order_ref = ?", Long.class, ref));
+        assertEquals("Rudo Moyo", jdbc.queryForObject("SELECT customer_name FROM orders WHERE order_ref = ?", String.class, ref));
+        assertTrue(page(storePath + "/cart", both).body().contains("7 Fife Avenue, Harare"), "the saved address is offered next time");
+
+        Res account = page("/me", me);
+        assertEquals(200, account.status());
+        assertTrue(account.body().contains("Hi, Rudo") && account.body().contains(ref) && account.body().contains("7 Fife Avenue, Harare"), account.body());
+
+        // Favourites and reorder.
+        assertEquals(302, form(storePath + "/favourite", Map.of(), me).status());
+        assertTrue(page("/me", me).body().contains("Bravo Foods"), "a favourite store");
+        assertTrue(page(storePath, me).body().contains("♥ Favourite"));
+        String fresh = form(url + "/buy", Map.of("qty", "1"), null).cookie();
+        Res again = form("/me/orders/" + ref + "/reorder", Map.of(), fresh + "; " + me);
+        assertEquals(302, again.status());
+        assertTrue(again.location().endsWith(storePath + "/cart"), again.location());
+        assertTrue(page(storePath + "/cart", fresh).body().contains("Beef stew"));
+        assertEquals(404, form("/me/orders/CO-NOTMINE1/reorder", Map.of(), me).status(), "only the shopper's own orders");
+
+        assertEquals(302, form("/signout", Map.of(), me).status());
+        assertEquals(302, page("/me", me).status(), "signed out");
+    }
 }

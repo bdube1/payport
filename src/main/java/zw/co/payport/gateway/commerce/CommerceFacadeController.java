@@ -27,6 +27,7 @@ public class CommerceFacadeController {
 
     static final String KEY = "X-PayPort-Commerce-Key";
     private final CommerceFacade facade;
+    @org.springframework.beans.factory.annotation.Autowired StoreSignIn signIn;
 
     public CommerceFacadeController(CommerceFacade facade) {
         this.facade = facade;
@@ -61,6 +62,15 @@ public class CommerceFacadeController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> message(@RequestHeader(value = KEY, required = false) String key,
                                                                    @RequestBody CommerceFacade.NewMessage b, HttpServletRequest req) {
         return Web.run(() -> { facade.requireKey(key); return facade.message(b); }, req);
+    }
+
+    public record CodeBody(String code) {}
+
+    /** The store exchanges a shopper's one-time sign-in code for who they are (service key; once; two minutes). */
+    @PostMapping("/api/v1/commerce/customer-code")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> customerCode(@RequestHeader(value = KEY, required = false) String key, @RequestBody CodeBody b,
+                                                                       HttpServletRequest req) {
+        return Web.run(() -> { facade.requireKey(key); return signIn.redeem(b.code()); }, req);
     }
 
     @GetMapping("/api/v1/commerce/merchants/{merchantId}")

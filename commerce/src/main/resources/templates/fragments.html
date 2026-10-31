@@ -23,6 +23,7 @@
     <span th:text="${store.name}">Store</span>
   </a>
   <span class="top-right">
+    <a th:href="${me != null ? '/me' : '/signin'}" class="chat" th:text="${me != null ? me.first : 'Sign in'}">Sign in</a>
     <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="chat" rel="noopener" target="_blank">WhatsApp</a>
     <a th:if="${store.slug != null and store.cartCount > 0}" th:href="@{/s/{s}/cart(s=${store.slug})}" class="chat cartlink" th:text="'Cart ' + ${store.cartCount}">Cart</a>
   </span>
