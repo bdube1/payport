@@ -185,6 +185,15 @@ public class ChannelApi {
         if (!CHANNELS.contains(channel)) throw new IllegalArgumentException("Unknown channel");
         String k = text(b.get("key"));
         if (place && (k == null || !k.matches("[A-Za-z0-9_-]{16,64}"))) throw new IllegalArgumentException("A one-time key is needed");
+        if (place) {
+            // The same key again (a retry, a repeated USSD hop): the order already placed, nothing new.
+            Optional<Map<String, Object>> had = shop.jdbc().queryForList("SELECT order_ref, idempotency_key FROM orders WHERE idempotency_key = ?", k).stream().findFirst();
+            if (had.isPresent()) {
+                Map<String, Object> out = view(String.valueOf(had.get().get("order_ref")), payments.viewToken(k));
+                out.put("checkoutSessionId", payments.lastSessionId(String.valueOf(had.get().get("order_ref"))));
+                return out;
+            }
+        }
         Carts.View v = carts.of(storeId, quantities(b.get("items")));
         if (!v.ok()) {
             String why = v.lines().stream().filter(l -> l.problem() != null).map(l -> l.name() + ": " + l.problem()).findFirst().orElse("Choose what to order");

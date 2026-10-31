@@ -858,10 +858,8 @@ public class UssdService {
         }
         var quote = store.quote(order);
         String total = quote.path("total").asText();
-        Step<Boolean> ok = confirm(c, in, clip(name + ": " + summary(quote), c.ussd() ? 70 : 600) + "
-Total " + total
-                + ("CASH".equals(method) ? ", pay on " + (servicesOnly ? "the day" : "delivery") : "
-With " + payingWith(c, method, payer)), "Confirm", "Cancel");
+        Step<Boolean> ok = confirm(c, in, clip(name + ": " + summary(quote), c.ussd() ? 70 : 600) + "\nTotal " + total
+                + ("CASH".equals(method) ? ", pay on " + (servicesOnly ? "the day" : "delivery") : "\nWith " + payingWith(c, method, payer)), "Confirm", "Cancel");
         if (ok.asking()) return ok.prompt();
         if (!ok.value()) return "END Cancelled. Nothing was ordered.";
         if (in.has()) return omari(c, in.last());
