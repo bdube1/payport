@@ -402,9 +402,9 @@ class CommerceScenarioTest {
         assertEquals("SOLD", jdbc.queryForObject("SELECT stock_state FROM orders WHERE order_ref = ?", String.class, ref));
         assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id));
 
-        // The boutique design shows categories and the tagline.
+        // Every store has the same look (owner, 31 Oct 2026); categories and the tagline show.
         Res page = page(storePath);
-        assertTrue(page.body().contains("d-boutique") && page.body().contains("Lighting") && page.body().contains("Made by hand"), page.body());
+        assertTrue(page.body().contains("Lighting") && page.body().contains("Made by hand"), page.body());
         assertEquals(400, api("PUT", "/api/commerce/store", alpha, Map.of("design", "FANCY")).status());
 
         // Custom domains: proved by DNS before any certificate or routing.

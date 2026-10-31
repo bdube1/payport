@@ -110,7 +110,7 @@ public class ComplaintTriage {
             s.put("title", c.title());
             s.put("area", c.area());
             s.put("priority", c.priority());
-            s.put("confidence", Math.round(Math.exp(e.getValue() - max) / sum * 100) / 100.0);
+            s.put("confidence", Math.round(Math.exp(e.getValue() - max) / sum * 1000) / 1000.0);
             out.add(s);
         });
         return out;
