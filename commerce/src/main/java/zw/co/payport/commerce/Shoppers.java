@@ -1,6 +1,5 @@
 package zw.co.payport.commerce;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseCookie;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,9 +15,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Shopper accounts (owner, 31 Oct 2026): "Sign in with PayPort". The store keeps its own 30-day session (a random
- * token, only its hash stored) once PayPort Payments has said who the shopper is. Orders, saved addresses and favourite
- * stores belong to the signed-in shopper; orders placed earlier with the same phone number are shown too.
+ * Payport Store users (owner, 31 Oct 2026): the store's own accounts, separate from Payport app customers. They
+ * register with their name, phone (and email if they like) and a password, sign in with either, and reset the password
+ * with a code sent to their phone. The store keeps a 30-day session (a random token; only its hash is stored). Orders,
+ * saved addresses, favourite stores and loyalty points belong to the account.
  */
 @Service
 public class Shoppers {
@@ -42,21 +42,116 @@ public class Shoppers {
         this.settings = settings;
     }
 
-    /** Exchanges PayPort's one-time code; sets the store's own session cookie. */
-    public Shopper signIn(String code, HttpServletResponse res) {
-        JsonNode who = psp.customerCode(code);
-        long userId = who.path("userId").asLong(0);
-        if (userId == 0) throw new IllegalArgumentException("Please sign in again");
-        String name = Shop.clip(who.path("name").asText(null), 120), phone = Shop.clip(who.path("phone").asText(null), 20);
+    static final int MAX_FAILED = 5, LOCK_MINUTES = 15, RESET_MINUTES = 10;
+
+    static String email(Object o) {
+        String e = o == null ? null : String.valueOf(o).trim().toLowerCase(java.util.Locale.ROOT);
+        if (e == null || e.isEmpty()) return null;
+        if (e.length() > 190 || !e.matches("[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}")) throw new IllegalArgumentException("Enter a valid email address.");
+        return e;
+    }
+
+    /** +263771234567 from 0771234567, 263771234567 or +263 77 123 4567. */
+    static String phone(Object o) {
+        String d = o == null ? "" : String.valueOf(o).replaceAll("[^0-9+]", "");
+        if (d.isEmpty()) return null;
+        if (d.startsWith("+")) d = d.substring(1);
+        if (d.startsWith("0")) d = "263" + d.substring(1);
+        if (!d.matches("[0-9]{11,15}")) throw new IllegalArgumentException("Enter a valid phone number.");
+        return "+" + d;
+    }
+
+    /** A new Payport Store account: name, email and/or phone, password. Signs in at once. */
+    public Shopper register(String name, String emailIn, String phoneIn, String password, HttpServletResponse res) {
+        String n = Shop.text(name, 120, true, "name");
+        String e = email(emailIn), p = phone(phoneIn);
+        if (e == null && p == null) throw new IllegalArgumentException("Enter your email address or phone number.");
+        if (p == null) throw new IllegalArgumentException("Enter your phone number (for order updates and to reset your password).");
+        Passwords.check(password);
         Timestamp now = Shop.now();
-        jdbc.update("INSERT INTO shoppers (psp_user_id, name, phone, created_at, updated_at) VALUES (?,?,?,?,?) "
-                + "ON DUPLICATE KEY UPDATE name = VALUES(name), phone = VALUES(phone), updated_at = VALUES(updated_at)", userId, name, phone, now, now);
-        long id = jdbc.queryForObject("SELECT id FROM shoppers WHERE psp_user_id = ?", Long.class, userId);
+        try {
+            jdbc.update("INSERT INTO shoppers (name, email, phone, password_hash, created_at, updated_at) VALUES (?,?,?,?,?,?)", n, e, p, Passwords.hash(password), now, now);
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            throw new IllegalStateException("There is already an account with that email or phone number. Sign in instead.");
+        }
+        long id = jdbc.queryForObject("SELECT id FROM shoppers WHERE phone = ?", Long.class, p);
+        startSession(id, res);
+        return new Shopper(id, n, p);
+    }
+
+    /** Email or phone, and password. Five wrong passwords lock the account for 15 minutes. */
+    public Shopper login(String who, String password, HttpServletResponse res) {
+        String w = who == null ? "" : who.trim();
+        List<Map<String, Object>> r;
+        if (w.contains("@")) r = jdbc.queryForList("SELECT * FROM shoppers WHERE email = ?", email(w));
+        else {
+            String p;
+            try { p = phone(w); } catch (IllegalArgumentException e) { p = null; }
+            r = p == null ? List.of() : jdbc.queryForList("SELECT * FROM shoppers WHERE phone = ?", p);
+        }
+        String wrong = "The email or phone number, or the password, is not right.";
+        if (r.isEmpty()) {
+            Passwords.matches(password == null ? "" : password, Passwords.hash("timing"));   // same time whether or not the account exists
+            throw new IllegalArgumentException(wrong);
+        }
+        Map<String, Object> s = r.get(0);
+        long id = ((Number) s.get("id")).longValue();
+        if (s.get("locked_until") != null && Shop.time(s.get("locked_until")).isAfter(LocalDateTime.now()))
+            throw new IllegalStateException("Too many wrong passwords. Try again in a few minutes, or reset your password.");
+        if (!Passwords.matches(password, (String) s.get("password_hash"))) {
+            jdbc.update("UPDATE shoppers SET failed_logins = failed_logins + 1, locked_until = CASE WHEN failed_logins + 1 >= ? THEN ? ELSE locked_until END WHERE id = ?",
+                    MAX_FAILED, Timestamp.valueOf(LocalDateTime.now().plusMinutes(LOCK_MINUTES)), id);
+            throw new IllegalArgumentException(wrong);
+        }
+        jdbc.update("UPDATE shoppers SET failed_logins = 0, locked_until = NULL WHERE id = ?", id);
+        startSession(id, res);
+        return new Shopper(id, (String) s.get("name"), (String) s.get("phone"));
+    }
+
+    void startSession(long id, HttpServletResponse res) {
         String token = Shop.token() + Shop.token();
         jdbc.update("INSERT INTO shopper_sessions (token_hash, shopper_id, expires_at, created_at) VALUES (?,?,?,?)",
-                Shop.sha256(token), id, Timestamp.valueOf(LocalDateTime.now().plusDays(DAYS)), now);
+                Shop.sha256(token), id, Timestamp.valueOf(LocalDateTime.now().plusDays(DAYS)), Shop.now());
         res.addHeader("Set-Cookie", cookie(token, DAYS * 86400L).toString());
-        return new Shopper(id, name, phone);
+    }
+
+    /** Forgot password: a 6-digit code by SMS to the account's phone (the answer is the same whether or not it exists). */
+    public void sendReset(String phoneIn) {
+        String p = phone(phoneIn);
+        if (p == null) throw new IllegalArgumentException("Enter your phone number.");
+        List<Long> ids = jdbc.queryForList("SELECT id FROM shoppers WHERE phone = ?", Long.class, p);
+        if (ids.isEmpty()) return;
+        String code = String.format("%06d", new java.security.SecureRandom().nextInt(1_000_000));
+        jdbc.update("UPDATE shopper_resets SET used_at = ? WHERE shopper_id = ? AND used_at IS NULL", Shop.now(), ids.get(0));
+        jdbc.update("INSERT INTO shopper_resets (shopper_id, code_hash, expires_at, created_at) VALUES (?,?,?,?)", ids.get(0), Shop.sha256(p + ":" + code),
+                Timestamp.valueOf(LocalDateTime.now().plusMinutes(RESET_MINUTES)), Shop.now());
+        try {
+            psp.message(Map.of("to", "STORE_USER", "phone", p, "text", "Your Payport Store code is " + code + ". It works for 10 minutes. Do not share it."));
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("The code could not be sent just now. Please try again in a few minutes.");
+        }
+    }
+
+    /** The code and a new password: signed in, and every other session ends. */
+    public Shopper reset(String phoneIn, String code, String password, HttpServletResponse res) {
+        String p = phone(phoneIn);
+        Passwords.check(password);
+        String bad = "That code is not right or has expired.";
+        if (p == null || code == null || !code.trim().matches("[0-9]{6}")) throw new IllegalArgumentException(bad);
+        List<Map<String, Object>> r = jdbc.queryForList("SELECT x.id, x.code_hash, x.attempts, s.id AS sid, s.name FROM shopper_resets x JOIN shoppers s ON s.id = x.shopper_id "
+                + "WHERE s.phone = ? AND x.used_at IS NULL AND x.expires_at > ? ORDER BY x.id DESC LIMIT 1", p, Shop.now());
+        if (r.isEmpty() || ((Number) r.get(0).get("attempts")).intValue() >= 5) throw new IllegalArgumentException(bad);
+        Map<String, Object> x = r.get(0);
+        if (!java.security.MessageDigest.isEqual(Shop.sha256(p + ":" + code.trim()).getBytes(), String.valueOf(x.get("code_hash")).getBytes())) {
+            jdbc.update("UPDATE shopper_resets SET attempts = attempts + 1 WHERE id = ?", x.get("id"));
+            throw new IllegalArgumentException(bad);
+        }
+        long id = ((Number) x.get("sid")).longValue();
+        jdbc.update("UPDATE shopper_resets SET used_at = ? WHERE id = ?", Shop.now(), x.get("id"));
+        jdbc.update("UPDATE shoppers SET password_hash = ?, failed_logins = 0, locked_until = NULL, updated_at = ? WHERE id = ?", Passwords.hash(password), Shop.now(), id);
+        jdbc.update("DELETE FROM shopper_sessions WHERE shopper_id = ?", id);
+        startSession(id, res);
+        return new Shopper(id, (String) x.get("name"), p);
     }
 
     ResponseCookie cookie(String value, long maxAge) {
@@ -93,14 +188,13 @@ public class Shoppers {
         }
     }
 
+    /** The account's own orders (placed while signed in). */
     public List<Map<String, Object>> orders(Shopper s) {
-        String d = s.phone() == null ? "" : s.phone().replaceAll("\\D", "");
-        String like = d.length() >= 9 ? "%" + d.substring(d.length() - 9) : "~none~";
         return jdbc.queryForList("SELECT o.*, st.name AS store_name, st.slug AS store_slug FROM orders o JOIN stores st ON st.id = o.store_id "
-                + "WHERE o.shopper_id = ? OR (o.shopper_id IS NULL AND o.customer_phone LIKE ?) ORDER BY o.id DESC LIMIT 50", s.id(), like);
+                + "WHERE o.shopper_id = ? ORDER BY o.id DESC LIMIT 50", s.id());
     }
 
-    /** One of the shopper's orders (theirs by account or by phone), or none. */
+    /** One of the shopper's orders, or none. */
     public Optional<Map<String, Object>> order(Shopper s, String ref) {
         return orders(s).stream().filter(o -> ref.equals(o.get("order_ref"))).findFirst();
     }

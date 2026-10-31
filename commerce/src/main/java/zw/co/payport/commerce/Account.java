@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** The shopper's side of the store: sign in with PayPort, my orders (with reorder), saved addresses, favourite stores. */
+/** The store user's side of the store: their own account, my orders (with reorder), saved addresses, favourite stores. */
 @Controller
 public class Account {
 
@@ -44,23 +44,79 @@ public class Account {
         return next != null && next.matches("/[A-Za-z0-9/_.?=&%-]{0,200}") && !next.startsWith("//") ? next : "/me";
     }
 
-    /** "Sign in with PayPort": the PayPort app signs the customer in and sends them back here with a one-time code. */
+    /** The Payport Store's own sign-in (store users are separate from Payport app customers). */
     @GetMapping("/signin")
-    public String signIn(@RequestParam(required = false) String next) {
-        return "redirect:" + settings.checkoutOrigin + "/store-signin?next=" + URLEncoder.encode(safeNext(next), StandardCharsets.UTF_8);
+    public String signInPage(@RequestParam(required = false) String next, Model model, HttpServletResponse res) {
+        return auth("signin", next, null, null, model, res);
     }
 
-    @GetMapping("/auth/callback")
-    public String callback(@RequestParam(required = false) String code, @RequestParam(required = false) String next, Model model, HttpServletResponse res) {
+    @PostMapping("/signin")
+    public String signIn(@RequestParam(required = false) String who, @RequestParam(required = false) String password,
+                         @RequestParam(required = false) String next, Model model, HttpServletResponse res) {
         try {
-            shoppers.signIn(code, res);
-        } catch (Psp.Unavailable e) {
-            return storefront.missing(model, res, "Signing in is not available at the moment. Please try again shortly.");
-        } catch (RuntimeException e) {
-            return "redirect:/signin?next=" + URLEncoder.encode(safeNext(next), StandardCharsets.UTF_8);
+            shoppers.login(who, password, res);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return auth("signin", next, e.getMessage(), Map.of("who", who == null ? "" : who), model, res);
         }
-        res.setHeader("Cache-Control", "no-store");
         return "redirect:" + safeNext(next);
+    }
+
+    @GetMapping("/register")
+    public String registerPage(@RequestParam(required = false) String next, Model model, HttpServletResponse res) {
+        return auth("register", next, null, null, model, res);
+    }
+
+    @PostMapping("/register")
+    public String register(@RequestParam(required = false) String name, @RequestParam(required = false) String email, @RequestParam(required = false) String phone,
+                           @RequestParam(required = false) String password, @RequestParam(required = false) String next, Model model, HttpServletResponse res) {
+        try {
+            shoppers.register(name, email, phone, password, res);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return auth("register", next, e.getMessage(), Map.of("name", name == null ? "" : name, "email", email == null ? "" : email, "phone", phone == null ? "" : phone), model, res);
+        }
+        return "redirect:" + safeNext(next);
+    }
+
+    @GetMapping("/forgot")
+    public String forgotPage(Model model, HttpServletResponse res) {
+        return auth("forgot", null, null, null, model, res);
+    }
+
+    @PostMapping("/forgot")
+    public String forgot(@RequestParam(required = false) String phone, Model model, HttpServletResponse res) {
+        try {
+            shoppers.sendReset(phone);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return auth("forgot", null, e.getMessage(), Map.of("phone", phone == null ? "" : phone), model, res);
+        }
+        return auth("reset", null, null, Map.of("phone", phone), model, res);
+    }
+
+    @PostMapping("/reset")
+    public String reset(@RequestParam(required = false) String phone, @RequestParam(required = false) String code, @RequestParam(required = false) String password,
+                        Model model, HttpServletResponse res) {
+        try {
+            shoppers.reset(phone, code, password, res);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return auth("reset", null, e.getMessage(), Map.of("phone", phone == null ? "" : phone), model, res);
+        }
+        return "redirect:/me";
+    }
+
+    String auth(String mode, String next, String problem, Map<String, String> values, Model model, HttpServletResponse res) {
+        model.addAttribute("mode", mode);
+        model.addAttribute("next", safeNext(next));
+        model.addAttribute("problem", problem);
+        Map<String, String> v = new LinkedHashMap<>(Map.of("who", "", "name", "", "email", "", "phone", ""));
+        if (values != null) v.putAll(values);
+        model.addAttribute("v", v);
+        model.addAttribute("title", switch (mode) {
+            case "register" -> "Create your account";
+            case "forgot", "reset" -> "Reset your password";
+            default -> "Sign in";
+        } + " | Payport Store");
+        res.setHeader("Cache-Control", "no-store");
+        return "auth";
     }
 
     @PostMapping("/signout")

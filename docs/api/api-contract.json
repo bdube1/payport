@@ -1382,10 +1382,6 @@
    "path": "/api/v1/commerce/checkouts/{merchantId}/{reference}"
   },
   {
-   "method": "POST",
-   "path": "/api/v1/commerce/customer-code"
-  },
-  {
    "method": "GET",
    "path": "/api/v1/commerce/events"
   },
@@ -1816,10 +1812,6 @@
   {
    "method": "POST",
    "path": "/api/v1/store/quote"
-  },
-  {
-   "method": "POST",
-   "path": "/api/v1/store/sign-in"
   },
   {
    "method": "GET",

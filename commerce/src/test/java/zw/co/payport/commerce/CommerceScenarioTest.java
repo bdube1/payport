@@ -725,9 +725,23 @@ class CommerceScenarioTest {
         assertEquals(404, channel("GET", "/api/channel/orders/" + ref2 + "?phone=0779999999", null, FakePsp.KEY).status(), "only the phone that ordered");
     }
 
-    /** Owner, 31 Oct 2026: shoppers sign in with PayPort; their orders, saved addresses, favourites and reorder. */
+    /** A form post that also returns the store user's session cookie, if one was set. */
+    String sessionFrom(String path, Map<String, String> fields) throws Exception {
+        String body = fields.entrySet().stream().map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8)).collect(Collectors.joining("&"));
+        HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+        return r.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=") && !c.startsWith("pp_me=;")).findFirst().map(c -> c.split(";")[0]).orElse(null);
+    }
+
+    String storeUser(String name, String phone) throws Exception {
+        String me = sessionFrom("/register", Map.of("name", name, "phone", phone, "password", "Shop2026pass", "next", "/me"));
+        assertNotNull(me, "registered and signed in");
+        return me;
+    }
+
+    /** Owner, 31 Oct 2026: Payport Store users are the store's own accounts (not Payport app logins); orders, addresses, favourites, reorder. */
     @Test
-    void shopperAccounts_signInWithPayPort_ordersAddressesFavouritesReorder() throws Exception {
+    void storeUsers_ownAccounts_signInLockoutReset_ordersAddressesFavouritesReorder() throws Exception {
         PSP.down = false;
         String bravo = signIn("portal-token-B");
         api("PUT", "/api/commerce/store", bravo, Map.of("pickupEnabled", true, "deliveryEnabled", true, "deliveryFeeMinor", 100, "listed", true));
@@ -735,20 +749,31 @@ class CommerceScenarioTest {
         String url = p.data().path("url").asText().replace("https://store.test", "");
         String storePath = url.substring(0, url.lastIndexOf('/'));
 
-        Res go = page("/signin?next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8));
-        assertEquals(302, go.status());
-        assertTrue(go.location().startsWith("https://app.test/store-signin?next="), go.location());
-        assertTrue(page("/signin?next=" + URLEncoder.encode("//evil.example", StandardCharsets.UTF_8)).location().endsWith("next=%2Fme"), "never another site");
+        Res signin = page("/signin?next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8));
+        assertTrue(signin.status() == 200 && signin.body().contains("Email or phone number") && signin.body().contains("Create an account"), "the store's own sign-in");
+        assertTrue(page("/signin?next=" + URLEncoder.encode("//evil.example", StandardCharsets.UTF_8)).body().contains("value=\"/me\""), "never another site");
         assertEquals(302, page("/me").status(), "the account page needs a sign-in");
 
-        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8))).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertEquals(302, cb.statusCode());
-        assertTrue(cb.headers().firstValue("Location").orElse("").endsWith(storePath), "back where sign-in was asked for");
-        String me = cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
-        assertTrue(cb.headers().allValues("Set-Cookie").stream().anyMatch(c -> c.startsWith("pp_me=") && c.contains("HttpOnly")), "HttpOnly session cookie");
-        assertEquals(302, HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=%2Fme")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertNull(sessionFrom("/register", Map.of("name", "Rudo Moyo", "phone", "0776000333", "password", "short")), "a weak password is refused");
+        String me = storeUser("Rudo Moyo", "0776000333");
+        assertNull(sessionFrom("/register", Map.of("name", "Someone", "phone", "+263776000333", "password", "Shop2026pass")), "one account per phone");
+        assertNull(sessionFrom("/signin", Map.of("who", "0776000333", "password", "Wrong2026pass")));
+        assertNotNull(sessionFrom("/signin", Map.of("who", "+263 77 600 0333", "password", "Shop2026pass")), "phone in any format");
+        assertNull(jdbc.queryForObject("SELECT psp_user_id FROM shoppers WHERE phone = '+263776000333'", Long.class), "not a Payport app account");
+
+        // Five wrong passwords lock the account; a code by SMS resets it.
+        storeUser("Tari Ncube", "0776000555");
+        for (int i = 0; i < 5; i++) sessionFrom("/signin", Map.of("who", "0776000555", "password", "Wrong" + i + "pass"));
+        assertNull(sessionFrom("/signin", Map.of("who", "0776000555", "password", "Shop2026pass")), "locked");
+        Res sent = form("/forgot", Map.of("phone", "0776000555"));
+        assertTrue(sent.body().contains("Enter the code"), sent.body());
+        String sms = waitForMessage("STORE_USER|Your Payport Store code is ");
+        assertNotNull(sms, "code by SMS: " + PSP.messages);
+        String code = sms.replaceAll(".*code is (\\d{6}).*", "$1");
+        assertNull(sessionFrom("/reset", Map.of("phone", "0776000555", "code", "000000".equals(code) ? "111111" : "000000", "password", "New2026pass")), "wrong code");
+        assertNotNull(sessionFrom("/reset", Map.of("phone", "0776000555", "code", code, "password", "New2026pass")), "reset and signed in");
+        assertNotNull(sessionFrom("/signin", Map.of("who", "0776000555", "password", "New2026pass")));
+        assertTrue(form("/forgot", Map.of("phone", "0779999000")).body().contains("Enter the code"), "the same answer whether or not the account exists");
 
         // Signed in: name and phone filled in at checkout; the order and the address are the shopper's.
         String cookie = form(url + "/buy", Map.of("qty", "2"), me).cookie();
@@ -783,12 +808,6 @@ class CommerceScenarioTest {
         assertEquals(302, page("/me", me).status(), "signed out");
     }
 
-    String shopperCookie(String code) throws Exception {
-        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=" + code + "&next=%2Fme")).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        return cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
-    }
-
     /** Owner, 31 Oct 2026: reports, offers only to customers who agreed (with a stop link), cart reminders, loyalty points. */
     @Test
     void merchantGrowth_reports_offersWithConsent_cartReminders_loyaltyPoints() throws Exception {
@@ -798,7 +817,7 @@ class CommerceScenarioTest {
         Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Carved bowl", "priceMinor", 5_000, "currency", "USD", "stock", 50));
         String url = p.data().path("url").asText().replace("https://store.test", "");
         String storePath = url.substring(0, url.lastIndexOf('/'));
-        String me = shopperCookie("c0de-loyal");
+        String me = storeUser("Tino Dube", "0777000444");
 
         // First order: the shopper agrees to offers; paying earns points (1 per dollar).
         String c1 = form(url + "/buy", Map.of("qty", "2"), me).cookie();
@@ -809,7 +828,9 @@ class CommerceScenarioTest {
         String ref1 = orderRefOf(k1);
         PSP.set(1001, ref1 + "-1", "PAID", "PAID");
         reader.poll();
-        assertEquals(100, marketing.points(1001, "+263777000444"));
+        long tino = jdbc.queryForObject("SELECT id FROM shoppers WHERE phone = '+263777000444'", Long.class);
+        assertEquals(100, marketing.points(1001, "s:" + tino), "the store user's own points");
+        assertEquals(0, marketing.points(1001, Marketing.holderOfPhone("0777000444")), "not someone's phone");
         assertTrue(marketing.consented(1001, "0777000444"));
 
         // Second order: points used (100 = USD 1.00 off); a failed payment gives them back.
@@ -820,10 +841,10 @@ class CommerceScenarioTest {
         assertEquals(302, form(storePath + "/checkout", Map.of("k", k2, "method", "PICKUP", "points", "on"), c2 + "; " + me).status());
         String ref2 = orderRefOf(k2);
         assertEquals(4_900L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE order_ref = ?", Long.class, ref2));
-        assertEquals(0, marketing.points(1001, "0777000444"));
+        assertEquals(0, marketing.points(1001, "s:" + tino));
         PSP.set(1001, ref2 + "-1", "FAILED", "FAILED");
         reader.poll();
-        assertEquals(100, marketing.points(1001, "0777000444"), "points back when the payment fails");
+        assertEquals(100, marketing.points(1001, "s:" + tino), "points back when the payment fails");
 
         // A cart left for hours: one reminder, to a customer who agreed.
         String c3 = form(url + "/buy", Map.of("qty", "1"), me).cookie();

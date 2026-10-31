@@ -60,7 +60,7 @@
       <datalist id="saved-addresses"><option th:each="a : ${addresses}" th:value="${a.address}"></option></datalist>
       <label>Your name <input name="name" maxlength="120" autocomplete="name" required th:value="${me != null ? me.name : ''}"></label>
       <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel" required th:value="${me != null ? me.phone : ''}"></label>
-      <p th:if="${me == null}" class="muted small"><a th:href="@{/signin(next=${'/s/' + store.slug + '/cart'})}">Sign in with PayPort</a> to fill this in and keep your orders.</p>
+      <p th:if="${me == null}" class="muted small"><a th:href="@{/signin(next=${'/s/' + store.slug + '/cart'})}">Sign in</a> or <a th:href="@{/register(next=${'/s/' + store.slug + '/cart'})}">create an account</a> to keep your orders and points.</p>
       <label>Note for the seller <input name="note" maxlength="300"></label>
       <label th:if="${cart.pointsOffer != null}" class="opt"><input type="checkbox" name="points" value="on" checked> <span th:text="${cart.pointsOffer}">Use points</span></label>
       <p th:if="${cart.pointsNote != null}" class="muted small" th:text="${cart.pointsNote}"></p>

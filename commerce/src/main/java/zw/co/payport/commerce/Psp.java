@@ -85,11 +85,6 @@ public class Psp {
         return call("GET", "/api/v1/commerce/events?after=" + after + "&limit=" + limit, null, null, Duration.ofSeconds(10));
     }
 
-    /** A shopper's one-time "Sign in with PayPort" code: who they are (once). */
-    public JsonNode customerCode(String code) {
-        return call("POST", "/api/v1/commerce/customer-code", Map.of("code", code == null ? "" : code), null, Duration.ofSeconds(5));
-    }
-
     public JsonNode merchant(long merchantId) {
         return call("GET", "/api/v1/commerce/merchants/" + merchantId, null, null, Duration.ofSeconds(5));
     }

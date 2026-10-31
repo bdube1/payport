@@ -221,15 +221,23 @@ public class Storefront {
                 if (foundStores.contains(String.valueOf(st.get("slug"))) && !have.contains(String.valueOf(st.get("slug")))
                         && (type == null || type.equals(st.get("business_type")))) listed.add(st);
         }
-        for (Map<String, Object> st : listed) stores.add(storeCard(st));
+        // Featured: Payport's own picks first, then the best sellers of the last 30 days (a daily order for ties).
+        // Featured stores are not repeated under All stores.
         List<Map<String, Object>> featured = new ArrayList<>();
+        java.util.Set<String> featuredSlugs = new java.util.HashSet<>();
         if (query == null && type == null && all.size() > 3) {
             String day = java.time.LocalDate.now(Growth.ZONE).toString();
             List<Map<String, Object>> pick = new ArrayList<>(all);
-            pick.sort(java.util.Comparator.<Map<String, Object>>comparingLong(st -> -((Number) st.get("orders30")).longValue())
+            pick.sort(java.util.Comparator.<Map<String, Object>>comparingInt(st -> Shop.bool(st.get("directory_featured")) ? 0 : 1)
+                    .thenComparingInt(st -> st.get("directory_rank") == null ? 100000 : ((Number) st.get("directory_rank")).intValue())
+                    .thenComparingLong(st -> -((Number) st.get("orders30")).longValue())
                     .thenComparing(st -> Shop.sha256(day + st.get("slug"))));
-            for (Map<String, Object> st : pick.subList(0, 3)) featured.add(storeCard(st));
+            for (Map<String, Object> st : pick.subList(0, 3)) {
+                featured.add(storeCard(st));
+                featuredSlugs.add(String.valueOf(st.get("slug")));
+            }
         }
+        for (Map<String, Object> st : listed) if (!featuredSlugs.contains(String.valueOf(st.get("slug")))) stores.add(storeCard(st));
         List<Map<String, Object>> tiles = new ArrayList<>();
         tiles.add(Map.of("code", "", "name", "All", "count", all.size(), "on", type == null, "icon", "ALL", "url", "/"));
         for (String code : List.of("FOOD", "DRINKS", "CLOTHING", "SERVICES", "BEAUTY", "ELECTRONICS", "SHOP", "HOME", "CRAFTS", "OTHER")) {
@@ -242,7 +250,7 @@ public class Storefront {
         model.addAttribute("tiles", tiles);
         model.addAttribute("featured", featured);
         model.addAttribute("stores", stores);
-        model.addAttribute("openCount", stores.size());
+        model.addAttribute("openCount", stores.size() + featured.size());
         model.addAttribute("type", type == null ? null : SHORT.get(type));
         model.addAttribute("typeCode", type);
         model.addAttribute("q", query);
@@ -518,7 +526,7 @@ public class Storefront {
         long mid = ((Number) st.get("merchant_id")).longValue();
         String offer = null;
         if (who.isPresent() && ccy != null && marketing.loyaltyOn(mid)) {
-            int bal = marketing.points(mid, who.get().phone());
+            int bal = marketing.points(mid, Marketing.holder(who.get()));
             int use = Marketing.usable(bal, v.map(Carts.View::itemsMinor).orElse(0L));
             if (use > 0) offer = "Use " + use + " of your " + bal + " points (−" + price(use, ccy) + ")";
             else if (bal > 0) cm.put("pointsNote", "You have " + bal + " points here");
@@ -594,7 +602,7 @@ public class Storefront {
         // Loyalty points: a signed-in shopper may use theirs (whole hundreds, at most half the items).
         int usePoints = 0;
         if ("on".equals(points) && signedIn.isPresent() && marketing.loyaltyOn(merchantId)) {
-            usePoints = Marketing.usable(marketing.points(merchantId, signedIn.get().phone()), items);
+            usePoints = Marketing.usable(marketing.points(merchantId, Marketing.holder(signedIn.get())), items);
             items -= usePoints;
         }
         String payChoice = pay != null && options.accepted(merchantId).contains(pay) ? pay : null;
@@ -631,7 +639,7 @@ public class Storefront {
         final String claimed = "DELIVERY".equals(how) ? addr : null;
         final String placedRef = placed.orderRef();
         signedIn.ifPresent(x -> shoppers.claim(x, placedRef, claimed));
-        if (!placed.existing() && usePoints > 0) marketing.redeem(merchantId, signedIn.get().phone(), placedRef, usePoints);
+        if (!placed.existing() && usePoints > 0) marketing.redeem(merchantId, Marketing.holder(signedIn.get()), placedRef, usePoints);
         if ("on".equals(offers)) marketing.consent(merchantId, c.phone(), c.name());
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());

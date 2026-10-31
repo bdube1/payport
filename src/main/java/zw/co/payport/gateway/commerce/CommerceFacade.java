@@ -204,6 +204,7 @@ public class CommerceFacade {
      * to the customer who placed the order. Short, capped per merchant per day; the number is not stored.
      */
     public Map<String, Object> message(NewMessage b) {
+        if ("STORE_USER".equals(b.to())) return storeUserMessage(b);
         Merchant m = merchant(b.merchantId());
         if (!"ACTIVE".equals(m.getStatus())) throw new IllegalStateException("This merchant cannot send messages at the moment");
         String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
@@ -217,6 +218,24 @@ public class CommerceFacade {
         if (ref != null && ref.length() > 60) ref = ref.substring(0, 60);
         jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (?,?,?,NOW(6))", m.getId(), toMerchant ? "MERCHANT" : "CUSTOMER", ref);
         if (sms != null) sms.sendText(phone, text, ref == null ? "STORE" : ref, toMerchant ? "STORE_ORDER_ALERT" : "STORE_ORDER_UPDATE");
+        return Map.of("queued", true);
+    }
+
+    /**
+     * A text to a Payport Store user that no merchant sends (their password reset code). At most three an hour and ten
+     * a day per number; the number is kept only as a hash for that count.
+     */
+    Map<String, Object> storeUserMessage(NewMessage b) {
+        String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
+        if (text.isEmpty() || text.length() > 160) throw new IllegalArgumentException("A message is 1 to 160 characters");
+        String phone = b.phone() == null ? null : b.phone().replaceAll("[\\s()-]", "");
+        if (phone == null || !phone.matches("\\+?[0-9]{9,15}")) throw new IllegalArgumentException("Invalid phone number");
+        String who = "SU-" + StoreUsers.sha(phone.replaceAll("\\D", "")).substring(0, 40);
+        Integer hour = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = 0 AND reference = ? AND created_at >= NOW() - INTERVAL 1 HOUR", Integer.class, who);
+        Integer day = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = 0 AND reference = ? AND created_at >= NOW() - INTERVAL 1 DAY", Integer.class, who);
+        if ((hour != null && hour >= 3) || (day != null && day >= 10)) throw new IllegalStateException("Too many messages to this number. Please try again later.");
+        jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (0, 'STORE_USER', ?, NOW(6))", who);
+        if (sms != null) sms.sendText(phone, text, "STORE", "STORE_USER_CODE");
         return Map.of("queued", true);
     }
 

@@ -220,7 +220,7 @@ public class ChannelApi {
         // Loyalty points and offers, as on the website (the order's phone number is the customer's).
         int balance = 0, usable = 0, usePoints = 0;
         if (c.phone() != null && marketing.loyaltyOn(merchantId)) {
-            balance = marketing.points(merchantId, c.phone());
+            balance = marketing.points(merchantId, Marketing.holderOfPhone(c.phone()));
             usable = Marketing.usable(balance, items);
             if (Boolean.TRUE.equals(b.get("points")) || "true".equals(String.valueOf(b.get("points")))) {
                 usePoints = usable;
@@ -273,7 +273,7 @@ public class ChannelApi {
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());
             payments.channel(placed.orderRef(), channel);
-            if (usePoints > 0) marketing.redeem(merchantId, c.phone(), placed.orderRef(), usePoints);
+            if (usePoints > 0) marketing.redeem(merchantId, Marketing.holderOfPhone(c.phone()), placed.orderRef(), usePoints);
             if (Boolean.TRUE.equals(b.get("offers")) || "true".equals(String.valueOf(b.get("offers")))) marketing.consent(merchantId, c.phone(), name);
             payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor(), cash ? null : payChoice, zoneName);
         }
