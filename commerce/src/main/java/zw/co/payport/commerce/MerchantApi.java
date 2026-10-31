@@ -31,8 +31,10 @@ public class MerchantApi {
     private final Psp psp;
     private final Tokens tokens;
     private final EventReader reader;
+    private final Domains domains;
 
-    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader) {
+    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains) {
+        this.domains = domains;
         this.shop = shop;
         this.payments = payments;
         this.psp = psp;
@@ -192,6 +194,23 @@ public class MerchantApi {
     @PostMapping("/api/commerce/orders/{ref}/delivery")
     public Map<String, Object> delivery(@PathVariable String ref, @RequestBody Map<String, Object> b, HttpServletRequest req) {
         return ok(payments.setDelivery(manager(req).merchantId(), ref, String.valueOf(b.get("status"))));
+    }
+
+    @GetMapping("/api/commerce/domains")
+    public Map<String, Object> domains(HttpServletRequest req) { return ok(domains.list(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/domains")
+    public Map<String, Object> addDomain(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(domains.add(manager(req).merchantId(), String.valueOf(b.get("domain"))));
+    }
+
+    @PostMapping("/api/commerce/domains/{id}/verify")
+    public Map<String, Object> verifyDomain(@PathVariable long id, HttpServletRequest req) { return ok(domains.verify(manager(req).merchantId(), id)); }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/commerce/domains/{id}")
+    public Map<String, Object> removeDomain(@PathVariable long id, HttpServletRequest req) {
+        domains.remove(manager(req).merchantId(), id);
+        return ok(Map.of("removed", true));
     }
 
     @GetMapping("/api/commerce/customers")

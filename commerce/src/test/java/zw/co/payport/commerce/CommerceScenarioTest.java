@@ -75,6 +75,8 @@ class CommerceScenarioTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired EventReader reader;
     @Autowired Payments payments;
+    @Autowired Domains domains;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean Domains.TxtLookup dns;
 
     static final ObjectMapper JSON = new ObjectMapper();
     static final HttpClient HTTP = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
@@ -345,5 +347,74 @@ class CommerceScenarioTest {
         payments.reconcile();
         assertEquals("PAID", payment(ref));
         assertTrue(reader.pspUp() || true);
+    }
+
+    /** Review of 31 Oct 2026: two customers paying for the last item; uncertain payments keep it; failed ones release it. */
+    @Test
+    void lastItem_reservedAtCheckout_secondCustomerRefused_uncertainKeeps_failedReleases_designsAndDomains() throws Exception {
+        PSP.down = false;
+        String alpha = signIn("portal-token-A");
+        assertEquals(200, api("PUT", "/api/commerce/store", alpha, Map.of("pickupEnabled", true, "design", "BOUTIQUE", "tagline", "Made by hand")).status());
+        Res last = api("POST", "/api/commerce/products", alpha, Map.of("name", "Last lamp", "priceMinor", 5_000, "currency", "USD", "stock", 1, "category", "Lighting"));
+        String url = last.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        long id = last.data().path("id").asLong();
+
+        String a = form(url + "/buy", Map.of("qty", "1"), null).cookie(), b = form(url + "/buy", Map.of("qty", "1"), null).cookie();
+        String ka = key(), kb = key();
+        Res first = form(storePath + "/checkout", Map.of("k", ka, "method", "PICKUP", "name", "Ann", "phone", "0771000001"), a);
+        assertEquals(302, first.status(), first.body());
+        assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id), "reserved before payment");
+        Res second = form(storePath + "/checkout", Map.of("k", kb, "method", "PICKUP", "name", "Ben", "phone", "0771000002"), b);
+        assertTrue(second.status() == 200 && second.body().contains("Sold out"), "the second customer cannot pay for it: " + second.body());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE idempotency_key = ?", Integer.class, kb), "no order, no payment");
+        // Even if both pages passed their checks at the same moment, the database takes the last item once.
+        IllegalArgumentException race = assertThrows(IllegalArgumentException.class, () -> payments.place(new Payments.NewOrder(1001, null, null, id, "Last lamp", 1, 5_000,
+                "USD", "Ben", "0771000002", null, key(), java.util.List.of(new Payments.Item(id, "Last lamp", 5_000, 1)), "PICKUP", 0, null)));
+        assertTrue(race.getMessage().contains("sold out"), race.getMessage());
+        assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id), "the refused order took nothing");
+
+        String ref = orderRefOf(ka);
+        PSP.set(1001, ref + "-1", "PENDING", "UNCERTAIN");
+        reader.poll();
+        assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id), "uncertain: still held");
+        PSP.set(1001, ref + "-1", "FAILED", "FAILED");
+        reader.poll();
+        assertEquals("RELEASED", jdbc.queryForObject("SELECT stock_state FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals(1, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id), "failed: back on sale");
+        // Trying again reserves again; paying makes it a sale.
+        Res again = form("/o/" + ref + "/pay", Map.of("t", payments.viewToken(ka)));
+        assertEquals(302, again.status(), again.body());
+        assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id));
+        PSP.set(1001, ref + "-2", "PAID", "PAID");
+        reader.poll();
+        assertEquals("SOLD", jdbc.queryForObject("SELECT stock_state FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id));
+
+        // The boutique design shows categories and the tagline.
+        Res page = page(storePath);
+        assertTrue(page.body().contains("d-boutique") && page.body().contains("Lighting") && page.body().contains("Made by hand"), page.body());
+        assertEquals(400, api("PUT", "/api/commerce/store", alpha, Map.of("design", "FANCY")).status());
+
+        // Custom domains: proved by DNS before any certificate or routing.
+        assertEquals(400, api("POST", "/api/commerce/domains", alpha, Map.of("domain", "evil.payport.africa")).status());
+        Res d = api("POST", "/api/commerce/domains", alpha, Map.of("domain", "https://Shop.AlphaCrafts.co.zw/"));
+        assertEquals(200, d.status(), d.body());
+        assertEquals("shop.alphacrafts.co.zw", d.data().path("domain").asText());
+        assertEquals("PENDING", d.data().path("status").asText());
+        assertEquals(404, page("/internal/tls/allowed?domain=shop.alphacrafts.co.zw").status(), "no certificate before verification");
+        long did = d.data().path("id").asLong();
+        String bravo = signIn("portal-token-B");
+        assertEquals(409, api("POST", "/api/commerce/domains", bravo, Map.of("domain", "shop.alphacrafts.co.zw")).status(), "one store per domain");
+        assertEquals(404, api("POST", "/api/commerce/domains/" + did + "/verify", bravo, null).status());
+        org.mockito.Mockito.when(dns.txt("_payport.shop.alphacrafts.co.zw")).thenReturn(java.util.List.of("something-else"));
+        assertEquals("PENDING", api("POST", "/api/commerce/domains/" + did + "/verify", alpha, null).data().path("status").asText());
+        org.mockito.Mockito.when(dns.txt("_payport.shop.alphacrafts.co.zw")).thenReturn(java.util.List.of(d.data().path("txtValue").asText()));
+        assertEquals("VERIFIED", api("POST", "/api/commerce/domains/" + did + "/verify", alpha, null).data().path("status").asText());
+        assertEquals(200, page("/internal/tls/allowed?domain=shop.alphacrafts.co.zw").status());
+        assertEquals(storePath.substring(3), domains.storeFor("shop.alphacrafts.co.zw:443").orElse(""));
+        assertEquals(404, api("DELETE", "/api/commerce/domains/" + did, bravo, null).status());
+        assertEquals(200, api("DELETE", "/api/commerce/domains/" + did, alpha, null).status());
+        assertEquals(404, page("/internal/tls/allowed?domain=shop.alphacrafts.co.zw").status(), "removed: no more certificates");
     }
 }

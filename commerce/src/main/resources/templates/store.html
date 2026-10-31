@@ -1,14 +1,25 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
-<head th:replace="~{fragments :: head(${title}, ${description}, null, ${store.color}, ${share.url})}"></head>
-<body>
+<head th:replace="~{fragments :: head(${title}, ${description}, ${store.banner}, ${store.color}, ${share.url})}"></head>
+<body th:class="'d-' + ${store.design}">
 <header th:replace="~{fragments :: top(${store})}"></header>
+<div th:if="${store.banner != null}" class="banner"><img th:src="${store.banner}" alt=""></div>
 <main class="wrap">
   <section class="hero">
     <h1 th:text="${store.name}">Store</h1>
-    <p th:if="${store.about != null}" th:text="${store.about}" class="muted"></p>
+    <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
+    <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
     <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
   </section>
+  <section th:if="${store.design == 'local' and (store.pickup != null or store.delivers != null or store.whatsapp != null)}" class="info">
+    <p th:if="${store.pickup != null}" th:text="${store.pickup}"></p>
+    <p th:if="${store.delivers != null}" th:text="${store.delivers}"></p>
+    <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="pay link-btn" rel="noopener" target="_blank">Order on WhatsApp</a>
+  </section>
+  <nav th:if="${store.design == 'boutique' and !#sets.isEmpty(categories)}" class="chips">
+    <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
+    <a th:each="c : ${categories}" th:href="@{/s/{s}(s=${store.slug},c=${c})}" th:text="${c}" th:classappend="${c == category} ? 'on'">Category</a>
+  </nav>
   <p th:if="${#lists.isEmpty(products)}" class="muted">No products yet.</p>
   <ul class="grid">
     <li th:each="p : ${products}" class="card">
@@ -16,7 +27,8 @@
         <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
         <div th:if="${p.image == null}" class="pic blank"></div>
         <span class="name" th:text="${p.name}">Product</span>
-        <span class="price" th:text="${p.price}">USD 1.00</span>
+        <span class="desc-line" th:if="${p.description != null}" th:text="${p.description}"></span>
+        <span class="price" th:text="${p.soldOut} ? 'Sold out' : ${p.price}">USD 1.00</span>
       </a>
     </li>
   </ul>

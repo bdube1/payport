@@ -36,8 +36,12 @@ public class Storefront {
     private final Payments payments;
     private final Settings settings;
     private final Carts carts;
+    private final DeliveryProvider.Registry delivery;
+    private final Domains domains;
 
-    public Storefront(Shop shop, Payments payments, Settings settings, Carts carts) {
+    public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
+        this.delivery = delivery;
+        this.domains = domains;
         this.shop = shop;
         this.payments = payments;
         this.settings = settings;
@@ -76,6 +80,11 @@ public class Storefront {
         m.put("whatsapp", null);
         m.put("open", false);
         m.put("cartCount", 0);
+        m.put("design", "product");
+        m.put("banner", null);
+        m.put("tagline", null);
+        m.put("pickup", null);
+        m.put("delivers", null);
         return m;
     }
 
@@ -112,6 +121,11 @@ public class Storefront {
         m.put("whatsapp", s.get("whatsapp") == null ? null : "https://wa.me/" + String.valueOf(s.get("whatsapp")).replace("+", ""));
         m.put("open", "OPEN".equals(s.get("status")) && "ACTIVE".equals(s.get("psp_status") == null ? "ACTIVE" : s.get("psp_status")));
         m.put("cartCount", 0);
+        m.put("design", s.get("design") == null ? "PRODUCT" : String.valueOf(s.get("design")).toLowerCase(Locale.ROOT));
+        m.put("banner", s.get("banner_image") == null ? null : "/img/" + s.get("banner_image"));
+        m.put("tagline", s.get("tagline"));
+        m.put("pickup", Shop.bool(s.get("pickup_enabled")) ? (s.get("pickup_note") == null ? "Pickup available" : "Pickup: " + s.get("pickup_note")) : null);
+        m.put("delivers", Shop.bool(s.get("delivery_enabled")) ? (s.get("delivery_note") == null ? "Delivery available" : "Delivery: " + s.get("delivery_note")) : null);
         return m;
     }
 
@@ -135,21 +149,39 @@ public class Storefront {
         return "missing";
     }
 
+    /** The site's front page, or the store itself on a verified custom domain. */
     @GetMapping("/")
-    public String home(Model model) {
+    public String home(jakarta.servlet.http.HttpServletRequest req, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
+                       @RequestParam(name = "c", required = false) String category, Model model, HttpServletResponse res) {
+        Optional<String> slug = domains.storeFor(req.getHeader("Host"));
+        if (slug.isPresent()) return store(slug.get(), cart, category, model, res);
         model.addAttribute("title", "PayPort Store");
         return "home";
     }
 
+    /** Caddy asks before it requests a certificate: only verified custom domains get one (local calls only). */
+    @GetMapping("/internal/tls/allowed")
+    public ResponseEntity<String> tlsAllowed(@RequestParam String domain, jakarta.servlet.http.HttpServletRequest req) {
+        String ip = req.getRemoteAddr();
+        boolean local = "127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip);
+        return local && domains.allowed(domain) ? ResponseEntity.ok("yes") : ResponseEntity.status(404).body("no");
+    }
+
     @GetMapping("/s/{slug}")
     public String store(@PathVariable String slug, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
-                        Model model, HttpServletResponse res) {
+                        @RequestParam(name = "c", required = false) String category, Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Map<String, Object> st = s.get();
         long merchant = ((Number) st.get("merchant_id")).longValue();
         List<Map<String, Object>> items = new ArrayList<>();
-        for (Map<String, Object> p : shopProducts(merchant)) items.add(productModel(p, (String) st.get("slug")));
+        java.util.TreeSet<String> categories = new java.util.TreeSet<>();
+        for (Map<String, Object> p : shopProducts(merchant)) {
+            if (p.get("category") != null) categories.add((String) p.get("category"));
+            if (category == null || category.isBlank() || category.equals(p.get("category"))) items.add(productModel(p, (String) st.get("slug")));
+        }
+        model.addAttribute("categories", categories);
+        model.addAttribute("category", category == null || category.isBlank() ? null : category);
         Map<String, Object> sm = storeModel(st);
         sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
         model.addAttribute("store", sm);
@@ -239,10 +271,8 @@ public class Storefront {
     }
 
     /** The delivery fee for a cart: the store's fee, or nothing above the free-delivery amount. */
-    static long deliveryFee(Map<String, Object> st, long itemsMinor) {
-        long fee = st.get("delivery_fee_minor") == null ? 0 : ((Number) st.get("delivery_fee_minor")).longValue();
-        Object free = st.get("free_delivery_from_minor");
-        return free != null && itemsMinor >= ((Number) free).longValue() ? 0 : fee;
+    long deliveryFee(Map<String, Object> st, long itemsMinor) {
+        return delivery.of(st.get("delivery_provider")).quote(st, itemsMinor, null).feeMinor();
     }
 
     String cartPage(String slug, String cart, String problem, Model model, HttpServletResponse res) {
@@ -305,7 +335,9 @@ public class Storefront {
         String addr = Shop.text(address, 300, false, "address");
         if ("DELIVERY".equals(how) && (addr == null || addr.length() < 6)) return cartPage(slug, cart, "Enter the delivery address.", model, res);
         long items = v.get().itemsMinor();
-        long fee = "DELIVERY".equals(how) ? deliveryFee(st, items) : 0;
+        DeliveryProvider.Quote quote = delivery.of(st.get("delivery_provider")).quote(st, items, addr);
+        if ("DELIVERY".equals(how) && quote.problem() != null) return cartPage(slug, cart, quote.problem(), model, res);
+        long fee = "DELIVERY".equals(how) ? quote.feeMinor() : 0;
         List<Payments.Item> lines = v.get().lines().stream().map(l -> new Payments.Item(l.productId(), l.name(), l.unitMinor(), l.quantity())).toList();
         String summary = lines.size() == 1 ? lines.get(0).name() : lines.size() + " items from " + st.get("name");
         Payments.Placed placed;
