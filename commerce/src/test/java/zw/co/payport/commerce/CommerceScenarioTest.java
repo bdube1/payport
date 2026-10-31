@@ -427,4 +427,111 @@ class CommerceScenarioTest {
         assertEquals(200, api("DELETE", "/api/commerce/domains/" + did, alpha, null).status());
         assertEquals(404, page("/internal/tls/allowed?domain=shop.alphacrafts.co.zw").status(), "removed: no more certificates");
     }
+
+    /** Owner, 31 Oct 2026: stores of every kind, the merchant's own collections, sales and codes, pay on delivery, services, the directory. */
+    @Test
+    void storeBuilder_directoryByType_collections_featuredAndSale_discountCodes_payOnDelivery_services() throws Exception {
+        PSP.down = false;
+        String bravo = signIn("portal-token-B"), alpha = signIn("portal-token-A");
+        assertEquals(400, api("PUT", "/api/commerce/store", bravo, Map.of("businessType", "CARS")).status());
+        Res st = api("PUT", "/api/commerce/store", bravo, Map.of("businessType", "FOOD", "announcement", "Free chips on Fridays", "codEnabled", true,
+                "pickupEnabled", true, "deliveryEnabled", true, "deliveryFeeMinor", 200, "listed", true));
+        assertEquals(200, st.status(), st.body());
+        assertTrue(api("GET", "/api/commerce/business-types", bravo, null).body().contains("Food"));
+
+        // Collections are the merchant's own groups.
+        Res breakfast = api("POST", "/api/commerce/collections", bravo, Map.of("name", "Breakfast"));
+        Res drinks = api("POST", "/api/commerce/collections", bravo, Map.of("name", "Cold drinks"));
+        assertEquals(200, drinks.status(), drinks.body());
+        long bId = breakfast.data().path("id").asLong(), dId = drinks.data().path("id").asLong();
+        assertEquals(404, api("DELETE", "/api/commerce/collections/" + bId, alpha, null).status(), "not alpha's collection");
+        assertEquals(400, api("POST", "/api/commerce/products", alpha, Map.of("name", "Sneaky", "priceMinor", 100, "currency", "USD", "collectionIds", java.util.List.of(bId))).status());
+        assertFalse(api("GET", "/api/commerce/products", alpha, null).body().contains("Sneaky"), "nothing saved when the collections are refused");
+
+        Res sadza = api("POST", "/api/commerce/products", bravo, Map.of("name", "Sadza and beef", "priceMinor", 600, "currency", "USD", "stock", 10,
+                "featured", true, "collectionIds", java.util.List.of(bId)));
+        assertEquals(200, sadza.status(), sadza.body());
+        assertEquals(bId, sadza.data().path("collectionIds").get(0).asLong());
+        assertEquals(400, api("POST", "/api/commerce/products", bravo, Map.of("name", "Bad sale", "priceMinor", 500, "currency", "USD", "compareAtMinor", 400)).status(), "the old price must be higher");
+        Res mazoe = api("POST", "/api/commerce/products", bravo, Map.of("name", "Mazoe orange", "priceMinor", 300, "currency", "USD", "stock", 10,
+                "compareAtMinor", 400, "collectionIds", java.util.List.of(dId)));
+        assertEquals(200, mazoe.status(), mazoe.body());
+        Res chef = api("POST", "/api/commerce/products", bravo, Map.of("name", "Private chef booking", "priceMinor", 2_000, "currency", "USD", "kind", "SERVICE", "stock", 5));
+        assertEquals("SERVICE", chef.data().path("kind").asText());
+        assertTrue(chef.data().path("stock").isNull(), "a service has no stock");
+
+        String url = sadza.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        Res home = page(storePath);
+        assertTrue(home.body().contains("Free chips on Fridays") && home.body().contains("Breakfast") && home.body().contains("Cold drinks") && home.body().contains("Featured"), home.body());
+        assertTrue(home.body().contains("USD 4.00") && home.body().contains("Sale"), "old price struck through");
+        String only = page(storePath + "?c=" + drinks.data().path("slug").asText()).body();
+        assertTrue(only.contains("Mazoe orange") && !only.contains("Sadza and beef"), only);
+        assertTrue(page(chef.data().path("url").asText().replace("https://store.test", "")).body().contains("Book"));
+
+        // The PayPort directory lists stores by what they sell.
+        assertTrue(page("/").body().contains("Bravo Foods"));
+        assertTrue(page("/?t=FOOD").body().contains("Bravo Foods"));
+        assertFalse(page("/?t=CLOTHING").body().contains("Bravo Foods"));
+        assertTrue(page("/?q=Mazoe").body().contains("Bravo Foods"));
+        api("PUT", "/api/commerce/store", bravo, Map.of("listed", false));
+        assertFalse(page("/").body().contains("Bravo Foods"), "a store can stay out of the directory");
+        api("PUT", "/api/commerce/store", bravo, Map.of("listed", true));
+
+        // Discount codes: checked on the server, with a minimum and a number of uses.
+        assertEquals(400, api("POST", "/api/commerce/discounts", bravo, Map.of("code", "HALF", "kind", "PERCENT", "value", 95)).status());
+        Res code = api("POST", "/api/commerce/discounts", bravo, Map.of("code", "save10", "kind", "PERCENT", "value", 10, "minOrderMinor", 1_000, "maxUses", 1));
+        assertEquals(200, code.status(), code.body());
+        assertEquals("SAVE10", code.data().path("code").asText());
+        assertEquals(409, api("POST", "/api/commerce/discounts", bravo, Map.of("code", "SAVE10", "kind", "AMOUNT", "value", 100)).status());
+        assertEquals(404, api("POST", "/api/commerce/discounts/" + code.data().path("id").asLong() + "/status", alpha, Map.of("active", false)).status());
+
+        String cookie = form(url + "/buy", Map.of("qty", "1"), null).cookie();
+        assertTrue(page(storePath + "/cart?code=SAVE10", cookie).body().contains("needs items of at least"), "below the minimum");
+        form(storePath + "/cart/" + sadza.data().path("id").asLong(), Map.of("qty", "2"), cookie);
+        Res cart = page(storePath + "/cart?code=save10", cookie);
+        assertTrue(cart.body().contains("USD 1.20") && cart.body().contains("Pay on delivery"), cart.body());
+
+        // Pay on delivery: no PSP checkout; the items are held until the merchant records the cash.
+        int creates = PSP.creates.get();
+        String k = key();
+        Res placed = form(storePath + "/checkout", Map.of("k", k, "method", "PICKUP", "name", "Tendai", "phone", "0773000444", "code", "SAVE10", "pay", "CASH"), cookie);
+        assertEquals(200, placed.status(), placed.body());
+        assertTrue(placed.body().contains("pay on delivery"), placed.body());
+        assertEquals(creates, PSP.creates.get(), "no PSP checkout for cash");
+        String ref = orderRefOf(k);
+        Map<String, Object> o = jdbc.queryForMap("SELECT * FROM orders WHERE order_ref = ?", ref);
+        assertEquals("ON_DELIVERY", o.get("payment_status"));
+        assertEquals("CASH", o.get("pay_method"));
+        assertEquals(120L, ((Number) o.get("discount_minor")).longValue());
+        assertEquals(1_080L, ((Number) o.get("amount_minor")).longValue());
+        assertEquals("RESERVED", o.get("stock_state"));
+        assertEquals(8, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, sadza.data().path("id").asLong()));
+        assertEquals(1, jdbc.queryForObject("SELECT used FROM discount_codes WHERE id = ?", Integer.class, code.data().path("id").asLong()));
+        String other = form(url + "/buy", Map.of("qty", "2"), null).cookie();
+        assertTrue(page(storePath + "/cart?code=SAVE10", other).body().contains("used up"));
+        Res online = form("/o/" + ref + "/pay", Map.of("t", payments.viewToken(k)));
+        assertTrue(online.status() == 200 && online.body().contains("on delivery or collection"), "no online payment for a cash order: " + online.body());
+        assertEquals(creates, PSP.creates.get());
+
+        assertEquals("CASH", api("GET", "/api/commerce/orders/" + ref, bravo, null).data().path("payMethod").asText());
+        assertEquals(409, api("POST", "/api/commerce/orders/" + ref + "/refunds", bravo, Map.of("amountMinor", 100, "reason", "cash")).status(), "cash is refunded by hand");
+        assertEquals(404, api("POST", "/api/commerce/orders/" + ref + "/cash-received", alpha, null).status());
+        Res cashIn = api("POST", "/api/commerce/orders/" + ref + "/cash-received", bravo, null);
+        assertEquals(200, cashIn.status(), cashIn.body());
+        assertEquals("PAID", jdbc.queryForObject("SELECT payment_status FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals("SOLD", jdbc.queryForObject("SELECT stock_state FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals(409, api("POST", "/api/commerce/orders/" + ref + "/cash-received", bravo, null).status(), "only once");
+
+        // A services-only cart has no pickup or delivery choice; paid online as usual.
+        String sc = form(chef.data().path("url").asText().replace("https://store.test", "") + "/buy", Map.of("qty", "1"), null).cookie();
+        Res scart = page(storePath + "/cart", sc);
+        assertFalse(scart.body().contains("How do you want it?"), scart.body());
+        String sk = key();
+        Res booked = form(storePath + "/checkout", Map.of("k", sk, "name", "Farai", "phone", "0774000555", "pay", "ONLINE"), sc);
+        assertEquals(302, booked.status(), booked.body());
+        assertTrue(booked.location().startsWith("https://app.test/checkout/"), booked.location());
+        assertEquals("NONE", jdbc.queryForObject("SELECT delivery_method FROM orders WHERE idempotency_key = ?", String.class, sk));
+        assertEquals(2_000L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE idempotency_key = ?", Long.class, sk));
+    }
 }

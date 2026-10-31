@@ -41,6 +41,19 @@ jobs:
             grep -E 'Tests run:|FAIL|expected' build.log | tail -30 | sed 's/^/::error::/'
             exit 1
           }
+      - name: Failed tests
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          def esc(t): return t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          for f in glob.glob('target/surefire-reports/TEST-*.xml'):
+              for case in ET.parse(f).getroot().iter('testcase'):
+                  for bad in list(case.findall('failure')) + list(case.findall('error')):
+                      msg = (bad.get('message') or '')[:1500]
+                      trace = '\n'.join(l for l in (bad.text or '').splitlines() if 'zw.co.payport' in l)[:1500]
+                      print('::error title=' + esc(case.get('name', 'test')[:120]) + '::' + esc(msg + '\n' + trace))
+          PY
       - name: Test totals
         if: always()
         run: |

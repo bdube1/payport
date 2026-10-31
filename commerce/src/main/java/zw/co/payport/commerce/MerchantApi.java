@@ -33,8 +33,10 @@ public class MerchantApi {
     private final EventReader reader;
     private final Domains domains;
     private final Insights insights;
+    private final Catalog catalog;
 
-    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights) {
+    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
+        this.catalog = catalog;
         this.domains = domains;
         this.insights = insights;
         this.shop = shop;
@@ -145,19 +147,87 @@ public class MerchantApi {
     // ─── products ────────────────────────────────────────────────────────────
 
     @GetMapping("/api/commerce/products")
-    public Map<String, Object> products(HttpServletRequest req) { return ok(shop.products(me(req).merchantId(), false)); }
+    public Map<String, Object> products(HttpServletRequest req) {
+        List<Map<String, Object>> list = shop.products(me(req).merchantId(), false);
+        list.forEach(p -> p.put("collectionIds", catalog.collectionsOf(((Number) p.get("id")).longValue())));
+        return ok(list);
+    }
 
     @PostMapping("/api/commerce/products")
     public Map<String, Object> newProduct(@RequestBody Map<String, Object> b, HttpServletRequest req) {
-        return ok(shop.saveProduct(manager(req).merchantId(), null, b));
+        long m = manager(req).merchantId();
+        if (b.get("collectionIds") instanceof List<?> ids) catalog.own(m, ids);
+        return ok(withCollections(m, shop.saveProduct(m, null, b), b));
     }
 
     @GetMapping("/api/commerce/products/{id}")
-    public Map<String, Object> product(@PathVariable long id, HttpServletRequest req) { return ok(shop.product(me(req).merchantId(), id)); }
+    public Map<String, Object> product(@PathVariable long id, HttpServletRequest req) {
+        Map<String, Object> p = shop.product(me(req).merchantId(), id);
+        p.put("collectionIds", catalog.collectionsOf(id));
+        return ok(p);
+    }
 
     @PutMapping("/api/commerce/products/{id}")
     public Map<String, Object> saveProduct(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
-        return ok(shop.saveProduct(manager(req).merchantId(), id, b));
+        long m = manager(req).merchantId();
+        if (b.get("collectionIds") instanceof List<?> ids) catalog.own(m, ids);
+        return ok(withCollections(m, shop.saveProduct(m, id, b), b));
+    }
+
+    private Map<String, Object> withCollections(long merchantId, Map<String, Object> p, Map<String, Object> b) {
+        long id = ((Number) p.get("id")).longValue();
+        if (b.get("collectionIds") instanceof List<?> ids) catalog.setProductCollections(merchantId, id, ids);
+        p.put("collectionIds", catalog.collectionsOf(id));
+        return p;
+    }
+
+    // ─── collections and discount codes ──────────────────────────────────────
+
+    @GetMapping("/api/commerce/collections")
+    public Map<String, Object> collections(HttpServletRequest req) { return ok(catalog.collections(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/collections")
+    public Map<String, Object> addCollection(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(catalog.addCollection(manager(req).merchantId(), b));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/commerce/collections/{id}")
+    public Map<String, Object> removeCollection(@PathVariable long id, HttpServletRequest req) {
+        catalog.removeCollection(manager(req).merchantId(), id);
+        return ok(Map.of("removed", true));
+    }
+
+    @PostMapping("/api/commerce/collections/{id}/position")
+    public Map<String, Object> moveCollection(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        int pos;
+        try {
+            pos = Integer.parseInt(String.valueOf(b.get("position")));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Enter the position");
+        }
+        catalog.moveCollection(manager(req).merchantId(), id, pos);
+        return ok(catalog.collections(me(req).merchantId()));
+    }
+
+    @GetMapping("/api/commerce/discounts")
+    public Map<String, Object> discounts(HttpServletRequest req) { return ok(catalog.discounts(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/discounts")
+    public Map<String, Object> addDiscount(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(catalog.addDiscount(manager(req).merchantId(), b));
+    }
+
+    @PostMapping("/api/commerce/discounts/{id}/status")
+    public Map<String, Object> discountStatus(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        catalog.setDiscountActive(manager(req).merchantId(), id, Boolean.TRUE.equals(b.get("active")));
+        return ok(catalog.discounts(me(req).merchantId()));
+    }
+
+    @GetMapping("/api/commerce/business-types")
+    public Map<String, Object> businessTypes() {
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        Catalog.TYPES.forEach((k, v) -> out.add(Map.of("code", k, "name", v)));
+        return ok(out);
     }
 
     // ─── links ───────────────────────────────────────────────────────────────
@@ -191,6 +261,11 @@ public class MerchantApi {
     @PostMapping("/api/commerce/orders/{ref}/status")
     public Map<String, Object> orderStatus(@PathVariable String ref, @RequestBody Map<String, Object> b, HttpServletRequest req) {
         return ok(payments.setOrderStatus(manager(req).merchantId(), ref, String.valueOf(b.get("status"))));
+    }
+
+    @PostMapping("/api/commerce/orders/{ref}/cash-received")
+    public Map<String, Object> cashReceived(@PathVariable String ref, HttpServletRequest req) {
+        return ok(payments.cashReceived(manager(req).merchantId(), ref));
     }
 
     @PostMapping("/api/commerce/orders/{ref}/delivery")

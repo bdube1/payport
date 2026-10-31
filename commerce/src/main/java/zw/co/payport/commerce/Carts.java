@@ -73,7 +73,7 @@ public class Carts {
         jdbc.update("UPDATE carts SET updated_at = ? WHERE id = ?", Shop.now(), cart);
     }
 
-    public record Line(long productId, String name, String slug, String image, long unitMinor, int quantity, Integer stock, String problem) {}
+    public record Line(long productId, String name, String slug, String image, long unitMinor, int quantity, Integer stock, String problem, boolean service) {}
 
     public record View(long cartId, String currency, List<Line> lines, long itemsMinor, int count, boolean ok) {}
 
@@ -86,7 +86,7 @@ public class Carts {
         int count = 0;
         boolean ok = true;
         String ccy = null;
-        for (Map<String, Object> r : jdbc.queryForList("SELECT i.quantity, p.id, p.name, p.slug, p.image_id, p.price_minor, p.currency, p.stock, p.status "
+        for (Map<String, Object> r : jdbc.queryForList("SELECT i.quantity, p.id, p.name, p.slug, p.image_id, p.price_minor, p.currency, p.stock, p.status, p.kind "
                 + "FROM cart_items i JOIN products p ON p.id = i.product_id WHERE i.cart_id = ? ORDER BY p.name", c.get())) {
             int q = ((Number) r.get("quantity")).intValue();
             long unit = ((Number) r.get("price_minor")).longValue();
@@ -95,7 +95,7 @@ public class Carts {
             if (problem != null) ok = false;
             ccy = (String) r.get("currency");
             lines.add(new Line(((Number) r.get("id")).longValue(), (String) r.get("name"), (String) r.get("slug"), r.get("image_id") == null ? null : "/img/" + r.get("image_id"),
-                    unit, q, stock, problem));
+                    unit, q, stock, problem, "SERVICE".equals(r.get("kind"))));
             total += unit * q;
             count += q;
         }
