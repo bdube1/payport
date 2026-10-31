@@ -16,6 +16,19 @@
     <button type="submit" class="pay">Add to cart</button>
   </form>
   <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
+  <section th:if="${!#lists.isEmpty(also)}" class="also">
+    <h2>Customers also bought</h2>
+    <ul class="grid">
+      <li th:each="a : ${also}" class="card">
+        <a th:href="${a.url}">
+          <img th:if="${a.image != null}" th:src="${a.image}" alt="" loading="lazy" class="pic">
+          <div th:if="${a.image == null}" class="pic blank"></div>
+          <span class="name" th:text="${a.name}">Product</span>
+          <span class="price" th:text="${a.price}">USD 1.00</span>
+        </a>
+      </li>
+    </ul>
+  </section>
   <section th:replace="~{fragments :: share(${share})}"></section>
 </main>
 <footer th:replace="~{fragments :: foot}"></footer>

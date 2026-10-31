@@ -32,9 +32,11 @@ public class MerchantApi {
     private final Tokens tokens;
     private final EventReader reader;
     private final Domains domains;
+    private final Insights insights;
 
-    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains) {
+    public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights) {
         this.domains = domains;
+        this.insights = insights;
         this.shop = shop;
         this.payments = payments;
         this.psp = psp;
@@ -212,6 +214,9 @@ public class MerchantApi {
         domains.remove(manager(req).merchantId(), id);
         return ok(Map.of("removed", true));
     }
+
+    @GetMapping("/api/commerce/insights")
+    public Map<String, Object> insights(HttpServletRequest req) { return ok(insights.merchant(me(req).merchantId())); }
 
     @GetMapping("/api/commerce/customers")
     public Map<String, Object> customers(@RequestParam(required = false) String q, HttpServletRequest req) {

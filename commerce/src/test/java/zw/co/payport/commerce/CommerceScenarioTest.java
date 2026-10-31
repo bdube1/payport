@@ -298,11 +298,21 @@ class CommerceScenarioTest {
         assertEquals(200, api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "OUT")).status());
         assertTrue(page("/o/" + ref + "?t=" + payments.viewToken(ck)).body().contains("on its way"));
         assertEquals("FULFILLED", api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "DELIVERED")).data().path("orderStatus").asText());
+        // Phase 3: bought together, search, and insights for the merchant.
+        assertTrue(page(productUrl).body().contains("Customers also bought") && page(productUrl).body().contains("Clay pot"), "the pot was bought with the basket");
+        Res found = page(storePath + "/search?q=woven");
+        assertTrue(found.body().contains("Woven basket") && found.body().contains("found for"), found.body());
+        assertFalse(page(storePath + "/search?q=woven").body().contains(">Clay pot<"), "search only shows matches");
+        Res ins = api("GET", "/api/commerce/insights", alpha, null);
+        assertEquals(200, ins.status(), ins.body());
+        assertTrue(ins.data().path("bestSellers").toString().contains("Woven basket"), ins.body());
         Res customers = api("GET", "/api/commerce/customers", alpha, null);
         assertTrue(customers.body().contains("Rudo") && customers.body().contains("0772000111"), customers.body());
         assertFalse(api("GET", "/api/commerce/customers", bravoSession, null).body().contains("Rudo"), "customers belong to their merchant");
         jdbc.update("UPDATE products SET stock = 0 WHERE id = ?", p.data().path("id").asLong());
         assertTrue(page(productUrl).body().contains("Sold out"));
+        String restock = api("GET", "/api/commerce/insights", alpha, null).data().path("restock").toString();
+        assertTrue(restock.contains("Woven basket") && restock.contains("SOLD_OUT"), "sold out after selling: restock " + restock);
 
         String bravo = signIn("portal-token-B");
         assertEquals(404, api("PUT", "/api/commerce/products/" + p.data().path("id").asLong(), bravo, Map.of("name", "Mine", "priceMinor", 1, "currency", "USD")).status());

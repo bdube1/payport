@@ -16,6 +16,10 @@
     <p th:if="${store.delivers != null}" th:text="${store.delivers}"></p>
     <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp}" class="pay link-btn" rel="noopener" target="_blank">Order on WhatsApp</a>
   </section>
+  <form method="get" th:action="@{/s/{s}/search(s=${store.slug})}" class="search" role="search">
+    <input name="q" th:value="${q}" placeholder="Search" aria-label="Search this store" maxlength="80">
+  </form>
+  <p th:if="${q != null}" class="muted small"><span th:text="${#lists.size(products)} + ' found for “' + ${q} + '”'"></span> · <a th:href="@{/s/{s}(s=${store.slug})}">Show all</a></p>
   <nav th:if="${store.design == 'boutique' and !#sets.isEmpty(categories)}" class="chips">
     <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
     <a th:each="c : ${categories}" th:href="@{/s/{s}(s=${store.slug},c=${c})}" th:text="${c}" th:classappend="${c == category} ? 'on'">Category</a>
