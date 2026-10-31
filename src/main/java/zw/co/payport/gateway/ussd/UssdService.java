@@ -758,11 +758,17 @@ public class UssdService {
         if (items.isEmpty()) return "END " + name + " has nothing on sale at the moment.";
         Map<Long, Integer> cart = new java.util.LinkedHashMap<>();
         Map<Long, com.fasterxml.jackson.databind.JsonNode> chosen = new java.util.LinkedHashMap<>();
+        // After the items: message the seller, or report the store (the same as the website and the app).
+        List<com.fasterxml.jackson.databind.JsonNode> first = new ArrayList<>(items);
+        first.add(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("_action", "CHAT").put("name", "Message the seller").put("price", ""));
+        first.add(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("_action", "REPORT").put("name", "Report this store").put("price", ""));
         for (int round = 0; round < 5; round++) {
-            Step<com.fasterxml.jackson.databind.JsonNode> pi = choose(c, in, name + (cart.isEmpty() ? ":" : ": add an item"), items,
-                    i -> clip(i.path("name").asText(), 22) + " " + i.path("price").asText());
+            Step<com.fasterxml.jackson.databind.JsonNode> pi = choose(c, in, name + (cart.isEmpty() ? ":" : ": add an item"), cart.isEmpty() ? first : items,
+                    i -> (clip(i.path("name").asText(), 22) + " " + i.path("price").asText()).trim());
             if (pi.asking()) return pi.prompt();
             var item = pi.value();
+            if ("CHAT".equals(item.path("_action").asText(null))) return storeChat(c, in, slug, name);
+            if ("REPORT".equals(item.path("_action").asText(null))) return storeReport(c, in, slug, name);
             int qty = 1;
             if (!item.path("service").asBoolean()) {
                 Step<Integer> pq = ask(in, "How many " + clip(item.path("name").asText(), 30) + "?", "Enter a number from 1 to 20:", "END Cancelled. Nothing was ordered.", t -> {
@@ -904,6 +910,39 @@ public class UssdService {
                 return "END " + clip(e.getMessage() == null ? "The order could not be placed. No money was taken." : e.getMessage(), 150);
             }
         });
+    }
+
+    /** A message to the store's seller; the answer comes back by SMS (USSD) or on WhatsApp. */
+    private String storeChat(Ctx c, In in, String slug, String name) {
+        Step<String> t = ask(in, "Message " + name, "Type your question for the seller:", "END Cancelled.", x -> {
+            String v = x == null ? "" : x.trim();
+            if (v.length() < 2) throw new IllegalArgumentException("Type your message.");
+            if (v.length() > 500) throw new IllegalArgumentException("Keep it under 500 characters.");
+            return v;
+        });
+        if (t.asking()) return t.prompt();
+        try {
+            store.chat(slug, c.phone(), t.value(), c.ussd() ? "USSD" : "WHATSAPP", c.holder() == null ? null : c.holder().getFullName());
+        } catch (IllegalArgumentException e) {
+            return "END " + e.getMessage();
+        }
+        return "END Sent to " + name + ". The seller's answer will come to you " + (c.ussd() ? "by SMS." : "here on WhatsApp.");
+    }
+
+    static final List<String> REPORT_REASONS = List.of("RUDE", "SCAM", "OFF_PLATFORM", "NOT_DELIVERED", "FAKE", "OTHER");
+    static final List<String> REPORT_NAMES = List.of("Rude or abusive", "Looks like a scam", "Asked to pay outside Payport", "Paid but not delivered", "Fake or misleading items", "Something else");
+
+    /** A report of the store to Payport customer care. */
+    private String storeReport(Ctx c, In in, String slug, String name) {
+        Step<Integer> r = option(c, in, "Report " + name + ": what happened?", REPORT_NAMES);
+        if (r.asking()) return r.prompt();
+        try {
+            var res = store.report(slug, c.phone(), REPORT_REASONS.get(r.value() - 1), null);
+            String ref = res.path("complaintRef").asText("");
+            return "END Thank you. Payport customer care will look into it." + (ref.isBlank() ? "" : " Reference " + ref + ".");
+        } catch (IllegalArgumentException e) {
+            return "END " + e.getMessage();
+        }
     }
 
     private String storeOrders(Ctx c) {

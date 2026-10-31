@@ -109,6 +109,51 @@ public class Growth {
         return out;
     }
 
+    /** Average, count and the share of each star rating (5 to 1), for a product or a whole store. */
+    public Map<String, Object> summary(boolean store, long id) {
+        String col = store ? "store_id" : "product_id";
+        Map<Integer, Long> by = new java.util.HashMap<>();
+        long total = 0, sum = 0;
+        for (Map<String, Object> r : jdbc.queryForList("SELECT rating, COUNT(*) AS n FROM reviews WHERE " + col + " = ? AND hidden = FALSE GROUP BY rating", id)) {
+            int s = ((Number) r.get("rating")).intValue();
+            long n = ((Number) r.get("n")).longValue();
+            by.put(s, n);
+            total += n;
+            sum += n * s;
+        }
+        List<Map<String, Object>> bars = new ArrayList<>();
+        for (int s = 5; s >= 1; s--) {
+            long n = by.getOrDefault(s, 0L);
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("stars", s);
+            b.put("count", n);
+            b.put("tenth", total == 0 ? 0 : Math.round(10.0 * n / total));
+            bars.add(b);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("average", total == 0 ? "–" : String.format(Locale.ROOT, "%.1f", (double) sum / total));
+        out.put("count", total);
+        out.put("bars", bars);
+        return out;
+    }
+
+    /** The latest reviews of a store's items, with the item's name. */
+    public List<Map<String, Object>> storeReviews(long storeId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : jdbc.queryForList("SELECT r.rating, r.comment, r.name, r.reply, r.created_at, p.name AS product FROM reviews r JOIN products p ON p.id = r.product_id "
+                + "WHERE r.store_id = ? AND r.hidden = FALSE ORDER BY r.id DESC LIMIT 12", storeId)) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("stars", stars(((Number) r.get("rating")).intValue()));
+            v.put("comment", r.get("comment"));
+            v.put("name", r.get("name") == null ? "A customer" : r.get("name"));
+            v.put("reply", r.get("reply"));
+            v.put("product", r.get("product"));
+            v.put("date", Shop.time(r.get("created_at")).toLocalDate().toString());
+            out.add(v);
+        }
+        return out;
+    }
+
     /** "★ 4.6 (12)" for a product, or null with no reviews. */
     public String ratingOf(long productId) {
         return rating(jdbc.queryForMap("SELECT AVG(rating) AS a, COUNT(*) AS n FROM reviews WHERE product_id = ? AND hidden = FALSE", productId));

@@ -238,6 +238,18 @@ public class Storefront {
             }
         }
         for (Map<String, Object> st : listed) if (!featuredSlugs.contains(String.valueOf(st.get("slug")))) stores.add(storeCard(st));
+        // Top rated: the stores customers rate best (verified buyers' reviews), so good sellers are easy to find.
+        List<Map<String, Object>> topRated = new ArrayList<>();
+        if (query == null && type == null) {
+            Map<Long, Map<String, Object>> byId = new LinkedHashMap<>();
+            for (Map<String, Object> st : all) if (st.get("id") != null) byId.put(((Number) st.get("id")).longValue(), st);
+            for (Map<String, Object> r : shop.jdbc().queryForList("SELECT store_id, AVG(rating) AS a, COUNT(*) AS n FROM reviews WHERE hidden = FALSE "
+                    + "GROUP BY store_id HAVING AVG(rating) >= 4 ORDER BY a DESC, n DESC LIMIT 8")) {
+                Map<String, Object> st = byId.get(((Number) r.get("store_id")).longValue());
+                if (st != null) topRated.add(storeCard(st));
+            }
+        }
+        model.addAttribute("topRated", topRated);
         List<Map<String, Object>> tiles = new ArrayList<>();
         tiles.add(Map.of("code", "", "name", "All", "count", all.size(), "on", type == null, "icon", "ALL", "url", "/"));
         for (String code : List.of("FOOD", "DRINKS", "CLOTHING", "SERVICES", "BEAUTY", "ELECTRONICS", "SHOP", "HOME", "CRAFTS", "OTHER")) {
@@ -339,6 +351,8 @@ public class Storefront {
         model.addAttribute("me", meModel());
         model.addAttribute("store", sm);
         model.addAttribute("products", items);
+        model.addAttribute("summary", growth.summary(true, storeId));
+        model.addAttribute("reviews", growth.storeReviews(storeId));
         model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on Payport"));
         model.addAttribute("title", st.get("name"));
         model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with Payport." : st.get("about"));
@@ -365,7 +379,9 @@ public class Storefront {
 
     @GetMapping("/s/{slug}/{product}")
     public String product(@PathVariable String slug, @PathVariable String product, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
-                          @RequestParam(name = "code", required = false) String code, Model model, HttpServletResponse res) {
+                          @RequestParam(name = "code", required = false) String code, @RequestParam(name = "added", required = false) String added,
+                          Model model, HttpServletResponse res) {
+        model.addAttribute("added", added != null);
         if ("cart".equals(product)) return cartPage(slug, cart, null, model, res, code);
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
@@ -380,7 +396,14 @@ public class Storefront {
 
     String productPage(Map<String, Object> st, Map<String, Object> p, Model model, String problem, String cart) {
         Map<String, Object> pm = productModel(p, (String) st.get("slug"));
-        pm.put("rating", growth.ratingOf(((Number) p.get("id")).longValue()));
+        long pid = ((Number) p.get("id")).longValue();
+        pm.put("rating", growth.ratingOf(pid));
+        pm.put("images", shop.images(pid, (String) p.get("image_id")).stream().map(i -> "/img/" + i).toList());
+        model.addAttribute("summary", growth.summary(false, pid));
+        model.addAttribute("saved", shopper().map(x -> shoppers.saved(x, pid)).orElse(false));
+        if (!model.containsAttribute("added")) model.addAttribute("added", false);
+        model.addAttribute("me", meModel());
+        model.addAttribute("chatText", enc("Hi, I am interested in " + p.get("name") + " (" + settings.publicUrl + pm.get("url") + ")"));
         model.addAttribute("reviews", growth.reviewsOf(((Number) p.get("id")).longValue()));
         Map<String, Object> sm = storeModel(st);
         sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
@@ -401,6 +424,7 @@ public class Storefront {
     /** "Add to cart" (or "Buy now", which goes straight to the cart to choose pickup or delivery). */
     @PostMapping("/s/{slug}/{product}/buy")
     public String buy(@PathVariable String slug, @PathVariable String product, @RequestParam(defaultValue = "1") String qty,
+                      @RequestParam(name = "go", required = false) String go,
                       @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                       Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
@@ -426,6 +450,7 @@ public class Storefront {
         final String ct = token;
         shopper().ifPresent(x -> shop.jdbc().update("UPDATE carts SET shopper_id = ?, reminded_at = NULL WHERE token_hash = ? AND store_id = ?",
                 x.id(), Shop.sha256(ct), st.get("id")));
+        if ("stay".equals(go)) return "redirect:/s/" + st.get("slug") + "/" + p.get().get("slug") + "?added=1";
         return "redirect:/s/" + st.get("slug") + "/cart";
     }
 

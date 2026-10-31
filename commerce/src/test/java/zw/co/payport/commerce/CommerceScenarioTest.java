@@ -402,9 +402,9 @@ class CommerceScenarioTest {
         assertEquals("SOLD", jdbc.queryForObject("SELECT stock_state FROM orders WHERE order_ref = ?", String.class, ref));
         assertEquals(0, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, id));
 
-        // The boutique design shows categories and the tagline.
+        // Every store has the same look (owner, 31 Oct 2026); categories and the tagline show.
         Res page = page(storePath);
-        assertTrue(page.body().contains("d-boutique") && page.body().contains("Lighting") && page.body().contains("Made by hand"), page.body());
+        assertTrue(page.body().contains("Lighting") && page.body().contains("Made by hand"), page.body());
         assertEquals(400, api("PUT", "/api/commerce/store", alpha, Map.of("design", "FANCY")).status());
 
         // Custom domains: proved by DNS before any certificate or routing.
@@ -880,5 +880,76 @@ class CommerceScenarioTest {
 
     static String shaOf(String s) throws Exception {
         return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Owner, 31 Oct 2026: several pictures per product, chat with the seller (encrypted, topics, flags), reports, add to cart and stay. */
+    @Test
+    void pictures_chatWithSeller_encryptedTopicsFlags_reports() throws Exception {
+        PSP.down = false;
+        String alpha = signIn("portal-token-A"), bravo = signIn("portal-token-B");
+        assertEquals(200, api("PUT", "/api/commerce/store", alpha, Map.of("pickupEnabled", true)).status());
+        long merchant = 1001;
+        for (String id : java.util.List.of("pic0000000000000000000000000001", "pic0000000000000000000000000002"))
+            jdbc.update("INSERT IGNORE INTO images (id, merchant_id, content_type, bytes, sha256, width, height, created_at) VALUES (?,?,?,?,?,?,?,NOW())",
+                    id, merchant, "image/png", new byte[]{1}, id, 1, 1);
+        Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Leather sandals", "priceMinor", 2_000, "currency", "USD",
+                "imageIds", java.util.List.of("pic0000000000000000000000000001", "pic0000000000000000000000000002")));
+        assertEquals(200, p.status(), p.body());
+        assertEquals(2, p.data().path("imageIds").size(), p.body());
+        assertEquals("pic0000000000000000000000000001", p.data().path("imageId").asText(), "the first is the cover");
+        assertEquals(400, api("POST", "/api/commerce/products", bravo, Map.of("name", "Not mine", "priceMinor", 100, "currency", "USD",
+                "imageIds", java.util.List.of("pic0000000000000000000000000001"))).status(), "only the merchant's own pictures");
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        Res product = page(url);
+        assertTrue(product.body().contains("/img/pic0000000000000000000000000002") && product.body().contains("data-gallery"), product.body());
+        assertTrue(product.body().contains("Buy now") && product.body().contains("Chat with seller") && product.body().contains("Report this store"));
+
+        Res stay = form(url + "/buy", Map.of("qty", "1", "go", "stay"));
+        assertEquals(302, stay.status());
+        assertTrue(stay.location().contains("added=1"), "add to cart stays on the product: " + stay.location());
+
+        // A customer asks before buying; the message is stored encrypted, with its topic.
+        Res sent = form(storePath + "/chat", Map.of("text", "Do you deliver to Avondale?", "name", "Rudo", "p", String.valueOf(p.data().path("id").asLong())));
+        assertEquals(302, sent.status(), sent.body());
+        String chatCookie = sent.cookie();
+        assertTrue(chatCookie != null && chatCookie.startsWith("pp_chat="), "a chat cookie");
+        assertTrue(page(storePath + "/chat", chatCookie).body().contains("Do you deliver to Avondale?"));
+        Map<String, Object> row = jdbc.queryForMap("SELECT m.body_enc, m.topic FROM chat_messages m JOIN chats c ON c.id = m.chat_id WHERE c.merchant_id = ? ORDER BY m.id DESC LIMIT 1", merchant);
+        assertTrue(String.valueOf(row.get("body_enc")).startsWith("v1:") && !String.valueOf(row.get("body_enc")).contains("Avondale"), "encrypted");
+        assertEquals("DELIVERY", row.get("topic"));
+        assertTrue(waitForMessage("MERCHANT|Payport Store: a customer sent") != null, "the seller is told: " + PSP.messages);
+
+        // The seller answers in the portal; the customer's page gets it.
+        Res list = api("GET", "/api/commerce/chats", alpha, null);
+        assertEquals(1, list.data().path("unread").asInt(), list.body());
+        long chatId = list.data().path("chats").get(0).path("id").asLong();
+        assertEquals("Rudo", list.data().path("chats").get(0).path("customer").asText());
+        assertEquals(404, api("GET", "/api/commerce/chats/" + chatId, bravo, null).status(), "another merchant's chat");
+        Res replied = api("POST", "/api/commerce/chats/" + chatId + "/reply", alpha, Map.of("text", "Yes, USD 2 to Avondale"));
+        assertEquals(200, replied.status(), replied.body());
+        assertTrue(page(storePath + "/chat/messages?after=0", chatCookie).body().contains("Yes, USD 2 to Avondale"));
+        assertFalse(page(storePath + "/chat/messages?after=0").body().contains("Avondale"), "nobody else sees it");
+
+        // Asking to be paid outside Payport is flagged; what customers ask is counted.
+        form(storePath + "/chat", Map.of("text", "Can I pay to my number instead?"), chatCookie);
+        assertTrue(api("GET", "/api/commerce/chats/" + chatId, alpha, null).body().contains("OFF_PLATFORM"));
+        Res asks = api("GET", "/api/commerce/chats/insights", alpha, null);
+        assertTrue(asks.body().contains("Delivery and pickup") && asks.data().path("flagged").asInt() >= 1, asks.body());
+
+        // WhatsApp and USSD customers reach the same seller (by phone); the answer goes back by the channel.
+        Res wa = channel("POST", "/api/channel/chat", Map.of("store", storePath.substring(3), "phone", "+263771234567", "text", "Is it in stock?", "channel", "WHATSAPP"), FakePsp.KEY);
+        assertEquals(200, wa.status(), wa.body());
+        long waChat = wa.data().path("chatId").asLong();
+        api("POST", "/api/commerce/chats/" + waChat + "/reply", alpha, Map.of("text", "Yes, all sizes"));
+        assertNotNull(waitForMessage("CHAT_CUSTOMER|"), "the answer goes back on WhatsApp: " + PSP.messages);
+
+        // Reports: a customer reports the store, the seller reports a customer; both go to Payport customer care.
+        Res rep = form(storePath + "/report", Map.of("reason", "RUDE", "details", "Was rude to me"), chatCookie);
+        assertTrue(rep.body().contains("CMP-TEST-1"), rep.body());
+        assertTrue(String.valueOf(jdbc.queryForObject("SELECT details_enc FROM conduct_reports WHERE by_side = 'CUSTOMER' ORDER BY id DESC LIMIT 1", String.class)).startsWith("v1:"));
+        Res sellerRep = api("POST", "/api/commerce/chats/" + chatId + "/report", alpha, Map.of("reason", "SPAM"));
+        assertEquals("CMP-TEST-1", sellerRep.data().path("complaintRef").asText(), sellerRep.body());
+        assertTrue(PSP.messages.contains("REPORT|SELLER|Rude or abusive") && PSP.messages.contains("REPORT|CUSTOMER|Spam"), PSP.messages.toString());
     }
 }

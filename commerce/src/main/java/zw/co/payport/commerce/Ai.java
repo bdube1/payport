@@ -161,6 +161,45 @@ public class Ai {
         return b.toString();
     }
 
+    // ─── chat: what customers ask, and messages that need a look ────────────
+
+    /** Topics customers ask sellers about, with the words that point to each (checked in this order). */
+    static final Map<String, List<String>> TOPICS = new LinkedHashMap<>();
+
+    static {
+        TOPICS.put("RETURNS", List.of("refund", "return", "exchange", "swap", "broken", "faulty", "damaged", "wrong item"));
+        TOPICS.put("ORDER", List.of("my order", "track", "status", "when will", "not received", "still waiting", "order number", "co-"));
+        TOPICS.put("DELIVERY", List.of("deliver", "delivery", "transport", "courier", "shipping", "send it", "bring it", "collect", "pickup", "pick up"));
+        TOPICS.put("PAYMENT", List.of("pay", "ecocash", "onemoney", "omari", "innbucks", "card", "wallet", "cash", "installment", "lay-by", "layby", "deposit"));
+        TOPICS.put("PRICE", List.of("price", "how much", "cost", "discount", "cheaper", "best price", "negotiable", "last price", "promo", "deal"));
+        TOPICS.put("AVAILABILITY", List.of("available", "in stock", "stock", "do you have", "still have", "any left", "sold out", "when back"));
+        TOPICS.put("DETAILS", List.of("size", "colour", "color", "material", "original", "genuine", "warranty", "specs", "fit", "weight", "made of", "model"));
+        TOPICS.put("LOCATION", List.of("where", "location", "address", "shop is", "directions", "open", "hours", "closing", "weekend", "sunday"));
+    }
+
+    public static final Map<String, String> TOPIC_NAMES = Map.of("RETURNS", "Returns and refunds", "ORDER", "An order", "DELIVERY", "Delivery and pickup",
+            "PAYMENT", "Paying", "PRICE", "Price", "AVAILABILITY", "In stock", "DETAILS", "Product details", "LOCATION", "Location and hours", "OTHER", "Other");
+
+    /** What a customer's message is about (for the merchant's "what customers ask" and Payport's own view). */
+    public String topic(String text) {
+        String low = " " + (text == null ? "" : text.toLowerCase(Locale.ROOT)) + " ";
+        for (Map.Entry<String, List<String>> e : TOPICS.entrySet())
+            for (String w : e.getValue()) if (low.contains(w)) return e.getKey();
+        return "OTHER";
+    }
+
+    static final List<String> OFF_PLATFORM = List.of("pay me directly", "send money to", "send the money to", "pay outside", "pay to my number",
+            "pay on my number", "my ecocash number", "my bank account", "account number", "western union", "mukuru", "pay before i deliver to");
+    static final List<String> ABUSE = List.of("idiot", "stupid", "fool", "useless", "i will kill", "kill you", "scammer", "thief", "bitch", "fuck", "shit", "pussy");
+
+    /** A message to look at: asking to be paid outside Payport (where customers lose their protection), or abuse. */
+    public String flag(String text) {
+        String low = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        for (String w : OFF_PLATFORM) if (low.contains(w)) return "OFF_PLATFORM";
+        for (String w : ABUSE) if (low.matches("(?s).*\\b" + java.util.regex.Pattern.quote(w) + "\\b.*")) return "ABUSE";
+        return null;
+    }
+
     /** One call to the language model; null when it is off, slow or refuses. */
     String complete(String prompt, int maxTokens) {
         try {

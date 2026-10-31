@@ -74,7 +74,7 @@ public class WebConfig implements WebMvcConfigurer {
             res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
             if (!req.getRequestURI().startsWith("/api/")) {
                 res.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
-                        + "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' " + String.join(" ", settings.checkoutOrigins));
+                        + "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.payport.africa " + String.join(" ", settings.checkoutOrigins));
             }
             chain.doFilter(req, res);
         }

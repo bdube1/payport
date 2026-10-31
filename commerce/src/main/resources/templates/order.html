@@ -7,7 +7,6 @@
   <meta th:if="${refresh}" http-equiv="refresh" content="5">
   <title th:text="${title}">Order</title>
   <link rel="stylesheet" href="/assets/store.css">
-  <link rel="stylesheet" th:href="@{/theme.css(c=${#strings.substring(store.color, 1)})}">
 </head>
 <body>
 <header th:replace="~{fragments :: top(${store})}"></header>

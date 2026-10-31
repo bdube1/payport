@@ -401,6 +401,21 @@ class PlatformControlsScenarioTest {
         assertEquals(2, placed.path("items").get(0).path("quantity").asInt());
         assertEquals(done, ussd(s, ph, path + "*1", true).body().path("text").asText(), "a repeated hop places nothing twice");
         assertEquals(1, COMMERCE.orders.size());
+        // Message the seller, and report the store, from the same menu (the answer comes back by SMS).
+        String s2 = "AT-SHOP-" + SEQ.incrementAndGet();
+        String withActions = ussd(s2, ph, "8*2*1", true).body().path("text").asText();
+        assertTrue(withActions.contains("2. Message the seller") && withActions.contains("3. Report this store"), withActions);
+        assertTrue(ussd(s2, ph, "8*2*1*2", true).body().path("text").asText().contains("Message Mai's Kitchen"));
+        String asked = ussd(s2, ph, "8*2*1*2*Is the beef ready", true).body().path("text").asText();
+        assertTrue(asked.startsWith("END Sent to Mai's Kitchen") && asked.contains("by SMS"), asked);
+        JsonNode chat = COMMERCE.chats.get(COMMERCE.chats.size() - 1);
+        assertEquals("USSD", chat.path("channel").asText());
+        assertEquals(ph, chat.path("phone").asText());
+        assertEquals("Is the beef ready", chat.path("text").asText());
+        String s3 = "AT-SHOP-" + SEQ.incrementAndGet();
+        String reported = ussd(s3, ph, "8*2*1*3*1", true).body().path("text").asText();
+        assertTrue(reported.startsWith("END Thank you") && reported.contains("CMP-TEST-9"), reported);
+        assertEquals("RUDE", COMMERCE.chats.get(COMMERCE.chats.size() - 1).path("reason").asText());
         String mine = ussd("AT-SHOP-" + SEQ.incrementAndGet(), ph, "8*3", true).body().path("text").asText();
         assertTrue(mine.startsWith("END Your orders:") && mine.contains("CO-TEST0001") && mine.contains("pay on delivery"), mine);
         // The app reads the same stores (browsing is open; ordering needs a login).

@@ -280,6 +280,7 @@ public class Shop {
         v.put("price", major(((Number) r.get("price_minor")).longValue()));
         v.put("currency", r.get("currency"));
         v.put("imageId", r.get("image_id"));
+        v.put("imageIds", images(((Number) r.get("id")).longValue(), (String) r.get("image_id")));
         v.put("stock", r.get("stock") == null ? null : ((Number) r.get("stock")).intValue());
         v.put("category", r.get("category"));
         v.put("kind", r.get("kind"));
@@ -305,8 +306,8 @@ public class Shop {
         long price = money(b.get("priceMinor"), "price");
         String ccy = String.valueOf(b.getOrDefault("currency", "USD")).toUpperCase(Locale.ROOT);
         requireCurrency(merchantId, ccy);
-        String image = text(b.get("imageId"), 32, false, "picture");
-        if (image != null) ownImage(merchantId, image);
+        List<String> pictures = pictures(merchantId, b);
+        String image = pictures.isEmpty() ? null : pictures.get(0);
         String status = "HIDDEN".equals(b.get("status")) ? "HIDDEN" : "ACTIVE";
         String category = text(b.get("category"), 40, false, "category");
         String kind = "SERVICE".equals(b.get("kind")) ? "SERVICE" : "GOODS";
@@ -328,13 +329,14 @@ public class Shop {
         }
         if (id == null) {
             String base = slug(name);
-            if (java.util.Set.of("cart", "checkout").contains(base)) base = base + "-item";
+            if (java.util.Set.of("cart", "checkout", "chat", "report", "search", "favourite").contains(base)) base = base + "-item";
             for (int i = 0; i < 20; i++) {
                 String s = i == 0 ? base : base + "-" + code(3).toLowerCase(Locale.ROOT);
                 try {
                     jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, category, kind, compare_at_minor, featured, duration_min, created_at, updated_at) "
                             + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, duration, now(), now());
                     long nid = jdbc.queryForObject("SELECT id FROM products WHERE store_id = ? AND slug = ?", Long.class, store, s);
+                    setImages(nid, pictures);
                     event("product.created", merchantId, String.valueOf(nid), null);
                     return product(merchantId, nid);
                 } catch (DuplicateKeyException e) {
@@ -346,7 +348,41 @@ public class Shop {
         int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, category = ?, kind = ?, compare_at_minor = ?, featured = ?, duration_min = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
                 name, description, price, ccy, image, status, stock, category, kind, compareAt, featured, duration, now(), id, merchantId);
         if (n == 0) throw new NotFound("No such product");
+        setImages(id, pictures);
         return product(merchantId, id);
+    }
+
+    static final int MAX_PICTURES = 8;
+
+    /** The product's pictures in order (the first is the cover): "imageIds", or the single "imageId" of older clients. */
+    List<String> pictures(long merchantId, Map<String, Object> b) {
+        List<String> out = new ArrayList<>();
+        Object many = b.get("imageIds");
+        if (many instanceof java.util.Collection<?> c) {
+            for (Object o : c) {
+                String id = text(o, 32, false, "picture");
+                if (id != null && !out.contains(id)) out.add(id);
+            }
+        } else {
+            String one = text(b.get("imageId"), 32, false, "picture");
+            if (one != null) out.add(one);
+        }
+        if (out.size() > MAX_PICTURES) throw new IllegalArgumentException("A product has at most " + MAX_PICTURES + " pictures");
+        for (String id : out) ownImage(merchantId, id);
+        return out;
+    }
+
+    void setImages(long productId, List<String> pictures) {
+        jdbc.update("DELETE FROM product_images WHERE product_id = ?", productId);
+        for (int i = 0; i < pictures.size(); i++)
+            jdbc.update("INSERT INTO product_images (product_id, position, image_id) VALUES (?,?,?)", productId, i, pictures.get(i));
+    }
+
+    /** A product's pictures in order; products saved before several pictures keep their one picture. */
+    public List<String> images(long productId, String cover) {
+        List<String> ids = jdbc.queryForList("SELECT image_id FROM product_images WHERE product_id = ? ORDER BY position", String.class, productId);
+        if (ids.isEmpty() && cover != null) return List.of(cover);
+        return ids;
     }
 
     // ─── links ───────────────────────────────────────────────────────────────

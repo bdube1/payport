@@ -43,9 +43,21 @@ public class MerchantPaymentMethods {
         this.env = env;
     }
 
-    /** Every method Payport has switched on (all of them are accepted by every merchant). */
+    /** Wallets on or off (optional so focused tests can build the service without it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.products.ServiceLineService lines;
+
+    /** Every method Payport has switched on (all of them are accepted by every merchant), and the Payport Wallet when wallets are on. */
     public List<Map<String, Object>> forMerchant(long merchantId) {
         List<Map<String, Object>> out = new ArrayList<>();
+        if (lines != null && lines.enabled(zw.co.payport.gateway.wallets.WalletService.LINE)) {
+            Map<String, Object> w = new LinkedHashMap<>();
+            w.put("code", zw.co.payport.gateway.wallets.WalletService.RAIL);
+            w.put("name", "Payport Wallet");
+            w.put("type", "WALLET");
+            w.put("enabled", true);
+            out.add(w);
+        }
         for (Map<String, Object> r : platform()) {
             String code = (String) r.get("code");
             Map<String, Object> v = new LinkedHashMap<>();

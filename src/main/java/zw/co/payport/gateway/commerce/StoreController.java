@@ -81,6 +81,35 @@ public class StoreController {
         return Web.run(() -> plain(store.order(ref, me().getPhone())), req);
     }
 
+    /** The signed-in customer's conversation with a store's seller (the same as on the website). */
+    @GetMapping("/api/v1/store/stores/{slug}/chat")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> chat(@PathVariable String slug, @RequestParam(defaultValue = "0") long after, HttpServletRequest req) {
+        return Web.run(() -> plain(store.chat(slug, me().getPhone(), after)), req);
+    }
+
+    @PostMapping("/api/v1/store/stores/{slug}/chat")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> say(@PathVariable String slug, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> {
+            User u = me();
+            return plain(store.chat(slug, u.getPhone(), b.get("text") == null ? null : String.valueOf(b.get("text")), "APP", u.getFullName()));
+        }, req);
+    }
+
+    @GetMapping("/api/v1/store/report-reasons")
+    public ResponseEntity<ApiResponse<Object>> reasons(HttpServletRequest req) {
+        return Web.run(() -> plain(store.reportReasons()), req);
+    }
+
+    /** A customer reports a store (to Payport customer care). */
+    @PostMapping("/api/v1/store/stores/{slug}/report")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> report(@PathVariable String slug, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> plain(store.report(slug, me().getPhone(), b.get("reason") == null ? null : String.valueOf(b.get("reason")),
+                b.get("details") == null ? null : String.valueOf(b.get("details")))), req);
+    }
+
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     /** Plain maps and lists for the response (the API's own JSON writer, whatever its version). */
