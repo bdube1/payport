@@ -57,6 +57,9 @@ public class CheckoutSessionService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.events.PlatformEvents events;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.merchant.MerchantPaymentMethods acceptedMethods;
+
     /** One platform event per checkout status change (checkout.pending, checkout.paid, checkout.failed, checkout.expired). */
     void statusEvent(CheckoutSession s, String from) {
         if (events == null || s.getId() == null) return;
@@ -78,6 +81,11 @@ public class CheckoutSessionService {
             String successUrl, String cancelUrl, String metadata) {}
 
     public CheckoutSession createSession(Merchant merchant, Long apiKeyId, CreateSessionRequest req) {
+        return createSession(merchant, apiKeyId, req, null);
+    }
+
+    /** As above; livemodeOverride (when not null) decides test or live instead of the API key (PayPort Commerce). */
+    public CheckoutSession createSession(Merchant merchant, Long apiKeyId, CreateSessionRequest req, Boolean livemodeOverride) {
         if (req.reference() != null) {
             checkoutSessionRepository.findByMerchantIdAndReference(merchant.getId(), req.reference())
                     .ifPresent(existing -> {
@@ -95,7 +103,7 @@ public class CheckoutSessionService {
         }
 
         if (channels != null && apiKeyId != null) channels.require("API");
-        boolean livemode = resolveLivemode(merchant, apiKeyId);
+        boolean livemode = livemodeOverride != null ? livemodeOverride : resolveLivemode(merchant, apiKeyId);
         if (livemode) requireLiveCurrency(merchant.getId(), currency);
 
         CheckoutSession session = CheckoutSession.builder()
@@ -340,6 +348,7 @@ public class CheckoutSessionService {
         if (!"ACTIVE".equals(merchant.getStatus())) {
             throw new RuntimeException("This merchant account is not currently active");
         }
+        if (acceptedMethods != null) acceptedMethods.require(merchant.getId(), paymentMethodCode);
         if (!isTestMode) requireLiveCurrency(merchant.getId(), session.getCurrency());
         // Merchant limits set in ops (per currency and channel) apply to live collections.
         if (!isTestMode && partyRules != null) {

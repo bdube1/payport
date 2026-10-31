@@ -74,7 +74,8 @@ public class RefundService {
         session.setUpdatedAt(LocalDateTime.now());
         checkoutSessionRepository.save(session);
 
-        String register = registerPayout(session, refund, initiatedByType, initiatedById);
+        // A test-mode (sandbox) payment moved no money, so its refund has nothing to pay out: it is not put in the register.
+        String register = Boolean.TRUE.equals(session.getLivemode()) ? registerPayout(session, refund, initiatedByType, initiatedById) : null;
         java.util.Map<String, Object> p = new java.util.LinkedHashMap<>();
         p.put("refundId", refund.getId());
         p.put("checkoutSessionId", session.getId());

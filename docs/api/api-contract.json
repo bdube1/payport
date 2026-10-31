@@ -763,6 +763,14 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/payments/live-readiness"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/payments/store-live"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/platform/kyb/{merchantId}"
   },
   {
@@ -1383,6 +1391,10 @@
   },
   {
    "method": "POST",
+   "path": "/api/v1/commerce/messages"
+  },
+  {
+   "method": "POST",
    "path": "/api/v1/commerce/refunds"
   },
   {
@@ -1548,6 +1560,14 @@
   {
    "method": "POST",
    "path": "/api/v1/merchant/payment-links/{id}/disable"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payment-methods"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/merchant/payment-methods"
   },
   {
    "method": "GET",
