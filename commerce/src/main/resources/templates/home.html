@@ -2,47 +2,125 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title th:text="${type != null} ? ${type} + ' | PayPort Store' : 'PayPort Store'">PayPort Store</title>
-  <meta name="description" content="Shops, food, drinks, clothing and services from PayPort merchants.">
-  <link rel="stylesheet" href="/assets/store.css">
+  <title th:text="${q != null} ? ${q} + ' | PayPort Store' : (${type != null} ? ${type} + ' | PayPort Store' : 'PayPort Store')">PayPort Store</title>
+  <meta name="description" content="Find it local. Pay it instantly. Food, drinks, clothing, beauty and services from PayPort merchants.">
+  <link rel="preload" href="/assets/fonts/plus-jakarta-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/dir.css">
 </head>
-<body class="dir">
-<header class="top">
-  <a class="brand" href="/"><span>PayPort Store</span></a>
-</header>
-<main class="wrap">
-  <section class="dir-hero">
-    <h1>Shop local, pay with PayPort</h1>
-    <form method="get" action="/" class="search" role="search">
-      <input type="hidden" name="t" th:if="${param.t != null}" th:value="${param.t}">
-      <input name="q" th:value="${q}" placeholder="Search stores and products" aria-label="Search stores and products" maxlength="80">
-    </form>
-  </section>
-  <nav th:if="${!#lists.isEmpty(types)}" class="chips">
-    <a href="/" th:classappend="${type == null} ? 'on'">All</a>
-    <a th:each="t : ${types}" th:href="@{/(t=${t.code})}" th:classappend="${t.on} ? 'on'">
-      <span th:text="${t.name}">Food</span> <span class="count" th:text="${t.count}">3</span></a>
-  </nav>
-  <p th:if="${q != null}" class="muted small"><span th:text="${#lists.size(stores)} + ' found for “' + ${q} + '”'"></span> · <a href="/">Show all</a></p>
-  <p th:if="${#lists.isEmpty(stores)}" class="muted">No stores here yet.</p>
-  <ul class="stores">
-    <li th:each="s : ${stores}">
-      <a th:href="${s.url}" class="store-card">
-        <img th:if="${s.banner != null}" th:src="${s.banner}" alt="" loading="lazy" class="store-banner">
-        <div th:if="${s.banner == null}" class="store-banner blank"></div>
-        <div class="store-body">
-          <img th:if="${s.logo != null}" th:src="${s.logo}" alt="" class="logo">
-          <div class="store-text">
-            <strong th:text="${s.name}">Store</strong>
-            <span class="muted small" th:text="${s.type} + ' · ' + ${s.products} + (${s.products == 1} ? ' item' : ' items')">Food · 4 items</span>
-            <span th:if="${s.rating != null}" class="stars small" th:text="${s.rating}"></span>
-            <span th:if="${s.line != null}" class="desc-line show" th:text="${s.line}"></span>
-          </div>
-        </div>
+<body class="dir2">
+<div th:if="${announcement != null}" class="d-announce" th:text="${announcement}">Free delivery this weekend at selected stores</div>
+<header class="d-top">
+  <div class="d-wrap d-top-in">
+    <a class="d-brand" href="/"><span class="d-brand-a">Payport</span> <span class="d-brand-b">Store</span></a>
+    <nav class="d-top-right">
+      <a class="d-signin" th:href="${signIn}">Sign in</a>
+      <a class="d-cart" href="/cart" aria-label="Cart">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2.5 3.5h2.6l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2l1.6-7.3H6.1"/></svg>
       </a>
-    </li>
-  </ul>
+    </nav>
+  </div>
+</header>
+
+<section class="d-hero">
+  <div class="d-wrap d-hero-in">
+    <div class="d-hero-text">
+      <h1>Find it local.<br>Pay it instantly.</h1>
+      <form method="get" action="/" class="d-search" role="search">
+        <input type="hidden" name="t" th:if="${typeCode != null}" th:value="${typeCode}">
+        <svg class="d-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input name="q" th:value="${q}" placeholder="Search stores and products" aria-label="Search stores and products" maxlength="200" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+    </div>
+    <div class="d-hero-art" aria-hidden="true">
+      <div class="d-hero-card one art-FOOD"><svg th:replace="~{art :: art('FOOD')}"></svg></div>
+      <div class="d-hero-card two art-CLOTHING"><svg th:replace="~{art :: art('CLOTHING')}"></svg></div>
+    </div>
+  </div>
+</section>
+
+<main class="d-main">
+  <div class="d-wrap">
+    <nav class="d-tiles" aria-label="Categories">
+      <a th:each="t : ${tiles}" th:href="${t.url}" class="d-tile" th:classappend="${t.on} ? 'on'">
+        <span class="d-tile-ico"><svg th:replace="~{art :: icon(${t.icon})}"></svg></span>
+        <span class="d-tile-text"><strong th:text="${t.name}">Food</strong><span th:text="${t.count} + (${t.count == 1} ? ' store' : ' stores')">2 stores</span></span>
+      </a>
+    </nav>
+
+    <section th:if="${q != null}" class="d-ai">
+      <div class="d-ai-head">
+        <span class="d-ai-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg> PayPort AI</span>
+        <a href="/" class="d-link">Clear</a>
+      </div>
+      <p class="d-ai-answer" th:text="${answer}">Answer</p>
+      <ul th:if="${!#lists.isEmpty(found)}" class="d-found">
+        <li th:each="p : ${found}">
+          <a th:href="${p.url}" class="d-item">
+            <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy">
+            <span th:if="${p.image == null}" class="d-item-blank"></span>
+            <span class="d-item-text"><strong th:text="${p.name}">Item</strong><span th:text="${p.store}">Store</span>
+              <span class="d-item-price"><b th:text="${p.price}">USD 1.00</b> <s th:if="${p.was != null}" th:text="${p.was}"></s></span></span>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section th:if="${!#lists.isEmpty(featured)}" class="d-section">
+      <div class="d-section-head"><h2>Featured stores</h2><span class="d-link">Hand-picked today</span></div>
+      <ul class="d-grid d-grid-3">
+        <li th:each="s : ${featured}">
+          <a th:href="${s.url}" class="d-card">
+            <div class="d-card-art" th:classappend="'art-' + ${s.typeCode}">
+              <img th:if="${s.banner != null}" th:src="${s.banner}" alt="" loading="lazy" class="d-card-img">
+              <th:block th:if="${s.banner == null}"><svg th:replace="~{art :: art(${s.typeCode})}"></svg></th:block>
+              <span class="d-open"><i></i>Open</span>
+            </div>
+            <div class="d-card-body">
+              <div class="d-card-row">
+                <div class="d-card-text"><strong th:text="${s.name}">Store</strong><span th:text="${s.meta}">Food · 14 items</span></div>
+                <span class="d-visit">Visit <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+              </div>
+              <div class="d-tags" th:if="${s.cod or s.sale or s.rating != null}">
+                <span th:if="${s.cod}" class="d-tag cod">Pay on delivery</span>
+                <span th:if="${s.sale}" class="d-tag sale">Sale</span>
+                <span th:if="${s.rating != null}" class="d-tag rate" th:text="${s.rating}"></span>
+              </div>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section class="d-section">
+      <div class="d-section-head"><h2 th:text="${type != null} ? ${type} : 'All stores'">All stores</h2><span class="d-link" th:text="${openCount} + ' open now'">8 open now</span></div>
+      <p th:if="${#lists.isEmpty(stores)}" class="d-empty">No stores here yet.</p>
+      <ul class="d-grid d-grid-4">
+        <li th:each="s : ${stores}">
+          <a th:href="${s.url}" class="d-card">
+            <div class="d-card-art short" th:classappend="'art-' + ${s.typeCode}">
+              <img th:if="${s.banner != null}" th:src="${s.banner}" alt="" loading="lazy" class="d-card-img">
+              <th:block th:if="${s.banner == null}"><svg th:replace="~{art :: art(${s.typeCode})}"></svg></th:block>
+              <span class="d-open"><i></i>Open</span>
+            </div>
+            <div class="d-card-body">
+              <div class="d-card-text"><strong th:text="${s.name}">Store</strong><span th:text="${s.meta}">Food · 11 items</span></div>
+              <div class="d-tags" th:if="${s.cod or s.sale or s.rating != null}">
+                <span th:if="${s.cod}" class="d-tag cod">Pay on delivery</span>
+                <span th:if="${s.sale}" class="d-tag sale">Sale</span>
+                <span th:if="${s.rating != null}" class="d-tag rate" th:text="${s.rating}"></span>
+              </div>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </section>
+  </div>
 </main>
-<footer th:replace="~{fragments :: foot}"></footer>
+<footer class="d-foot">
+  <span>Payments by <strong>PayPort</strong></span>
+  <a href="https://www.payport.africa/terms" rel="noopener">Terms</a>
+  <a href="https://www.payport.africa/privacy" rel="noopener">Privacy</a>
+</footer>
 </body>
 </html>

@@ -45,6 +45,8 @@ public class Storefront {
 
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
     @org.springframework.beans.factory.annotation.Autowired Options options;
+    @org.springframework.beans.factory.annotation.Autowired Ai ai;
+    @org.springframework.beans.factory.annotation.Value("${commerce.directory-announcement:Free delivery this weekend at selected stores}") String directoryAnnouncement;
 
     public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
         this.delivery = delivery;
@@ -169,32 +171,98 @@ public class Storefront {
         Optional<String> slug = domains.storeFor(req.getHeader("Host"));
         if (slug.isPresent()) return store(slug.get(), cart, category, model, res);
         String type = req.getParameter("t"), q = req.getParameter("q");
-        List<Map<String, Object>> stores = new ArrayList<>();
+        if (type != null && !Catalog.TYPES.containsKey(type)) type = null;
+        String query = q == null || q.isBlank() ? null : q.trim().length() > 200 ? q.trim().substring(0, 200) : q.trim();
+        List<Map<String, Object>> all = catalog.directory(null, null);
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (Map<String, Object> st : catalog.directory(null, null)) counts.merge(String.valueOf(st.get("business_type")), 1, Integer::sum);
-        for (Map<String, Object> st : catalog.directory(type, q == null ? null : q.length() > 80 ? q.substring(0, 80) : q)) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("name", st.get("name"));
-            m.put("url", "/s/" + st.get("slug"));
-            m.put("line", st.get("tagline") != null ? st.get("tagline") : st.get("about"));
-            m.put("type", Catalog.TYPES.getOrDefault(String.valueOf(st.get("business_type")), "Other"));
-            m.put("logo", st.get("logo_image") == null ? null : "/img/" + st.get("logo_image"));
-            m.put("banner", st.get("banner_image") == null ? null : "/img/" + st.get("banner_image"));
-            m.put("products", st.get("products"));
-            m.put("rating", st.get("id") == null ? null : growth.storeRating(((Number) st.get("id")).longValue()));
-            stores.add(m);
+        for (Map<String, Object> st : all) counts.merge(String.valueOf(st.get("business_type")), 1, Integer::sum);
+
+        // The search box is PayPort AI's shopping assistant: plain words find matching items and stores.
+        List<Map<String, Object>> found = new ArrayList<>();
+        java.util.Set<String> foundStores = new java.util.LinkedHashSet<>();
+        Ai.Query aq = null;
+        if (query != null) {
+            aq = ai.read(query);
+            for (Map<String, Object> p : catalog.searchProducts(aq, 24)) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("name", p.get("name"));
+                m.put("price", price(((Number) p.get("price_minor")).longValue(), (String) p.get("currency")));
+                m.put("was", p.get("compare_at_minor") == null ? null : price(((Number) p.get("compare_at_minor")).longValue(), (String) p.get("currency")));
+                m.put("image", p.get("image_id") == null ? null : "/img/" + p.get("image_id"));
+                m.put("url", "/s/" + p.get("store_slug") + "/" + p.get("slug"));
+                m.put("store", p.get("store_name"));
+                m.put("cod", Shop.bool(p.get("cod_enabled")));
+                found.add(m);
+                foundStores.add(String.valueOf(p.get("store_slug")));
+            }
         }
-        List<Map<String, Object>> types = new ArrayList<>();
-        for (Map.Entry<String, String> e : Catalog.TYPES.entrySet()) {
-            if (!counts.containsKey(e.getKey())) continue;
-            types.add(Map.of("code", e.getKey(), "name", e.getValue(), "count", counts.get(e.getKey()), "on", e.getKey().equals(type)));
+        List<Map<String, Object>> stores = new ArrayList<>();
+        List<Map<String, Object>> listed = query == null ? catalog.directory(type, null) : new ArrayList<>(catalog.directory(type, query));
+        if (query != null) {
+            java.util.Set<String> have = new java.util.HashSet<>();
+            for (Map<String, Object> st : listed) have.add(String.valueOf(st.get("slug")));
+            for (Map<String, Object> st : all)
+                if (foundStores.contains(String.valueOf(st.get("slug"))) && !have.contains(String.valueOf(st.get("slug")))
+                        && (type == null || type.equals(st.get("business_type")))) listed.add(st);
         }
+        for (Map<String, Object> st : listed) stores.add(storeCard(st));
+        List<Map<String, Object>> featured = new ArrayList<>();
+        if (query == null && type == null && all.size() > 3) {
+            String day = java.time.LocalDate.now(Growth.ZONE).toString();
+            List<Map<String, Object>> pick = new ArrayList<>(all);
+            pick.sort(java.util.Comparator.<Map<String, Object>>comparingLong(st -> -((Number) st.get("orders30")).longValue())
+                    .thenComparing(st -> Shop.sha256(day + st.get("slug"))));
+            for (Map<String, Object> st : pick.subList(0, 3)) featured.add(storeCard(st));
+        }
+        List<Map<String, Object>> tiles = new ArrayList<>();
+        tiles.add(Map.of("code", "", "name", "All", "count", all.size(), "on", type == null, "icon", "ALL", "url", "/"));
+        for (String code : List.of("FOOD", "DRINKS", "CLOTHING", "SERVICES", "BEAUTY", "ELECTRONICS", "SHOP", "HOME", "CRAFTS", "OTHER")) {
+            if (!counts.containsKey(code)) continue;
+            tiles.add(Map.of("code", code, "name", SHORT.get(code), "count", counts.get(code), "on", code.equals(type), "icon", code, "url", "/?t=" + code));
+        }
+        model.addAttribute("announcement", directoryAnnouncement.isBlank() ? null : directoryAnnouncement);
+        model.addAttribute("signIn", settings.checkoutOrigin + "/login");
+        model.addAttribute("tiles", tiles);
+        model.addAttribute("featured", featured);
         model.addAttribute("stores", stores);
-        model.addAttribute("types", types);
-        model.addAttribute("type", type == null || !Catalog.TYPES.containsKey(type) ? null : Catalog.TYPES.get(type));
-        model.addAttribute("q", q == null || q.isBlank() ? null : q.trim());
+        model.addAttribute("openCount", stores.size());
+        model.addAttribute("type", type == null ? null : SHORT.get(type));
+        model.addAttribute("typeCode", type);
+        model.addAttribute("q", query);
+        model.addAttribute("found", found);
+        model.addAttribute("answer", aq == null ? null : ai.answer(aq, found, stores.size()));
+        model.addAttribute("aiOn", ai.modelOn());
         model.addAttribute("title", "PayPort Store");
         return "home";
+    }
+
+    /** Short names on the category tiles and store cards. */
+    static final Map<String, String> SHORT = Map.of("SHOP", "Shops", "CLOTHING", "Clothing", "FOOD", "Food", "DRINKS", "Drinks", "BEAUTY", "Beauty",
+            "ELECTRONICS", "Electronics", "HOME", "Home", "CRAFTS", "Crafts", "SERVICES", "Services", "OTHER", "Other");
+
+    Map<String, Object> storeCard(Map<String, Object> st) {
+        String code = String.valueOf(st.get("business_type"));
+        long n = ((Number) st.get("products")).longValue();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", st.get("name"));
+        m.put("url", "/s/" + st.get("slug"));
+        m.put("typeCode", Catalog.TYPES.containsKey(code) ? code : "OTHER");
+        m.put("meta", SHORT.getOrDefault(code, "Other") + " · " + n + (n == 1 ? " item" : " items"));
+        m.put("logo", st.get("logo_image") == null ? null : "/img/" + st.get("logo_image"));
+        m.put("banner", st.get("banner_image") == null ? null : "/img/" + st.get("banner_image"));
+        m.put("cod", Shop.bool(st.get("cod_enabled")));
+        m.put("sale", Shop.bool(st.get("on_sale")));
+        m.put("rating", st.get("id") == null ? null : growth.storeRating(((Number) st.get("id")).longValue()));
+        return m;
+    }
+
+    /** The cart button on the front page: the cart the customer last used. */
+    @GetMapping("/cart")
+    public String lastCart(@org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart) {
+        if (cart == null || cart.isBlank()) return "redirect:/";
+        return shop.jdbc().queryForList("SELECT s.slug FROM carts c JOIN stores s ON s.id = c.store_id WHERE c.token_hash = ? "
+                        + "AND EXISTS (SELECT 1 FROM cart_items i WHERE i.cart_id = c.id) ORDER BY c.updated_at DESC LIMIT 1", String.class, Shop.sha256(cart))
+                .stream().findFirst().map(sl -> "redirect:/s/" + sl + "/cart").orElse("redirect:/");
     }
 
     /** Caddy asks before it requests a certificate: only verified custom domains get one (local calls only). */

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<body>
+<!-- Store illustrations by store type: flat shapes on the type's colour (the card supplies the background). -->
+<svg th:fragment="art(code)" class="art-svg" viewBox="0 0 400 190" preserveAspectRatio="xMidYMid meet" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <th:block th:switch="${code}">
+    <g th:case="'FOOD'">
+      <g fill="none" stroke="#FFF1E6" stroke-width="7" stroke-linecap="round" opacity="0.9">
+        <path d="M168 58 q-12 14 0 28"/><path d="M200 46 q-12 16 0 32"/><path d="M232 58 q-12 14 0 28"/>
+      </g>
+      <ellipse cx="200" cy="168" rx="128" ry="16" fill="#9A2E12" opacity="0.28"/>
+      <circle cx="152" cy="132" r="22" fill="#E8432C"/>
+      <circle cx="248" cy="132" r="22" fill="#F5B83D"/>
+      <circle cx="200" cy="122" r="24" fill="#7DC242"/>
+      <path d="M118 136 h164 c0 30 -36 52 -82 52 s-82 -22 -82 -52 z" fill="#FFFFFF"/>
+    </g>
+    <g th:case="'CLOTHING'">
+      <rect x="70" y="40" width="270" height="6" rx="3" fill="#FFFFFF" opacity="0.95"/>
+      <path d="M106 64 l26 -10 q14 12 28 0 l26 10 l16 30 l-22 10 v86 h-68 v-86 l-22 -10 z" fill="#FFFFFF"/>
+      <path d="M236 70 l26 -10 q14 12 28 0 l26 10 l16 30 l-22 10 v86 h-68 v-86 l-22 -10 z" fill="#FFD97A"/>
+    </g>
+    <g th:case="'DRINKS'">
+      <rect x="200" y="6" width="7" height="50" rx="3" fill="#FFFFFF" transform="rotate(-10 203 30)"/>
+      <path d="M140 56 h88 l-8 128 h-72 z" fill="#FFFFFF" opacity="0.92"/>
+      <path d="M144 112 h80 l-5 72 h-70 z" fill="#0F6E8C"/>
+      <rect x="134" y="48" width="100" height="14" rx="7" fill="#E6FAF8"/>
+      <path d="M248 84 h70 l-7 100 h-56 z" fill="#FFFFFF" opacity="0.92"/>
+      <path d="M251 126 h64 l-4 58 h-56 z" fill="#F5B83D"/>
+      <rect x="242" y="76" width="82" height="13" rx="6.5" fill="#E6FAF8"/>
+    </g>
+    <g th:case="'SERVICES'">
+      <rect x="152" y="8" width="96" height="176" rx="16" fill="#FFFFFF"/>
+      <rect x="164" y="24" width="72" height="104" rx="8" fill="#D6ECFA"/>
+      <circle cx="200" cy="76" r="26" fill="#1E9E57"/>
+      <path d="M187 76 l9 10 l18 -20" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="102" cy="124" r="22" fill="#FBD46D"/>
+      <circle cx="300" cy="104" r="17" fill="#FBD46D"/>
+    </g>
+    <g th:case="'BEAUTY'">
+      <path d="M118 52 l7 18 l18 7 l-18 7 l-7 18 l-7 -18 l-18 -7 l18 -7 z" fill="#FFFFFF"/>
+      <circle cx="300" cy="56" r="8" fill="#FFFFFF"/>
+      <rect x="182" y="40" width="30" height="30" rx="6" fill="#F6C9D8"/>
+      <rect x="166" y="68" width="62" height="96" rx="12" fill="#FFFFFF"/>
+      <path d="M248 112 l14 -40 l14 40 z" fill="#E0457B"/>
+      <rect x="246" y="112" width="32" height="54" rx="3" fill="#7A2A4E"/>
+    </g>
+    <g th:case="'ELECTRONICS'">
+      <rect x="120" y="30" width="170" height="114" rx="10" fill="#E8ECFF"/>
+      <rect x="132" y="42" width="146" height="90" rx="6" fill="#1E2A78"/>
+      <rect x="146" y="58" width="70" height="8" rx="4" fill="#5B7CF0"/>
+      <rect x="146" y="74" width="112" height="8" rx="4" fill="#5B7CF0"/>
+      <rect x="96" y="150" width="216" height="8" rx="4" fill="#FFFFFF"/>
+      <rect x="292" y="72" width="40" height="84" rx="8" fill="#FFFFFF"/>
+    </g>
+    <g th:case="'HOME'">
+      <path d="M200 30 l90 70 h-22 v80 h-136 v-80 h-22 z" fill="#FFFFFF"/>
+      <rect x="182" y="124" width="36" height="56" rx="4" fill="#2F8F5B"/>
+      <rect x="150" y="104" width="24" height="24" rx="3" fill="#BFE6CF"/>
+      <rect x="226" y="104" width="24" height="24" rx="3" fill="#BFE6CF"/>
+    </g>
+    <g th:case="'CRAFTS'">
+      <rect x="140" y="80" width="120" height="100" rx="8" fill="#FFFFFF"/>
+      <rect x="130" y="62" width="140" height="28" rx="6" fill="#FFE3A8"/>
+      <rect x="192" y="62" width="16" height="118" fill="#E0457B"/>
+      <path d="M200 62 c-30 -36 -54 -6 0 0 c54 -6 30 -36 0 0 z" fill="#E0457B"/>
+    </g>
+    <g th:case="*">
+      <path d="M146 70 h108 l12 112 h-132 z" fill="#FFFFFF"/>
+      <path d="M176 70 v-14 a24 24 0 0 1 48 0 v14" fill="none" stroke="#FFFFFF" stroke-width="8"/>
+      <circle cx="176" cy="92" r="5" fill="#2563A8"/>
+      <circle cx="224" cy="92" r="5" fill="#2563A8"/>
+    </g>
+  </th:block>
+</svg>
+
+<!-- Category icons (line icons, current colour). -->
+<svg th:fragment="icon(code)" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <th:block th:switch="${code}">
+    <g th:case="'ALL'"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></g>
+    <g th:case="'FOOD'"><path d="M7 3v8a2 2 0 0 0 2 2v8"/><path d="M5 3v5M9 3v5"/><path d="M17 21V3c-2.2 1.2-3 3.5-3 6v5h3"/></g>
+    <g th:case="'DRINKS'"><path d="M6 4h12l-1.6 16.2a1 1 0 0 1-1 .8H8.6a1 1 0 0 1-1-.8z"/><path d="M6.6 9h10.8"/></g>
+    <g th:case="'CLOTHING'"><path d="M8 3 4 5.5l1.6 4L8 8.6V21h8V8.6l2.4.9L20 5.5 16 3a4 4 0 0 1-8 0z"/></g>
+    <g th:case="'SERVICES'"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></g>
+    <g th:case="'BEAUTY'"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></g>
+    <g th:case="'ELECTRONICS'"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></g>
+    <g th:case="'HOME'"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></g>
+    <g th:case="'CRAFTS'"><rect x="3" y="9" width="18" height="12" rx="1.5"/><path d="M12 9v12M3 13h18"/><path d="M12 9c-2-4-6-3-4 0M12 9c2-4 6-3 4 0"/></g>
+    <g th:case="*"><path d="M6 7h12l1 14H5z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></g>
+  </th:block>
+</svg>
+</body>
+</html>
