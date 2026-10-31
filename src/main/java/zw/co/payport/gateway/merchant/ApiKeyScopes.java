@@ -24,7 +24,7 @@ public final class ApiKeyScopes {
     private static final List<String> DASHBOARD_ONLY_PREFIXES = List.of(
             "/api/v1/merchant/api-keys", "/api/v1/merchant/team", "/api/v1/merchant/settlement-destinations",
             "/api/v1/merchant/documents", "/api/v1/merchant/application",
-            "/api/v1/merchant/agent", "/api/v1/merchant/pos");
+            "/api/v1/merchant/agent", "/api/v1/merchant/pos", "/api/v1/merchant/payment-methods");
 
     private ApiKeyScopes() {}
 

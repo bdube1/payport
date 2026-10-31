@@ -448,7 +448,8 @@ class OperationalReadinessScenarioTest {
         Res methods = call("GET", "/api/v1/merchant/payment-methods", a.token(), null);
         assertEquals(200, methods.status(), methods.raw());
         assertTrue(methods.raw().contains("ECOCASH") && methods.raw().contains("ZIMSWITCH"), methods.raw());
-        assertEquals(200, call("PUT", "/api/v1/merchant/payment-methods", a.token(), Map.of("ZIMSWITCH", false)).status());
+        Res off = call("PUT", "/api/v1/merchant/payment-methods", a.token(), Map.of("ZIMSWITCH", false));
+        assertEquals(200, off.status(), "owner switches card off: " + off.raw());
         Map<String, Object> allOff = new java.util.LinkedHashMap<>();
         for (String code : java.util.List.of("ECOCASH", "ONEMONEY", "OMARI", "INNBUCKS", "ZIMSWITCH")) allOff.put(code, false);
         Res none = call("PUT", "/api/v1/merchant/payment-methods", a.token(), allOff);
