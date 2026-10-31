@@ -333,6 +333,8 @@ public class SmsNotificationService {
     private void notify(Transaction tx, String message, String messageType) {
         send(tx.getCustomerPhone(), message, tx.getReference(), messageType);
         if (tx.getChannel() != zw.co.payport.gateway.enums.TransactionChannel.WHATSAPP || whatsApp == null) return;
+        // Pending, confirmed and failed are answered in the chat by ChannelResults (it waits for the answer, like the app).
+        if (java.util.Set.of("PAYMENT_PENDING", "PAYMENT_CONFIRMED", "PAYMENT_FAILED").contains(messageType)) return;
         try {
             var sender = whatsApp.getIfAvailable();
             if (sender == null) return;
@@ -343,9 +345,9 @@ public class SmsNotificationService {
             }
             if (to == null) to = tx.getCustomerPhone();
             String err = sender.send(to.replaceAll("[^0-9]", ""), message);
-            if (jdbc != null) jdbc.update("INSERT INTO whatsapp_outbox (wa_id, body, kind, sent, send_error, created_at) VALUES (?,?,?,?,?,?)",
+            if (jdbc != null) jdbc.update("INSERT INTO whatsapp_outbox (wa_id, body, kind, sent, send_error, created_at, reference) VALUES (?,?,?,?,?,?,?)",
                     to.replaceAll("[^0-9]", ""), message.length() > 2000 ? message.substring(0, 2000) : message, messageType, err == null,
-                    err == null ? null : (err.length() > 300 ? err.substring(0, 300) : err), java.sql.Timestamp.valueOf(LocalDateTime.now()));
+                    err == null ? null : (err.length() > 300 ? err.substring(0, 300) : err), java.sql.Timestamp.valueOf(LocalDateTime.now()), tx.getReference());
             if (err != null) log.warn("[WHATSAPP] {} update for {} not sent: {}", messageType, tx.getReference(), err);
         } catch (RuntimeException e) {
             log.warn("[WHATSAPP] {} update for {} failed: {}", messageType, tx.getReference(), e.getMessage());

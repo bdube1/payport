@@ -144,6 +144,14 @@ public class UssdService {
     private final SmsNotificationService sms;
     private final String consumerBase;
 
+    /** WhatsApp: the payment's answer is sent into the chat when it comes (like the app waits for it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.whatsapp.ChannelResults results;
+
+    private void watch(Ctx c, String ref, String method) {
+        if (!c.ussd() && results != null && ref != null && !"OMARI".equals(method)) results.watch(c.msisdn(), ref);
+    }
+
     public UssdService(JdbcTemplate jdbc, ChannelService channels, MarketRegistry markets, BillerRegistry billers, BillerController billerLookups,
                        NetworkPrefixRepository prefixes, TransactionOrchestratorService orchestrator, TransactionOutcomeService outcomes,
                        UserRepository users, PinVerifier pins, WalletService wallets, WalletPaymentService walletPayments, AgentService agents,
@@ -692,7 +700,8 @@ public class UssdService {
                 String ref = r.session().getTransactionReference();
                 record(c, ref);
                 if (CARD.contains(method) || r.widgetJsUrl() != null) return cardLink(c, ref, ccy, amount, from);
-                return afterSubmit(ref, method, from, ccy, amount, merchant, null);
+                watch(c, ref, method);
+                return afterSubmit(c, ref, method, from, ccy, amount, merchant, null);
             } catch (Exception e) {
                 return "END " + clip(e.getMessage() == null ? "Payment could not be started. No money was taken." : e.getMessage(), 150);
             }
@@ -1168,7 +1177,8 @@ public class UssdService {
             }
             long total = r.getTotalCents() != null ? r.getTotalCents() : amount;
             if (CARD.contains(method) || r.getWidgetJsUrl() != null) return cardLink(c, ref, ccy, total, payer);
-            return afterSubmit(ref, method, payer, ccy, total, what, r.getPaymentCode());
+            watch(c, ref, method);
+            return afterSubmit(c, ref, method, payer, ccy, total, what, r.getPaymentCode());
         } catch (Exception e) {
             return "END " + clip(e.getMessage() == null ? "Payment could not be started. No money was taken." : e.getMessage(), 140) + " Ref " + ref;
         }
@@ -1185,19 +1195,20 @@ public class UssdService {
     }
 
     /** What the customer does next, per method. */
-    private String afterSubmit(String ref, String method, String payer, String ccy, long amount, String what, String code) {
+    private String afterSubmit(Ctx c, String ref, String method, String payer, String ccy, long amount, String what, String code) {
+        String then = c.ussd() ? " You will get an SMS with the result." : " I will reply here with the result.";
         String m = methodName(method);
         if ("OMARI".equals(method)) return "CON Enter the code " + m + " sent to " + shortPhone(payer) + " to pay " + ccy + " " + major(amount) + ":";
         if ("INNBUCKS".equals(method)) {
             if (code == null && ref != null) {
-                List<String> c = jdbc.queryForList("SELECT provider_reference FROM transactions WHERE reference = ?", String.class, ref);
-                code = c.isEmpty() ? null : c.get(0);
+                List<String> pc = jdbc.queryForList("SELECT provider_reference FROM transactions WHERE reference = ?", String.class, ref);
+                code = pc.isEmpty() ? null : pc.get(0);
             }
             return "END Your InnBucks payment code is " + (code == null ? "on its way by SMS" : code) + ". Approve it in the InnBucks app to pay "
-                    + ccy + " " + major(amount) + " for " + clip(what, 30) + ". Ref " + ref;
+                    + ccy + " " + major(amount) + " for " + clip(what, 30) + "." + then + " Ref " + ref;
         }
         return "END Approve the " + m + " prompt on " + shortPhone(payer) + " to pay " + ccy + " " + major(amount) + " for " + clip(what, 30)
-                + ". You will get a message when it is done. Ref " + ref;
+                + "." + then + " Ref " + ref;
     }
 
     private String walletResult(Map<String, Object> r, String what) {
@@ -1218,7 +1229,8 @@ public class UssdService {
         try {
             TransactionResponse r = orchestrator.confirmOmariOtp(ref, otp);
             if (r.getStatus() == TransactionStatus.PAYMENT_FAILED) return "END " + clip(r.getFailureReason() == null ? "O'mari declined the payment." : r.getFailureReason(), 130) + " Ref " + ref;
-            return "END Payment confirmed. You will get a message when it is done. Ref " + ref;
+            if (!c.ussd() && results != null) results.watch(c.msisdn(), ref);
+            return "END Payment confirmed." + (c.ussd() ? " You will get an SMS when it is done." : " I will reply here when it is done.") + " Ref " + ref;
         } catch (IllegalStateException e) {
             String msg = e.getMessage() == null ? "" : e.getMessage();
             if (msg.contains("attempt")) return "CON " + clip(msg, 120) + "\nEnter the code:";

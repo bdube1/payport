@@ -9,13 +9,11 @@
   <p class="price big" th:text="${product.price}">USD 1.00</p>
   <p th:if="${product.description != null}" th:text="${product.description}" class="desc"></p>
   <p th:if="${problem != null}" th:text="${problem}" class="notice" role="alert"></p>
-  <form th:if="${store.open}" method="post" th:action="${product.url + '/buy'}" class="buy">
-    <input type="hidden" name="k" th:value="${key}">
+  <p th:if="${product.soldOut}" class="notice">Sold out</p>
+  <p th:if="${product.few != null}" class="muted" th:text="${product.few}"></p>
+  <form th:if="${store.open and !product.soldOut}" method="post" th:action="${product.url + '/buy'}" class="buy">
     <label>Quantity <input name="qty" type="number" min="1" max="20" value="1" inputmode="numeric" required></label>
-    <label>Your name <input name="name" maxlength="120" autocomplete="name"></label>
-    <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel"></label>
-    <label>Note for the seller <input name="note" maxlength="300"></label>
-    <button type="submit" class="pay">Buy now</button>
+    <button type="submit" class="pay">Add to cart</button>
   </form>
   <p th:unless="${store.open}" class="notice">This store is not taking orders at the moment.</p>
   <section th:replace="~{fragments :: share(${share})}"></section>

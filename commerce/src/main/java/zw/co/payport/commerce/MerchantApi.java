@@ -189,6 +189,16 @@ public class MerchantApi {
         return ok(payments.setOrderStatus(manager(req).merchantId(), ref, String.valueOf(b.get("status"))));
     }
 
+    @PostMapping("/api/commerce/orders/{ref}/delivery")
+    public Map<String, Object> delivery(@PathVariable String ref, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return ok(payments.setDelivery(manager(req).merchantId(), ref, String.valueOf(b.get("status"))));
+    }
+
+    @GetMapping("/api/commerce/customers")
+    public Map<String, Object> customers(@RequestParam(required = false) String q, HttpServletRequest req) {
+        return ok(shop.customers(me(req).merchantId(), q));
+    }
+
     @PostMapping("/api/commerce/orders/{ref}/refunds")
     public Map<String, Object> refund(@PathVariable String ref, @RequestBody Map<String, Object> b, HttpServletRequest req) {
         return ok(payments.refund(manager(req), ref, b));

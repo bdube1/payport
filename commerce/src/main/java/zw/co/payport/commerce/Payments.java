@@ -61,8 +61,19 @@ public class Payments {
         }
     }
 
+    /** One line of an order, at the price of the moment. */
+    public record Item(Long productId, String name, long unitMinor, int quantity) {}
+
     public record NewOrder(long merchantId, Long storeId, Long linkId, Long productId, String itemName, int quantity, long amountMinor,
-                           String currency, String customerName, String customerPhone, String note, String idempotencyKey) {}
+                           String currency, String customerName, String customerPhone, String note, String idempotencyKey,
+                           List<Item> items, String deliveryMethod, long deliveryFeeMinor, String deliveryAddress) {
+        /** A single payment (payment link, or one product): no delivery choice. */
+        public NewOrder(long merchantId, Long storeId, Long linkId, Long productId, String itemName, int quantity, long amountMinor,
+                        String currency, String customerName, String customerPhone, String note, String idempotencyKey) {
+            this(merchantId, storeId, linkId, productId, itemName, quantity, amountMinor, currency, customerName, customerPhone, note, idempotencyKey,
+                    List.of(), "NONE", 0, null);
+        }
+    }
 
     public record Placed(String orderRef, String viewToken, boolean existing) {}
 
@@ -80,6 +91,15 @@ public class Payments {
                                 + "view_token_hash, idempotency_key, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         ref, o.merchantId(), o.storeId(), o.linkId(), o.productId(), Shop.clip(o.itemName(), 160), o.quantity(), o.amountMinor(), o.currency(),
                         o.customerName(), o.customerPhone(), o.note(), Shop.sha256(token), o.idempotencyKey(), Shop.now(), Shop.now());
+                long id = jdbc.queryForObject("SELECT id FROM orders WHERE order_ref = ?", Long.class, ref);
+                long itemsMinor = 0;
+                for (Item it : o.items()) {
+                    jdbc.update("INSERT INTO order_items (order_id, product_id, name, unit_minor, quantity) VALUES (?,?,?,?,?)",
+                            id, it.productId(), Shop.clip(it.name(), 160), it.unitMinor(), it.quantity());
+                    itemsMinor += it.unitMinor() * it.quantity();
+                }
+                jdbc.update("UPDATE orders SET items_minor = ?, delivery_method = ?, delivery_fee_minor = ?, delivery_address = ? WHERE id = ?",
+                        o.items().isEmpty() ? null : itemsMinor, o.deliveryMethod() == null ? "NONE" : o.deliveryMethod(), o.deliveryFeeMinor(), o.deliveryAddress(), id);
                 shop.event("order.created", o.merchantId(), ref, o.linkId() != null ? "link" : "store");
                 return new Placed(ref, token, false);
             } catch (DuplicateKeyException e) {
@@ -202,10 +222,53 @@ public class Payments {
                 next, next, Shop.now(), Shop.now(), orderId);
         if ("PAID".equals(next)) {
             shop.event("order.paid", merchantId, String.valueOf(o.get("order_ref")), String.valueOf(o.get("amount_minor")));
+            takeStock(orderId);
+            rememberCustomer(o);
+            if (!"NONE".equals(o.get("delivery_method"))) jdbc.update("UPDATE orders SET delivery_status = 'PREPARING' WHERE id = ? AND delivery_status = 'NOT_NEEDED'", orderId);
             // A single-use link is closed once it is paid.
             if (o.get("link_id") != null) jdbc.update("UPDATE links SET status = 'USED', updated_at = ? WHERE id = ? AND reusable = FALSE AND status = 'ACTIVE'",
                     Shop.now(), o.get("link_id"));
         }
+    }
+
+    /** Paid: what was sold leaves the stock. If something sold out meanwhile, the order is marked so the merchant sees it. */
+    void takeStock(long orderId) {
+        if (jdbc.update("UPDATE orders SET stock_taken = TRUE WHERE id = ? AND stock_taken = FALSE", orderId) == 0) return;
+        boolean short_ = false;
+        for (Map<String, Object> it : jdbc.queryForList("SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL", orderId)) {
+            Object pid = it.get("product_id");
+            int q = ((Number) it.get("quantity")).intValue();
+            int n = jdbc.update("UPDATE products SET stock = stock - ? WHERE id = ? AND stock IS NOT NULL AND stock >= ?", q, pid, q);
+            if (n == 0) {
+                Integer counted = jdbc.queryForObject("SELECT COUNT(*) FROM products WHERE id = ? AND stock IS NOT NULL", Integer.class, pid);
+                if (counted != null && counted > 0) {
+                    jdbc.update("UPDATE products SET stock = 0 WHERE id = ?", pid);
+                    short_ = true;
+                }
+            }
+        }
+        if (short_) jdbc.update("UPDATE orders SET stock_short = TRUE WHERE id = ?", orderId);
+    }
+
+    /** A cancelled order puts its items back in stock. */
+    void returnStock(long orderId) {
+        if (jdbc.update("UPDATE orders SET stock_taken = FALSE WHERE id = ? AND stock_taken = TRUE", orderId) == 0) return;
+        for (Map<String, Object> it : jdbc.queryForList("SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL", orderId)) {
+            jdbc.update("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL", it.get("quantity"), it.get("product_id"));
+        }
+    }
+
+    /** The merchant's customer list grows from paid orders that left a phone number. */
+    void rememberCustomer(Map<String, Object> o) {
+        Object phone = o.get("customer_phone");
+        if (phone == null || String.valueOf(phone).isBlank()) return;
+        long merchantId = ((Number) o.get("merchant_id")).longValue();
+        jdbc.update("INSERT INTO customers (merchant_id, phone, name, orders, first_order_at, last_order_at) VALUES (?,?,?,1,?,?) "
+                + "ON DUPLICATE KEY UPDATE orders = orders + 1, name = COALESCE(VALUES(name), name), last_order_at = VALUES(last_order_at)",
+                merchantId, phone, o.get("customer_name"), Shop.now(), Shop.now());
+        Long cid = jdbc.queryForObject("SELECT id FROM customers WHERE merchant_id = ? AND phone = ?", Long.class, merchantId, phone);
+        jdbc.update("INSERT INTO customer_spend (customer_id, currency, spent_minor) VALUES (?,?,?) ON DUPLICATE KEY UPDATE spent_minor = spent_minor + VALUES(spent_minor)",
+                cid, o.get("currency"), o.get("amount_minor"));
     }
 
     /** Refunds as the PSP lists them: COMPLETED only once the customer has been paid back. */
@@ -307,6 +370,19 @@ public class Payments {
         }
     }
 
+    /** An order's lines for the customer's page. */
+    public List<Map<String, Object>> items(long orderId, String ccy) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : jdbc.queryForList("SELECT name, unit_minor, quantity FROM order_items WHERE order_id = ? ORDER BY id", orderId)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", r.get("name"));
+            m.put("quantity", r.get("quantity"));
+            m.put("line", ccy + " " + Shop.major(((Number) r.get("unit_minor")).longValue() * ((Number) r.get("quantity")).intValue()));
+            out.add(m);
+        }
+        return out;
+    }
+
     // ─── merchant views ──────────────────────────────────────────────────────
 
     public Map<String, Object> merchantOrderView(Map<String, Object> o) {
@@ -324,6 +400,11 @@ public class Payments {
         v.put("refundStatus", o.get("refund_status"));
         v.put("refundedMinor", o.get("refunded_minor"));
         v.put("source", o.get("link_id") != null ? "LINK" : "STORE");
+        v.put("deliveryMethod", o.get("delivery_method"));
+        v.put("deliveryFeeMinor", o.get("delivery_fee_minor"));
+        v.put("deliveryAddress", o.get("delivery_address"));
+        v.put("deliveryStatus", o.get("delivery_status"));
+        v.put("stockShort", Shop.bool(o.get("stock_short")));
         v.put("createdAt", String.valueOf(o.get("created_at")));
         v.put("paidAt", o.get("paid_at") == null ? null : String.valueOf(o.get("paid_at")));
         return v;
@@ -351,6 +432,7 @@ public class Payments {
         Map<String, Object> o = jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ? AND merchant_id = ?", ref, merchantId).stream().findFirst()
                 .orElseThrow(() -> new Shop.NotFound("No such order"));
         Map<String, Object> v = merchantOrderView(o);
+        v.put("items", jdbc.queryForList("SELECT product_id AS productId, name, unit_minor AS unitMinor, quantity FROM order_items WHERE order_id = ? ORDER BY id", o.get("id")));
         v.put("refunds", jdbc.queryForList("SELECT amount_minor AS amountMinor, reason, status, created_at AS createdAt, completed_at AS completedAt FROM refunds "
                 + "WHERE order_id = ? ORDER BY id", o.get("id")).stream().map(r -> {
                     Map<String, Object> x = new LinkedHashMap<>(r);
@@ -369,6 +451,23 @@ public class Payments {
         if ("CANCELLED".equals(s) && "PAID".equals(o.get("payment_status")) && !"REFUNDED".equals(o.get("refund_status")))
             throw new IllegalStateException("Refund a paid order before cancelling it");
         jdbc.update("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ?", s, Shop.now(), o.get("id"));
+        if ("CANCELLED".equals(s)) returnStock(((Number) o.get("id")).longValue());
+        return merchantOrder(merchantId, ref);
+    }
+
+    /** Pickup: preparing, ready, collected. Delivery: preparing, out for delivery, delivered. The last step fulfils the order. */
+    public Map<String, Object> setDelivery(long merchantId, String ref, String status) {
+        String s = String.valueOf(status).toUpperCase(Locale.ROOT);
+        Map<String, Object> o = jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ? AND merchant_id = ?", ref, merchantId).stream().findFirst()
+                .orElseThrow(() -> new Shop.NotFound("No such order"));
+        if (!"PAID".equals(o.get("payment_status"))) throw new IllegalStateException("Only a paid order can be prepared or sent");
+        String method = String.valueOf(o.get("delivery_method"));
+        Set<String> allowed = "DELIVERY".equals(method) ? Set.of("PREPARING", "OUT", "DELIVERED") : "PICKUP".equals(method) ? Set.of("PREPARING", "READY", "COLLECTED") : Set.of();
+        if (!allowed.contains(s)) throw new IllegalArgumentException("Choose the next step for this order");
+        boolean done = "DELIVERED".equals(s) || "COLLECTED".equals(s);
+        jdbc.update("UPDATE orders SET delivery_status = ?, order_status = CASE WHEN ? THEN 'FULFILLED' ELSE order_status END, updated_at = ? WHERE id = ?",
+                s, done, Shop.now(), o.get("id"));
+        shop.event("delivery." + s.toLowerCase(Locale.ROOT), merchantId, ref, method);
         return merchantOrder(merchantId, ref);
     }
 
