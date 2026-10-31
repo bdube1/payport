@@ -98,7 +98,7 @@ public final class PermissionCatalog {
 
             f("products", "Platform setup", "Products", List.of("/products"), List.of(A + "config/products", A + "config/prefixes"), ADMIN, OPS),
             f("bundles", "Platform setup", "Bundles", List.of("/bundles"), List.of("/api/v1/bundles/admin"), ADMIN, OPS),
-            f("channels", "Platform setup", "Channels & product lines", List.of("/channels"), List.of(A + "channels", A + "service-lines"),
+            f("channels", "Platform setup", "Channels & product lines", List.of("/channels"), List.of(A + "channels", A + "service-lines", A + "payments"),
                     ADMIN, OPS, FINANCE, COMPLIANCE),
             f("markets", "Platform setup", "Markets, currencies & FX", List.of("/markets"), List.of(A + "markets", A + "fx"), ADMIN, OPS, FINANCE, COMPLIANCE),
             f("ussd_whatsapp", "Platform setup", "USSD & WhatsApp", List.of("/ussd-whatsapp"), List.of(A + "ussd", A + "whatsapp"), ADMIN, OPS, COMPLIANCE),
