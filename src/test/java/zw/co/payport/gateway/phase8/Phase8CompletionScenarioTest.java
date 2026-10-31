@@ -944,7 +944,7 @@ class Phase8CompletionScenarioTest {
         whatsapp(wa, p + 10, "1111", true);
         assertTrue(reply(p + 10).contains("Wrong PIN"), reply(p + 10));
         // The answer of a WhatsApp payment comes into the chat, with the provider's reason (like the app).
-        String failed = "PP-WA-" + java.time.LocalDate.now().toString().replace("-", "") + "-" + String.format("%08X", (int) (System.nanoTime() & 0x7fffffff));
+        String failed = "PP-WA-" + java.time.LocalDate.now().toString().replace("-", "") + "-" + String.format("%06d", (int) (System.nanoTime() % 1_000_000));
         Res init = call("POST", "/api/v1/transactions/initiate", null, Map.of("reference", failed, "productTypeCode", "AIRTIME_ECONET", "recipientIdentifier", "+" + wa,
                 "amountCents", 500, "currency", "USD", "customerPhone", "+" + wa, "channel", "WHATSAPP"));
         assertEquals(201, init.status(), init.body().toString());
