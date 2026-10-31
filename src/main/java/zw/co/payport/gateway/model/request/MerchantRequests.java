@@ -23,7 +23,7 @@ public class MerchantRequests {
         @NotBlank(message = "Contact phone is required")
         private String contactPhone;
 
-        /** Where the business operates (street, suburb, town), so PayPort can visit it. */
+        /** Where the business operates (street, suburb, town), so Payport can visit it. */
         @NotBlank(message = "The business address is required")
         private String address;
 

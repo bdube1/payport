@@ -11,7 +11,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 
 /**
- * Store figures for Prometheus (go-live pack, owner 31 Oct 2026), on this machine only: whether PayPort Payments is
+ * Store figures for Prometheus (go-live pack, owner 31 Oct 2026), on this machine only: whether Payport Payments is
  * reachable, how far behind the payment events are, payments stuck "being confirmed", orders in the last hour by
  * payment state, and texts waiting. No customer data.
  */
@@ -32,7 +32,7 @@ public class Monitoring {
         if (!("127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip))) return ResponseEntity.status(404).body("");
         Timestamp hour = Timestamp.valueOf(LocalDateTime.now().minusHours(1));
         StringBuilder b = new StringBuilder();
-        b.append("# HELP commerce_psp_up 1 when PayPort Payments answered the last event read\n# TYPE commerce_psp_up gauge\n")
+        b.append("# HELP commerce_psp_up 1 when Payport Payments answered the last event read\n# TYPE commerce_psp_up gauge\n")
                 .append("commerce_psp_up ").append(reader.pspUp() ? 1 : 0).append('\n');
         b.append("# HELP commerce_events_lag_seconds Seconds since the payment events were last read\n# TYPE commerce_events_lag_seconds gauge\n")
                 .append("commerce_events_lag_seconds ").append((System.currentTimeMillis() - reader.lastRead()) / 1000).append('\n');

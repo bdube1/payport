@@ -86,7 +86,7 @@ public class TransactionOrchestratorService {
         // Numbering plans come from the market settings: a market switched on in the portal accepts its customers.
         if (marketRegistry != null && dto.getCustomerPhone() != null && !dto.getCustomerPhone().isBlank()
                 && !marketRegistry.validMobileInAnyMarket(dto.getCustomerPhone())) {
-            throw new IllegalArgumentException("Customer phone is not a mobile number in a country PayPort serves");
+            throw new IllegalArgumentException("Customer phone is not a mobile number in a country Payport serves");
         }
 
         // Currency switches from the portal: the platform must accept the currency (and, outside merchant
@@ -355,7 +355,7 @@ public class TransactionOrchestratorService {
         Transaction tx = lockTransaction(dto.getReference());
         assertTransition(tx, TransactionStatus.PAYMENT_PENDING);
 
-        // The PayPort wallet is always offered to its holders (it is governed by the wallet service line and the
+        // The Payport wallet is always offered to its holders (it is governed by the wallet service line and the
         // holder's PIN confirmation), whatever the payment-method switch says.
         PaymentMethod paymentMethod = ("WALLET".equalsIgnoreCase(dto.getPaymentMethodCode())
                 ? paymentMethodRepository.findByCode("WALLET")
@@ -418,8 +418,8 @@ public class TransactionOrchestratorService {
     }
 
     /**
-     * What the payer's phone shows on the payment prompt: PayPort and the product or merchant, never a generic word
-     * ("PayPort Econet Airtime", "PayPort NetOne Data Bundle", "PayPort ZESA Prepaid", "PayPort Acme Stores").
+     * What the payer's phone shows on the payment prompt: Payport and the product or merchant, never a generic word
+     * ("Payport Econet Airtime", "Payport NetOne Data Bundle", "Payport ZESA Prepaid", "Payport Acme Stores").
      */
     String paymentDescription(Transaction tx) {
         ProductType p = tx.getProductType();
@@ -449,7 +449,7 @@ public class TransactionOrchestratorService {
                 what = net.charAt(0) + net.substring(1).toLowerCase(java.util.Locale.ROOT) + " " + what;
             }
         }
-        String d = what.toLowerCase(java.util.Locale.ROOT).startsWith("payport") ? what : "PayPort " + what;
+        String d = what.toLowerCase(java.util.Locale.ROOT).startsWith("payport") ? what : "Payport " + what;
         return d.length() <= 50 ? d : d.substring(0, 50);
     }
 
@@ -804,7 +804,7 @@ public class TransactionOrchestratorService {
     private boolean autoRetryDefiniteFailures = true;
 
     private static final int MAX_DELIVERY_ATTEMPTS = 4;
-    /** Error code for a delivery request that provably never left PayPort (connection refused, unknown host). */
+    /** Error code for a delivery request that provably never left Payport (connection refused, unknown host). */
     private static final String NOT_SENT = "NOT_SENT";
     private static final int[] RETRY_DELAYS_SECONDS = {30, 120, 300, 600};
 

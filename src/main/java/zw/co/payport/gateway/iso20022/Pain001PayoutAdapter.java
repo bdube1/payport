@@ -99,7 +99,7 @@ public class Pain001PayoutAdapter implements PayoutFileAdapter {
                     .append("<CdtrAcct><Id><Othr><Id>").append(Xml.esc(Xml.max((String) d.get("account_number"), 34))).append("</Id>");
             if (wallet) x.append("<SchmeNm><Prtry>MSISDN</Prtry></SchmeNm>");
             x.append("</Othr></Id></CdtrAcct>")
-                    .append("<RmtInf><Ustrd>").append(Xml.esc(Xml.max("PayPort settlement " + batchRef, 140))).append("</Ustrd></RmtInf></CdtTrfTxInf>\n");
+                    .append("<RmtInf><Ustrd>").append(Xml.esc(Xml.max("Payport settlement " + batchRef, 140))).append("</Ustrd></RmtInf></CdtTrfTxInf>\n");
         }
         x.append("</PmtInf>\n</CstmrCdtTrfInitn>\n</Document>\n");
         String xml = x.toString();

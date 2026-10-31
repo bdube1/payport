@@ -7,7 +7,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * The complaint types PayPort handles (owner's list, 2026-10-30): merchant, agent and general wallet complaints, with
+ * The complaint types Payport handles (owner's list, 2026-10-30): merchant, agent and general wallet complaints, with
  * the likely cause and how each is resolved. Priority sets the deadline: HIGH 4 hours (fraud, money taken without
  * authority), NORMAL 24 hours (money missing or stuck), LOW 72 hours (service and information).
  */

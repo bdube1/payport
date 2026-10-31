@@ -45,7 +45,7 @@ Each account is identified by **(legal entity, book, category, owner, currency)*
 
 | Category | Type | Normal side | May go negative | Owner | Meaning |
 |---|---|---|---|---|---|
-| `BANK_CASH` | Asset | Debit | Yes | bank account code | Money in PayPort's (trust) bank accounts |
+| `BANK_CASH` | Asset | Debit | Yes | bank account code | Money in Payport's (trust) bank accounts |
 | `PROVIDER_RECEIVABLE` | Asset | Debit | Yes | provider code (ECOCASH, ONEMONEY, OMARI, ZIMSWITCH, …) | Collected by a rail, not yet received in the bank |
 | `VENDOR_FLOAT` | Asset | Debit | Yes | vendor code (ECONET, NETONE, TELECEL, ESOLUTIONS) | Prepaid float held at airtime/bill vendors |
 | `SUSPENSE` | Asset | Debit | Yes | reason code | Unidentified items awaiting investigation |
@@ -54,7 +54,7 @@ Each account is identified by **(legal entity, book, category, owner, currency)*
 | `CUSTOMER_ORDER_OBLIGATION` | Liability | Credit | No | `ALL` | Consumer paid; airtime/bill not yet delivered |
 | `CUSTOMER_REFUND_PAYABLE` | Liability | Credit | No | `ALL` | Refunds owed to customers |
 | `TAX_PAYABLE` | Liability | Credit | Yes | tax code (VAT, IMTT) | Collected taxes owed to ZIMRA |
-| `FEE_REVENUE` | Revenue | Credit | Yes | product line (MERCHANT_CHECKOUT, …) | PayPort's processing fees (net of VAT) |
+| `FEE_REVENUE` | Revenue | Credit | Yes | product line (MERCHANT_CHECKOUT, …) | Payport's processing fees (net of VAT) |
 | `COMMISSION_REVENUE` | Revenue | Credit | Yes | vendor code | Commission earned from billers/vendors |
 | `PROVIDER_FEE_EXPENSE` | Expense | Debit | Yes | provider code | Rail charges |
 | `LOSS_EXPENSE` | Expense | Debit | Yes | reason code | Approved write-offs |
@@ -117,7 +117,7 @@ Other procedures, all of which run as the definer:
 
 - `fin_tax_rates` holds effective-dated rates: entity, tax code, currency, rate in basis points, cap, merchant-borne flag. A rate takes effect only with status `ACTIVE`, set by a second user. The database enforces that the approver differs from the requester.
 - `platform_approvals` is a generic maker-checker store, used for tax rates, manual adjustments, reversals and period re-opening.
-- **Nothing is seeded.** The current rates (VAT 15.5%; IMTT 2% USD / 1.5% ZiG, per reports of Finance Act No. 7 of 2025) must be entered and approved by finance after your tax adviser confirms how they apply to PayPort's fees.
+- **Nothing is seeded.** The current rates (VAT 15.5%; IMTT 2% USD / 1.5% ZiG, per reports of Finance Act No. 7 of 2025) must be entered and approved by finance after your tax adviser confirms how they apply to Payport's fees.
 
 ## 8. Shadow posting (slice 1.2, ADR-0009)
 

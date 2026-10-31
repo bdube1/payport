@@ -72,7 +72,7 @@ All three messages are validated against the **official ISO 20022 schemas**:
 
 ### pain.001.001.09 (payout instructions) — `Pain001PayoutAdapter`
 
-| PayPort | ISO 20022 |
+| Payport | ISO 20022 |
 |---|---|
 | Batch reference | `GrpHdr/MsgId`, `PmtInf/PmtInfId` |
 | Item count, sum of net | `NbOfTxs`, `CtrlSum` (group and payment information) |
@@ -85,9 +85,9 @@ ISO payouts require a verified destination (`stl_items.destination_id`, new in V
 
 ### pain.002.001.10 (payment status report) — `Pain002Parser`, `BankMessageService`
 
-| ISO 20022 | PayPort |
+| ISO 20022 | Payport |
 |---|---|
-| `OrgnlGrpInfAndSts/OrgnlMsgId` | Must be a batch PayPort sent. Each reported instruction must belong to it. |
+| `OrgnlGrpInfAndSts/OrgnlMsgId` | Must be a batch Payport sent. Each reported instruction must belong to it. |
 | `TxSts` ACSC + `AcctSvcrRef` | PAID with the bank's reference |
 | `TxSts` RJCT + `StsRsnInf/Rsn/Cd` | FAILED, with reason, e.g. "AC04: Closed account number"; the sessions become eligible again |
 | ACTC, ACCP, ACSP, PDNG… | Still in progress: no change |
@@ -134,7 +134,7 @@ Nothing is adjusted automatically.
 What it takes (the ZM market was added exactly this way):
 1. `markets/<CC>.json`.
 2. One reference-data migration: three INSERTs for country, currency and legal entity. The application user may only read reference data (least privilege), so these rows come through Flyway like all other reference data. They are configuration, not code.
-3. Adapters, only where the country's providers or bank use a format PayPort doesn't have yet. ZM reuses the ISO 20022 adapters.
+3. Adapters, only where the country's providers or bank use a format Payport doesn't have yet. ZM reuses the ISO 20022 adapters.
 4. Optional parameters: `CALENDAR.<CC>.HOLIDAYS` and per-currency thresholds.
 
 `MarketRegistryTest.noApplicationCodeNamesTheSandboxCountry` scans `src/main/java` and fails if any application code names the sandbox country or its currency or entity.

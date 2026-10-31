@@ -859,7 +859,7 @@ class Phase8CompletionScenarioTest {
     @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.intelligence.FraudShadow fraudShadow;
     @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.whatsapp.ChannelResults channelResults;
 
-    /** Owner, 2026-10-31: PayPort Intelligence starts read-only, behind switches that only administrators turn on. */
+    /** Owner, 2026-10-31: Payport Intelligence starts read-only, behind switches that only administrators turn on. */
     @Test
     void intelligence_offUntilSwitchedOn_triageSuggests_helperExplains_fraudScoresInShadow() throws Exception {
         String ops = staff("Ai Ops", "OPS"), admin = staff("Ai Admin", "ADMIN");
@@ -908,7 +908,7 @@ class Phase8CompletionScenarioTest {
 
     /**
      * Owner, 2026-10-31: a WhatsApp bundle may have no internet for a web page, so the PIN is typed in the chat. It is
-     * checked once and never kept: the session keeps "#", and PayPort records only its own replies.
+     * checked once and never kept: the session keeps "#", and Payport records only its own replies.
      */
     @Test
     void whatsapp_pinTypedInTheChat_neverKept_wrongAmountAskedAgain_00GoesHome() throws Exception {
@@ -919,7 +919,7 @@ class Phase8CompletionScenarioTest {
         String p = "wamid.pin." + wa + ".";
         whatsapp(wa, p + 1, "hi", true);
         String hello = reply(p + 1);
-        assertTrue(hello.contains("Welcome to PayPort, Chipo") && hello.contains("Enter your PayPort PIN") && !hello.contains("http"), hello);
+        assertTrue(hello.contains("Welcome to Payport, Chipo") && hello.contains("Enter your Payport PIN") && !hello.contains("http"), hello);
 
         whatsapp(wa, p + 2, "4826", true);
         String menu = reply(p + 2);
@@ -935,7 +935,7 @@ class Phase8CompletionScenarioTest {
         whatsapp(wa, p + 6, "abc", true);
         assertTrue(reply(p + 6).contains("Enter another amount (USD)") && reply(p + 6).contains("0. Cancel"), reply(p + 6));
         whatsapp(wa, p + 7, "2.50", true);
-        assertTrue(reply(p + 7).startsWith("Pay with:\n1. PayPort wallet"), "the corrected amount carries on: " + reply(p + 7));
+        assertTrue(reply(p + 7).startsWith("Pay with:\n1. Payport wallet"), "the corrected amount carries on: " + reply(p + 7));
         whatsapp(wa, p + 8, "00", true);
         assertTrue(reply(p + 8).contains("what would you like to do"), "00 goes back to the main menu, still logged in: " + reply(p + 8));
         assertEquals("#", jdbc.queryForObject("SELECT path FROM whatsapp_sessions WHERE wa_id = ?", String.class, wa));

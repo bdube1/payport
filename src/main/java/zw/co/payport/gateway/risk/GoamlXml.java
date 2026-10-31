@@ -49,7 +49,7 @@ final class GoamlXml {
                     if (!(o instanceof Map<?, ?> t)) continue;
                     x.append("  <transaction>\n");
                     el(x, 2, "transactionnumber", t.get("reference"));
-                    el(x, 2, "transaction_location", "PayPort " + (t.get("channel") == null ? "" : t.get("channel")));
+                    el(x, 2, "transaction_location", "Payport " + (t.get("channel") == null ? "" : t.get("channel")));
                     el(x, 2, "date_transaction", t.get("created_at"));
                     el(x, 2, "transmode_code", t.get("payment_provider_code") != null ? t.get("payment_provider_code") : t.get("payment_method_code"));
                     el(x, 2, "amount_local", minor(t.get("amount_cents")));

@@ -19,7 +19,7 @@ _Branch `phase2-payment-lifecycle`, together with the owner's Phase 2 review cha
 - Categories:
   - MATCHED;
   - MISSING_IN_PAYPORT;
-  - STATUS_MISMATCH (the provider was paid but PayPort recorded a failure or timeout, which also catches late payments);
+  - STATUS_MISMATCH (the provider was paid but Payport recorded a failure or timeout, which also catches late payments);
   - DUPLICATE;
   - AMOUNT_MISMATCH;
   - CURRENCY_MISMATCH (ZiG and ZWG are treated as the same);
@@ -30,7 +30,7 @@ _Branch `phase2-payment-lifecycle`, together with the owner's Phase 2 review cha
 - Live lifecycle conflicts use the same queue: PAID_AFTER_TIMEOUT, PAID_AFTER_FAILURE, FAILED_AFTER_PAID, PAID_ON_SUPERSEDED_ATTEMPT.
 - Formats:
   - the existing provider parsers (EcoCash, OneMoney, O'mari, NetOne, Telecel, InnBucks);
-  - PayPort's generic CSV.
+  - Payport's generic CSV.
 
 **Settlement** (`settlement` package, V40):
 - **Eligible funds:**

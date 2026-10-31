@@ -33,7 +33,7 @@ public final class DeliveryOutcomeRules {
 
     /** Econet XML-RPC API v1.2.3, section 7.1. */
     private static final Table ECONET = new Table(ECONET_CODE,
-            // 8200 External Temp Error; 905 Insufficient Credit / 8104 Insufficient Funds (PayPort's float);
+            // 8200 External Temp Error; 905 Insufficient Credit / 8104 Insufficient Funds (Payport's float);
             // 8209 External Out of Stock.
             Set.of("8200", "905", "8104", "8209"),
             // 990 Request Timeout; 999 General Error; 8060 Duplicate; 8061 Pending; 8201/8202 External System/Technical
@@ -43,7 +43,7 @@ public final class DeliveryOutcomeRules {
 
     /** NetOne E-Top-Up Webservice 2.8.3, section 16. */
     private static final Table NETONE = new Table(NETONE_CODE,
-            // 206 recharge platform down; 208 insufficient wallet balance (PayPort's float); 209 stock;
+            // 206 recharge platform down; 208 insufficient wallet balance (Payport's float); 209 stock;
             // 210 "Unable to process ... please try again later"; 702 network webservice unavailable.
             Set.of("206", "208", "209", "210", "702"),
             // 0 pending / 1 busy (query results); 216 duplicate ("already received ... please wait"); 219 web service
@@ -52,7 +52,7 @@ public final class DeliveryOutcomeRules {
 
     /**
      * e-Solutions Bill Payments API v2.2, section 4 (Table 4.3): only 00 is success, 09 is in progress (resend
-     * to look it up), every other code is a failure to conclude. 51 = vendor (PayPort) out of credit, so a later
+     * to look it up), every other code is a failure to conclude. 51 = vendor (Payport) out of credit, so a later
      * retry is safe once the float is topped up. 94 duplicate: look up the original with a resend.
      */
     private static final Table ESOLUTIONS = new Table(ESOLUTIONS_CODE, Set.of("51"), Set.of("09", "94"));

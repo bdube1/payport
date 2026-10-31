@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * Paying a merchant by its six-digit merchant code (app, web, USSD). The customer types the code, sees the
- * merchant's name and enters the amount; PayPort opens a live checkout session for that merchant, which is then
+ * merchant's name and enters the amount; Payport opens a live checkout session for that merchant, which is then
  * paid like any other: with the wallet (registered customers) or EcoCash, OneMoney, O'mari or InnBucks (anyone).
  */
 @RestController
@@ -81,9 +81,9 @@ public class MerchantCodePayments {
         return sessions.save(s);
     }
 
-    /** What a scanned PayPort QR (or a typed code) points to: merchant or agent, its code and name. */
+    /** What a scanned Payport QR (or a typed code) points to: merchant or agent, its code and name. */
     public Map<String, Object> scanned(String payload) {
-        Map<String, Object> c = codes.fromQr(payload).orElseThrow(() -> new IllegalArgumentException("This QR code is not valid. Ask for the current PayPort QR or enter the code."));
+        Map<String, Object> c = codes.fromQr(payload).orElseThrow(() -> new IllegalArgumentException("This QR code is not valid. Ask for the current Payport QR or enter the code."));
         String code = (String) c.get("code");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", c.get("party_type"));

@@ -80,7 +80,7 @@ public class OneMoneyAdaptor implements PaymentProviderAdaptor {
         businessData.put("amt", amountInDollars);
         businessData.put("currency", request.getCurrency());
         businessData.put("mobileNo", formattedPhone);
-        businessData.put("goodsName", request.getDescription() != null ? request.getDescription() : "PayPort Payment");
+        businessData.put("goodsName", request.getDescription() != null ? request.getDescription() : "Payport Payment");
         businessData.put("notifyUrl", notifyUrl);
 
         logOneMoneyRequest(businessData, amountInDollars, request.getCurrency());

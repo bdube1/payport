@@ -179,7 +179,7 @@ class Iso20022ConformanceScenarioTest {
         // Refusals: wrong account, a statement that does not balance, a non-conforming document.
         var wrongAccount = assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> bank.importStatement(
                 stmt.replace(ACCOUNT, "SOMEONE-ELSE").replace("STMT-20261016-USD", "S2").getBytes(StandardCharsets.UTF_8), "fin.carol"));
-        assertTrue(wrongAccount.getMessage().contains("not PayPort's USD account"), wrongAccount.getMessage());
+        assertTrue(wrongAccount.getMessage().contains("not Payport's USD account"), wrongAccount.getMessage());
         var unbalanced = assertThrows(Iso20022Schemas.InvalidMessageException.class, () -> bank.importStatement(
                 stmt.replace("1403.00", "1404.00").replace("STMT-20261016-USD", "S3").getBytes(StandardCharsets.UTF_8), "fin.carol"));
         assertTrue(unbalanced.getMessage().contains("does not balance"), unbalanced.getMessage());

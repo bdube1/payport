@@ -17,7 +17,7 @@ if [[ "$BACKUP" == *.gz ]]; then gunzip -c "$BACKUP" | m "$DB"; else m "$DB" < "
 end=$(date +%s)
 
 {
-  echo "PayPort restore drill"
+  echo "Payport restore drill"
   echo "date (UTC):        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "backup file:       $BACKUP ($(du -h "$BACKUP" | cut -f1)), sha256 $(sha256sum "$BACKUP" | cut -d' ' -f1)"
   echo "restored into:     $DB on $HOST:$PORT"

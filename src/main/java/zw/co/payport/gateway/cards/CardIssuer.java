@@ -3,7 +3,7 @@ package zw.co.payport.gateway.cards;
 import java.util.Map;
 import java.util.Optional;
 
-/** A card issuer's API (VISA issuing processor, ZimSwitch). PayPort keeps the card record; the issuer holds the card. */
+/** A card issuer's API (VISA issuing processor, ZimSwitch). Payport keeps the card record; the issuer holds the card. */
 public interface CardIssuer {
 
     /** VISA or ZIMSWITCH. */

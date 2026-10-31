@@ -18,11 +18,11 @@
 | Regional rails | RBZ began implementing PAPSS in 2023; participation is through banks | Medium |
 
 **Not established and must be answered:**
-- PayPort's current licence or registration status.
+- Payport's current licence or registration status.
 - Who holds collected funds today.
 - Which licence covers merchant acquiring / aggregation specifically.
-- Minimum capital for PayPort's category.
-- Whether PayPort is an IMTT agent.
+- Minimum capital for Payport's category.
+- Whether Payport is an IMTT agent.
 - Data-hosting expectations.
 - ZIPSS / National Switch message standards.
 
@@ -30,19 +30,19 @@
 
 | | **A. Direct PSP** | **B. Partner-led settlement** | **C. Merchant aggregation (payfac-style)** | **D. Hybrid** |
 |---|---|---|---|---|
-| What it is | PayPort is licensed by RBZ, holds collections in its own trust accounts and pays merchants | A licensed bank/PSP holds the funds and executes payouts; PayPort provides technology, onboarding and instructions | PayPort contracts merchants as sub-merchants under an acquirer/provider's master account; the provider settles to PayPort or directly to merchants | B or C at launch for each market or method, moving to A where licensed |
-| Who holds funds | PayPort (trust) | Partner | Provider or acquirer (sometimes PayPort as master merchant) | Varies by market |
-| Licences | RBZ PSP licence (non-banks via a sponsoring institution); trust arrangement; data controller licence | Partner's licence; PayPort may still need registration as a technical service provider | Provider's licence; RBZ view on aggregation required | Per market |
-| PayPort's ledger role | **Book of record** for customer funds; must reconcile to trust bank | **Shadow ledger** of the partner's books; reconciles to partner statements | Ledger of receivables from provider and payables to merchants | Both |
+| What it is | Payport is licensed by RBZ, holds collections in its own trust accounts and pays merchants | A licensed bank/PSP holds the funds and executes payouts; Payport provides technology, onboarding and instructions | Payport contracts merchants as sub-merchants under an acquirer/provider's master account; the provider settles to Payport or directly to merchants | B or C at launch for each market or method, moving to A where licensed |
+| Who holds funds | Payport (trust) | Partner | Provider or acquirer (sometimes Payport as master merchant) | Varies by market |
+| Licences | RBZ PSP licence (non-banks via a sponsoring institution); trust arrangement; data controller licence | Partner's licence; Payport may still need registration as a technical service provider | Provider's licence; RBZ view on aggregation required | Per market |
+| Payport's ledger role | **Book of record** for customer funds; must reconcile to trust bank | **Shadow ledger** of the partner's books; reconciles to partner statements | Ledger of receivables from provider and payables to merchants | Both |
 | Settlement control | Full (subject to approvals) | Instruction only; partner executes | Limited; depends on provider's sub-merchant settlement | — |
 | Speed to market | Slowest (licensing 3–6+ months per secondary source) | Fastest | Fast for supported methods | Fast start, strategic end-state |
-| Capital and compliance burden | Highest (safeguarding, audits, reporting, AML programme) | Lowest; shared with partner | Moderate; KYB obligations still PayPort's | Grows over time |
+| Capital and compliance burden | Highest (safeguarding, audits, reporting, AML programme) | Lowest; shared with partner | Moderate; KYB obligations still Payport's | Grows over time |
 | Commercial margin | Highest | Lowest (partner fee) | Moderate | — |
-| Main risk | Licence and safeguarding failures are PayPort's | Dependency on one partner (contradicts "no external dependency"; mitigated by multi-partner design) | Concentration risk; provider may cap merchants | Complexity of two models |
+| Main risk | Licence and safeguarding failures are Payport's | Dependency on one partner (contradicts "no external dependency"; mitigated by multi-partner design) | Concentration risk; provider may cap merchants | Complexity of two models |
 
 **Recommendation [for decision]:**
 - **Design for D (hybrid).**
-- **Zimbabwe launch:** B with a sponsor bank, or A if PayPort already holds or is close to a licence. Because non-banks apply with a sponsoring institution, a bank relationship is needed in either case.
+- **Zimbabwe launch:** B with a sponsor bank, or A if Payport already holds or is close to a licence. Because non-banks apply with a sponsoring institution, a bank relationship is needed in either case.
 - **Other markets:** start with B or C in each country until volume justifies local licensing.
 
 The architecture supports all four because:
@@ -59,7 +59,7 @@ The architecture supports all four because:
 | Consolidated dashboard | **Yes** | Figures tagged by entity and currency; no cross-currency sums without FX |
 | Local settlement in each market | **Yes**, per market | Local entity or partner, local payout rail |
 | Cross-border settlement (collect in ZW, pay out abroad) | **Conditional** | Exchange control approval or a licensed cross-border route (bank / ADLA / PAPSS via a bank); compliance checks; FX at an approved rate. **Cannot be assumed.** |
-| PayPort holding funds in a new country | **Conditional** | Local licence or partner |
+| Payport holding funds in a new country | **Conditional** | Local licence or partner |
 
 ## 4. Regulatory obligations register (initial)
 
@@ -71,7 +71,7 @@ The architecture supports all four because:
 | O2 | Safeguarding / trust account for customer funds | RBZ | Finance | Unknown | Trust deed, bank letter, daily reconciliation |
 | O3 | AML/CFT programme: KYC/KYB, screening, monitoring, STR/CTR, record keeping | MLPC Act, FIU | MLRO | Unknown | Policy, appointed MLRO, FIU registration |
 | O4 | Data controller licence, DPO, breach notification (24 h), cross-border transfer notice | CDPA; SI 155/2024 | DPO | Unknown | POTRAZ licence, DPO appointment |
-| O5 | IMTT and VAT treatment of PayPort's flows and fees | Finance Act | Finance / tax adviser | Unknown | Tax opinion |
+| O5 | IMTT and VAT treatment of Payport's flows and fees | Finance Act | Finance / tax adviser | Unknown | Tax opinion |
 | O6 | QR participation via the National Switch scheme | RBZ QR Guidelines 2026 | Product | Not started | Scheme agreement, MAI ID |
 | O7 | RBZ incident and fraud reporting timelines | RBZ guidelines / cybersecurity framework | CISO | Not started | Runbook, contacts |
 | O8 | Record retention periods (financial, KYC, transaction) | MLPC Act, tax law | Compliance | Unknown | Retention schedule |

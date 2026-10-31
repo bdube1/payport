@@ -1,4 +1,4 @@
-# PayPort staging (owner, 2026-10-25). Imported from /etc/caddy/Caddyfile by scripts/staging/setup-staging-domains.sh.
+# Payport staging (owner, 2026-10-25). Imported from /etc/caddy/Caddyfile by scripts/staging/setup-staging-domains.sh.
 # Caddy obtains and renews the https certificates itself.
 # The portals are served straight from their builds (no Node process), compressed; the hashed files under /assets
 # are cached by browsers for a year, everything else is re-checked so a new build shows at once.

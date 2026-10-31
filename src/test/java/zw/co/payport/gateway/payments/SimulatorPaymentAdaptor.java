@@ -106,7 +106,7 @@ public class SimulatorPaymentAdaptor implements PaymentProviderAdaptor {
 
     @Override
     public PaymentStatusResult queryStatus(String providerReference) throws Exception {
-        // The simulator's provider reference is "SIM-" + PayPort reference; fall back to the reference itself.
+        // The simulator's provider reference is "SIM-" + Payport reference; fall back to the reference itself.
         String ref = providerReference != null && providerReference.startsWith("SIM-") ? providerReference.substring(4) : providerReference;
         Script s = script(ref);
         s.queries.incrementAndGet();

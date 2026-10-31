@@ -32,7 +32,7 @@
       { "name": "subject_nationality", "label": "Nationality / country of incorporation", "source": "manual", "required": false },
       { "name": "subject_address", "label": "Physical address", "source": "manual", "required": false },
       { "name": "subject_occupation", "label": "Occupation / business activity", "source": "manual", "required": false },
-      { "name": "relationship", "label": "Relationship with PayPort (customer since, products used)", "source": "manual", "required": true }
+      { "name": "relationship", "label": "Relationship with Payport (customer since, products used)", "source": "manual", "required": true }
     ]},
     { "id": "D", "label": "Transactions", "fields": [
       { "name": "transactions", "label": "Transactions linked to the suspicion", "source": "case.transactions", "required": true },

@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Payment options in the store (owner, 31 Oct 2026): the methods the merchant accepts, as PayPort Payments says (kept
+ * Payment options in the store (owner, 31 Oct 2026): the methods the merchant accepts, as Payport Payments says (kept
  * here so the store still shows them when the PSP is briefly down), plus pay on delivery when the store allows it.
  */
 @Service
@@ -39,7 +39,7 @@ public class Options {
         this.psp = psp;
     }
 
-    /** From PayPort Payments' answer: [{code, enabled}, ...]. */
+    /** From Payport Payments' answer: [{code, enabled}, ...]. */
     public void remember(long merchantId, JsonNode methods) {
         if (methods == null || !methods.isArray()) return;
         List<String> on = new ArrayList<>();
@@ -62,7 +62,7 @@ public class Options {
         return out;
     }
 
-    /** Asks PayPort Payments again (after the merchant changed its methods). */
+    /** Asks Payport Payments again (after the merchant changed its methods). */
     public List<String> refresh(long merchantId) {
         try {
             remember(merchantId, psp.merchant(merchantId).path("methods"));

@@ -17,7 +17,7 @@ import java.util.UUID;
 
 /**
  * The platform event stream (platform_events): one append-only record of each thing that happens to money, written
- * when it happens and read in order by PayPort Commerce, reporting and later PayPort Intelligence.
+ * when it happens and read in order by Payport Commerce, reporting and later Payport Intelligence.
  *
  * Rules: an event is never changed or deleted before its retention ends; each state change gives exactly one event
  * (the dedupe key, e.g. "checkout:42:paid", is unique, so a repeated or concurrent record is ignored); payloads are

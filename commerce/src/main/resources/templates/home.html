@@ -2,8 +2,8 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title th:text="${q != null} ? ${q} + ' | PayPort Store' : (${type != null} ? ${type} + ' | PayPort Store' : 'PayPort Store')">PayPort Store</title>
-  <meta name="description" content="Find it local. Pay it instantly. Food, drinks, clothing, beauty and services from PayPort merchants.">
+  <title th:text="${q != null} ? ${q} + ' | Payport Store' : (${type != null} ? ${type} + ' | Payport Store' : 'Payport Store')">Payport Store</title>
+  <meta name="description" content="Find it local. Pay it instantly. Food, drinks, clothing, beauty and services from Payport merchants.">
   <link rel="preload" href="/assets/fonts/plus-jakarta-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/assets/dir.css">
 </head>
@@ -50,7 +50,7 @@
 
     <section th:if="${q != null}" class="d-ai">
       <div class="d-ai-head">
-        <span class="d-ai-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg> PayPort AI</span>
+        <span class="d-ai-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg> Payport AI</span>
         <a href="/" class="d-link">Clear</a>
       </div>
       <p class="d-ai-answer" th:text="${answer}">Answer</p>
@@ -118,7 +118,7 @@
   </div>
 </main>
 <footer class="d-foot">
-  <span>Payments by <strong>PayPort</strong></span>
+  <span>Payments by <strong>Payport</strong></span>
   <a href="https://www.payport.africa/terms" rel="noopener">Terms</a>
   <a href="https://www.payport.africa/privacy" rel="noopener">Privacy</a>
 </footer>

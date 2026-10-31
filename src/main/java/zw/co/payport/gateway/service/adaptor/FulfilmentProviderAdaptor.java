@@ -17,7 +17,7 @@ public interface FulfilmentProviderAdaptor {
     String getProviderCode();
 
     /**
-     * True if this provider identifies a delivery by a reference PayPort generates (eSolutions:
+     * True if this provider identifies a delivery by a reference Payport generates (eSolutions:
      * vendorReference) that must be recorded before sending, so an unknown outcome can be looked
      * up by exactly that reference.
      */

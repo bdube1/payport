@@ -118,7 +118,7 @@ public class CallbackInbox {
             return new Outcome(Status.INVALID, "unparseable: " + e.getMessage(), null, null);
         }
         if (claimed == null || claimed.getPayportReference() == null || claimed.getPayportReference().isBlank()) {
-            return new Outcome(Status.INVALID, "no PayPort reference in callback", null, claimed == null ? null : claimed.getStatus());
+            return new Outcome(Status.INVALID, "no Payport reference in callback", null, claimed == null ? null : claimed.getStatus());
         }
         // Providers echo the attempt reference (reference-N after a retried payment); the payment is the intent.
         String ref = PaymentAttemptStore.intentReference(claimed.getPayportReference());

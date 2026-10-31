@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /**
  * Phase 8 QR: a dynamic EMVCo QR for an open checkout session (shown on the hosted page or a till),
- * and resolution of a scanned PayPort QR back to the session to pay. Works only while the QR channel
+ * and resolution of a scanned Payport QR back to the session to pay. Works only while the QR channel
  * is switched on, which needs the QR_PAYMENTS licence question answered first.
  */
 @RestController
@@ -57,7 +57,7 @@ public class QrController {
 
     public record ResolveBody(String payload) {}
 
-    /** A wallet or the PayPort app scanned a code: which session is it, and can it still be paid? */
+    /** A wallet or the Payport app scanned a code: which session is it, and can it still be paid? */
     @PostMapping("/api/v1/qr/resolve")
     public ResponseEntity<ApiResponse<Map<String, Object>>> resolve(@RequestBody ResolveBody b, HttpServletRequest req) {
         channels.require("QR");
@@ -68,11 +68,11 @@ public class QrController {
             return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_QR", e.getMessage(), rid(req)));
         }
         if (p.merchantRef() == null || !p.merchantRef().startsWith("cs:")) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_QR", "Not a PayPort checkout code", rid(req)));
+            return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_QR", "Not a Payport checkout code", rid(req)));
         }
         long id;
         try { id = Long.parseLong(p.merchantRef().substring(3)); } catch (NumberFormatException e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_QR", "Not a PayPort checkout code", rid(req)));
+            return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_QR", "Not a Payport checkout code", rid(req)));
         }
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, amount_cents, currency, status FROM checkout_sessions WHERE id = ?", id);
         if (rows.isEmpty()) return ResponseEntity.status(404).body(ApiResponse.error("NOT_FOUND", "Checkout session not found", rid(req)));

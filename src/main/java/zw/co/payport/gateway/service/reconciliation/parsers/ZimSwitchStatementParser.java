@@ -19,7 +19,7 @@ import java.util.List;
  * AcquirerFees, IssuerFees, CashAmt, CashCurr, TranAmt, TranCurr, NetAmt".
  *
  * Only RspCode 0 (approved) financial messages (MessageType 200) are payments. References offered to
- * the matcher: RRN and STAN (the card network's identifiers); PayPort's own reference is not in
+ * the matcher: RRN and STAN (the card network's identifiers); Payport's own reference is not in
  * this report, so many lines match by amount and time (ReconEngine's second pass). PANs are
  * masked in the source and are not stored beyond the raw row.
  */

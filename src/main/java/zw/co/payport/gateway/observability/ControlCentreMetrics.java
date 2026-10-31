@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Business figures for the Operations Control Centre (Prometheus, then Grafana on the TV). Read from PayPort's own
+ * Business figures for the Operations Control Centre (Prometheus, then Grafana on the TV). Read from Payport's own
  * tables every 30 seconds with a handful of indexed, read-only queries, so Grafana never needs database access and the
  * TV never adds load to the payment path. Everything is a count or an average: no references, phone numbers or names.
  *

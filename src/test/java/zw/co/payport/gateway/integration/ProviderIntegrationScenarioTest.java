@@ -282,7 +282,7 @@ class ProviderIntegrationScenarioTest {
         assertEquals(TransactionStatus.COMPLETED, status(ref));
         var lookups = ESOLUTIONS.bodies(null, "0201");
         assertEquals(expected, lookups.get(lookups.size() - 1).get("originalReference"),
-                "looked up by the vend's reference (it used to be the PayPort reference, which eSolutions never saw)");
+                "looked up by the vend's reference (it used to be the Payport reference, which eSolutions never saw)");
         assertEquals(before + 1, ESOLUTIONS.bodies("U50000", "0200").size(), "exactly one vend: never re-vended");
     }
 

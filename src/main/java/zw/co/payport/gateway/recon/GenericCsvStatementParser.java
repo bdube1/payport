@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * PayPort's own statement CSV, for providers without a dedicated parser and for tests:
+ * Payport's own statement CSV, for providers without a dedicated parser and for tests:
  *
  *   reference,provider_reference,amount,currency,timestamp[,type]
  *

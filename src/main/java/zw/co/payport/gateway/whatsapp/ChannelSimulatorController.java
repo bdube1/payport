@@ -52,7 +52,7 @@ public class ChannelSimulatorController {
         return d;
     }
 
-    /** One WhatsApp message from the number; returns exactly what PayPort would reply on WhatsApp. */
+    /** One WhatsApp message from the number; returns exactly what Payport would reply on WhatsApp. */
     @PostMapping("/api/v1/admin/whatsapp/simulate")
     @PreAuthorize("hasAnyRole('ADMIN','OPS')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> whatsapp(@RequestBody WhatsAppBody b, HttpServletRequest req) {
@@ -79,7 +79,7 @@ public class ChannelSimulatorController {
         }, req);
     }
 
-    /** Messages PayPort started to the test number (after a PIN page, payment updates): the test phone shows them. */
+    /** Messages Payport started to the test number (after a PIN page, payment updates): the test phone shows them. */
     @org.springframework.web.bind.annotation.GetMapping("/api/v1/admin/whatsapp/simulate/outbox")
     @PreAuthorize("hasAnyRole('ADMIN','OPS')")
     public ResponseEntity<ApiResponse<java.util.List<Map<String, Object>>>> outbox(@org.springframework.web.bind.annotation.RequestParam String phone,

@@ -312,7 +312,7 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
         payload.put("referenceCode", request.getPayportReference());
         payload.put("tranType", "MER");
         payload.put("endUserId", formattedPhone);
-        payload.put("remarks", request.getDescription() != null ? request.getDescription() : "PayPort Payment");
+        payload.put("remarks", request.getDescription() != null ? request.getDescription() : "Payport Payment");
         payload.put("transactionOperationStatus", "Charged");
 
         // Payment amount structure
@@ -321,7 +321,7 @@ public class EcoCashAdaptor implements PaymentProviderAdaptor {
         Map<String, Object> chargingInfo = new LinkedHashMap<>();
         chargingInfo.put("amount", amount);
         chargingInfo.put("currency", request.getCurrency());
-        chargingInfo.put("description", request.getDescription() != null ? request.getDescription() : "PayPort Payment");
+        chargingInfo.put("description", request.getDescription() != null ? request.getDescription() : "Payport Payment");
         paymentAmount.put("charginginformation", chargingInfo);
 
         Map<String, Object> chargeMetaData = new LinkedHashMap<>();

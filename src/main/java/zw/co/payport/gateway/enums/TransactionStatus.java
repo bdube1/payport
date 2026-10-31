@@ -4,7 +4,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * PayPort Transaction State Machine
+ * Payport Transaction State Machine
  *
  * INITIATED → PAYMENT_PENDING → PAYMENT_CONFIRMED → FULFILMENT_PENDING → COMPLETED
  *

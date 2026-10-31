@@ -1,4 +1,4 @@
-# PayPort Commerce: status
+# Payport Commerce: status
 
 **Current phase:** 2a (stock, cart, pickup or delivery, customers), on top of Phase 1 (links, product pages, mini-store, sharing, PSP events). Built 31 October 2026.
 

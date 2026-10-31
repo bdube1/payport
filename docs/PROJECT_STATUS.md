@@ -1,4 +1,4 @@
-# PayPort PSP: project status
+# Payport PSP: project status
 
 _Last updated: 2026-10-22 (Phase 11 started: staging integration and acceptance). Living document._
 

@@ -1,4 +1,4 @@
-# PayPort Operations Control Centre: metrics, logs, traces, connectivity probes and the TV dashboards.
+# Payport Operations Control Centre: metrics, logs, traces, connectivity probes and the TV dashboards.
 #
 #   cp .env.example .env && chmod 600 .env && vi .env
 #   sudo scripts/setup.sh                    # secrets, start, TV playlist

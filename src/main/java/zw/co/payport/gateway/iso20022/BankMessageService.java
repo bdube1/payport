@@ -29,7 +29,7 @@ import java.util.Map;
  *    original pain.001 (OrgnlMsgId = batch reference) and applied through
  *    SettlementBatchService.applyPayoutResults (the same rules as any bank result: PAID only
  *    with the bank's reference, the file hash as proof, re-applying is a no-op);
- *  - camt.053.001.08 statements of PayPort's own accounts: validated, checked to be the
+ *  - camt.053.001.08 statements of Payport's own accounts: validated, checked to be the
  *    market's account, checked to balance (opening + booked credits - booked debits = closing),
  *    stored, and every booked entry traced: payout -> settlement item -> ledger journal.
  *    Nothing is adjusted automatically; whatever does not trace becomes a reconciliation exception.
@@ -110,7 +110,7 @@ public class BankMessageService {
             MarketRegistry.BankAccount account = markets.bankAccount(s.currency());
             if (!account.number().equals(s.accountId())) {
                 throw new Iso20022Schemas.InvalidMessageException("Statement " + s.statementId() + " is for account " + s.accountId()
-                        + ", which is not PayPort's " + s.currency() + " account in " + market.country());
+                        + ", which is not Payport's " + s.currency() + " account in " + market.country());
             }
             if (s.openingMinor() + s.bookedCredits() - s.bookedDebits() != s.closingMinor()) {
                 throw new Iso20022Schemas.InvalidMessageException("Statement " + s.statementId() + " does not balance: opening " + s.openingMinor()
@@ -191,7 +191,7 @@ public class BankMessageService {
         }
         if (items.isEmpty()) {
             exceptions.raise("MISSING_IN_PAYPORT", provider, null, e.bankReference(), null, e.amountMinor(), currency,
-                    e.direction() + " " + e.amountMinor() + " " + currency + " not traceable to a PayPort payout (" + nz(e.remittance()) + ")", "STATEMENT");
+                    e.direction() + " " + e.amountMinor() + " " + currency + " not traceable to a Payport payout (" + nz(e.remittance()) + ")", "STATEMENT");
             return new Trace("UNIDENTIFIED", null, null, "no payout with end-to-end id " + nz(e.endToEndId()));
         }
         Map<String, Object> item = items.get(0);

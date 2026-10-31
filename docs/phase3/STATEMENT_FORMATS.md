@@ -8,13 +8,13 @@ The sample files contain real customer data, so they are **not** in the reposito
 | InnBucks | xlsx "export", 30 columns, all text | `Status = COMPLETED` | STAN, Payment token, Head Transaction Id | payment | OK |
 | OneMoney | xlsx "Received Records"; currency and direction in two unnamed last columns | **now** `Status = 30` and direction `+` only (the parser previously took every row, including failures and refunds) | Merchant Order No. (= our reference), Trading No. | payment | Status and direction filter added |
 | O'mari | PDF wallet statement | "Merchant Settlement" entries; "Adjustment Debit" = liquidation | Ref, payment short code | payment | The parser's line pattern matches all 62 entries of the sample |
-| ZimSwitch | xlsx card switch report (STAN, RRN, masked PAN, RspCode, fees) | **new parser**: `RspCode = 0`, MessageType 200 | RRN, STAN | payment | No PayPort reference in the report, so lines are matched by unique amount and time (new second matching pass). PANs are not stored |
-| NetOne | xlsx recharge report | `RechargeStatus = Success` | AgentRefernece (= our reference) | **delivery** | Now reconciled against what PayPort delivered, not against payments; English locale for the dates |
+| ZimSwitch | xlsx card switch report (STAN, RRN, masked PAN, RspCode, fees) | **new parser**: `RspCode = 0`, MessageType 200 | RRN, STAN | payment | No Payport reference in the report, so lines are matched by unique amount and time (new second matching pass). PANs are not stored |
+| NetOne | xlsx recharge report | `RechargeStatus = Success` | AgentRefernece (= our reference) | **delivery** | Now reconciled against what Payport delivered, not against payments; English locale for the dates |
 | Telecel | xlsx top-up report, numeric cells | `response_code = 0` | agent_id (= our reference without punctuation, ≤ 20 characters), airwide_tid | **delivery** | Numeric ids were read as `2.0688945E7`; amounts were rounded through floating point. Both fixed (exact decimals) |
 
 **All spreadsheet parsers:** numeric cells are now read as Excel shows them (phone numbers and ids no longer become scientific notation), and amounts are converted exactly.
 
 **Matching:**
-1. By reference first: PayPort's reference (including attempt suffixes), the provider's reference, or the attempt references.
+1. By reference first: Payport's reference (including attempt suffixes), the provider's reference, or the attempt references.
 2. Then by amount, currency and time within 10 minutes, but only when the pairing is unique in both directions.
 3. An ambiguous line stays a `MISSING_IN_PAYPORT` exception, with the number of candidates in its detail.

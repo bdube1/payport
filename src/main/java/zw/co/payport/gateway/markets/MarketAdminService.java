@@ -130,7 +130,7 @@ public class MarketAdminService {
     /**
      * changes: market fields (see MARKET_FIELDS). currencies: per-currency changes or additions
      * (currency, enabled, live, symbol, checkoutProductType, bankAccountNumber, bankAccountName,
-     * ledgerOwner; plus name and minorUnits for a currency new to PayPort).
+     * ledgerOwner; plus name and minorUnits for a currency new to Payport).
      */
     public Map<String, Object> requestChange(String country, Map<String, Object> changes, List<Map<String, Object>> currencies, String reason, String by) {
         String cc = country.toUpperCase(Locale.ROOT);

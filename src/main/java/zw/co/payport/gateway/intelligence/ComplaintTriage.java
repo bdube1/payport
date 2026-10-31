@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * Complaint triage: suggests the complaint type (and so its priority and deadline) from the customer's words. A
- * multinomial naive Bayes text model, trained here on PayPort's own complaints (the type staff chose is the label)
+ * multinomial naive Bayes text model, trained here on Payport's own complaints (the type staff chose is the label)
  * and seeded from the complaint catalogue, so it helps from the first day and gets better as complaints are logged.
  * It only suggests: staff pick the type. Measured on complaints it was not trained on (accuracy, and how often the
  * right type is in its top three); each suggestion made when a complaint is opened is kept with what staff chose.

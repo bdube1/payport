@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/** Collections (the merchant's own groups), discount codes, and the PayPort store directory. */
+/** Collections (the merchant's own groups), discount codes, and the Payport store directory. */
 @Service
 public class Catalog {
 
@@ -184,11 +184,11 @@ public class Catalog {
         return jdbc.update("UPDATE discount_codes SET used = used + 1 WHERE id = ? AND active = TRUE AND (max_uses IS NULL OR used < max_uses)", discountId) > 0;
     }
 
-    // ─── the PayPort store directory ─────────────────────────────────────────
+    // ─── the Payport store directory ─────────────────────────────────────────
 
     /** Listed, open stores with something on sale, by type; optional search and type filter. */
     public List<Map<String, Object>> directory(String type, String q) {
-        StringBuilder sql = new StringBuilder("SELECT s.id, s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, s.cod_enabled, s.delivery_enabled, "
+        StringBuilder sql = new StringBuilder("SELECT s.id, s.slug, s.name, s.about, s.tagline, s.business_type, s.logo_image, s.banner_image, s.theme_color, s.cod_enabled, s.delivery_enabled, s.directory_featured, s.directory_rank, "
                 + "EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE' AND p.compare_at_minor IS NOT NULL) AS on_sale, "
                 + "(SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND o.payment_status = 'PAID' AND o.paid_at >= NOW() - INTERVAL 30 DAY) AS orders30, "
                 + "(SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE') AS products FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id "
@@ -203,7 +203,7 @@ public class Catalog {
             String like = "%" + q.trim().replace("%", "") + "%";
             for (int i = 0; i < 4; i++) args.add(like);
         }
-        sql.append(" ORDER BY s.name LIMIT 500");
+        sql.append(" ORDER BY COALESCE(s.directory_rank, 100000), s.name LIMIT 500");
         return jdbc.queryForList(sql.toString(), args.toArray());
     }
 

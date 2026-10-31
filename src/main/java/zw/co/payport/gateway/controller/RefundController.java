@@ -55,7 +55,7 @@ public class RefundController {
                     initiatedByType, initiatedById);
 
             Map<String, Object> map = toMap(refund);
-            map.put("note", "Taken from your balance. PayPort pays your customer back and records the payout.");
+            map.put("note", "Taken from your balance. Payport pays your customer back and records the payout.");
             return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(map, requestId(req)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error("REFUND_FAILED", e.getMessage(), requestId(req)));

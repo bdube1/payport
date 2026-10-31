@@ -17,7 +17,7 @@ public class Counterparties {
 
     private static final Map<String, String> SHORT = Map.of(
             "ECONET", "Econet", "NETONE", "NetOne", "TELECEL", "Telecel", "ZESA", "ZESA", "DSTV", "DStv",
-            "TELONE", "TelOne", "PAYPORT_WALLET", "PayPort Wallet", "ECOCASH", "EcoCash", "ONEMONEY", "OneMoney");
+            "TELONE", "TelOne", "PAYPORT_WALLET", "Payport Wallet", "ECOCASH", "EcoCash", "ONEMONEY", "OneMoney");
 
     private final JdbcTemplate jdbc;
     private final Map<String, String> providers = new ConcurrentHashMap<>();

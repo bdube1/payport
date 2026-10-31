@@ -1,4 +1,4 @@
-# PayPort Operations Control Centre
+# Payport Operations Control Centre
 
 One overview on the TV, five detailed dashboards for the operations team. The TV rotates through the five
 dashboards on its own (one minute each); anyone can open a single dashboard in Grafana to investigate.
@@ -7,7 +7,7 @@ dashboards on its own (one minute each); anyone can open a single dashboard in G
 
 ```mermaid
 flowchart TB
-    subgraph PROD["PayPort platform (one operational environment)"]
+    subgraph PROD["Payport platform (one operational environment)"]
         GW["PSP backend (gateway)\nAPIs · payments · ledger · wallets"]
         DB[("MySQL")]
         PROV["Payment providers\nEcoCash · OneMoney · NetOne · Econet · Telecel\neSolutions · ZimSwitch · O'mari · InnBucks"]
@@ -51,12 +51,12 @@ flowchart TB
     KIB -.-> TV
 ```
 
-| Piece | What it does for PayPort |
+| Piece | What it does for Payport |
 |---|---|
 | **Gateway metrics** | JVM, every API request (response times by route and status), database pool, and the Control Centre figures the gateway computes every 30 seconds from its own tables: transactions today by outcome and channel, transactions per minute, success rate, pending and uncertain payments, provider availability (from the real provider checks), provider success rate and payment latency, refunds, reversals waiting, settlement batches, reconciliation exceptions, callbacks rejected and repeated, webhook deliveries, fraud alerts, complaints, privileged actions. Counts only: no references, phone numbers or names. |
 | **Security events** | Counted where they happen: failed logins (customer and staff), wrong PINs, locked accounts, rate-limit violations, permission refusals, invalid webhook signatures, repeated (idempotent) requests. |
 | **Prometheus** | Collects all metrics every 15 s and evaluates the alert rules (`prometheus/rules/payport.yml`). |
-| **Blackbox exporter** | TCP connect and ICMP (latency, packet loss) to every provider the gateway is configured with, HTTP checks of the provider callback addresses and of PayPort's public sites. Provider targets are discovered from the gateway (`/api/v1/monitoring/targets`), so they always match its configuration. |
+| **Blackbox exporter** | TCP connect and ICMP (latency, packet loss) to every provider the gateway is configured with, HTTP checks of the provider callback addresses and of Payport's public sites. Provider targets are discovered from the gateway (`/api/v1/monitoring/targets`), so they always match its configuration. |
 | **node / MySQL exporters** | Server CPU, memory, disk, network; database health, connections, slow queries. |
 | **Loki + Promtail** | Gateway and Caddy logs, searchable from Grafana; phone numbers and bearer tokens are masked before they leave the server. |
 | **Tempo** | Request traces from the gateway (OpenTelemetry Java agent): a slow payment can be followed across the gateway, the database and the provider call. |

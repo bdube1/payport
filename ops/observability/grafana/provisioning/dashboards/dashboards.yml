@@ -1,7 +1,7 @@
 apiVersion: 1
 providers:
   - name: payport-control-centre
-    folder: PayPort Control Centre
+    folder: Payport Control Centre
     type: file
     allowUiUpdates: false
     options: { path: /var/lib/grafana/dashboards }

@@ -44,7 +44,7 @@ _Reviewed 2026-10-16 against `payport-ops` (48cb36a), `payport-merchant` (1df842
 | 4 | consumer, mobile | `/pay` calls | No `Idempotency-Key`. A double tap or a network retry can submit twice. The backend refuses the second push, but the customer sees an error. | Send `Idempotency-Key: <uuid per pay attempt>` on `/initiate` and `/pay`. Reuse it when retrying the same attempt. |
 | 5 | consumer, mobile | pay error handling | A suspended or failing provider now returns **503 `PROVIDER_UNAVAILABLE`** ("No money was taken"). | Show the message and offer the other payment methods. Do not show a generic failure. |
 | 6 | ops | `pages/MerchantsPage.jsx` → `approveMerchant` | Approval is now four-eyes. The single-click **Approve returns 409 `KYB_RECOMMENDATION_REQUIRED`**. | Replace with the KYB case flow (section 2, ops). |
-| 7 | consumer | `Checkout.jsx`, `PaymentLink.jsx` (hosted checkout) | Live payments in a currency PayPort has not enabled for the merchant are refused (400, message "Live payments in ZWG are not enabled for this account"). | No code change once #0 shipped. Optionally hide the pay button and show the message on load. |
+| 7 | consumer | `Checkout.jsx`, `PaymentLink.jsx` (hosted checkout) | Live payments in a currency Payport has not enabled for the merchant are refused (400, message "Live payments in ZWG are not enabled for this account"). | No code change once #0 shipped. Optionally hide the pay button and show the message on load. |
 
 ## 2. New screens and flows
 
@@ -54,7 +54,7 @@ _Reviewed 2026-10-16 against `payport-ops` (48cb36a), `payport-merchant` (1df842
 |---|---|---|
 | **API keys** (extend `ApiKeys.jsx`) | `POST /api-keys` `{environment, label, scopes[], expiresAt}`; `POST /api-keys/{id}/rotate?overlapHours=`; `POST /api-keys/{id}/revoke`; `GET /api-keys` (now includes `scopes`, `expiresAt`, `rotatedFromId`) | Show the secret **once**, with a copy button. Scope picker with 9 scopes, default all. LIVE is disabled until `/readiness` says `liveReady` (409 `NOT_LIVE_READY` lists what's missing). Only the owner can create live keys. |
 | **Go-live checklist** (new) | `GET /readiness` | Merchant approved; currency enabled; verified settlement destination. Each item links to its screen. |
-| **Settlement destinations** (new, owner only) | `GET`/`POST /settlement-destinations` | States: PENDING_VERIFICATION, VERIFIED, REJECTED, RETIRED. The account number is masked. Explain that PayPort verifies before any payout. |
+| **Settlement destinations** (new, owner only) | `GET`/`POST /settlement-destinations` | States: PENDING_VERIFICATION, VERIFIED, REJECTED, RETIRED. The account number is masked. Explain that Payport verifies before any payout. |
 | **Balances** (replace the `/balance` card on Dashboard) | `GET /balances?mode=live\|test` | Four buckets per currency: pending (hold), available, in settlement, paid out. Test/live toggle. |
 | **Statement** (new) | `GET /statement?currency=&from=&to=&mode=` | Lines with a running net. CSV export can be done client-side. |
 | **Payouts** (replace `Settlements.jsx`) | `GET /payouts` | Combines new-settlement payouts and legacy settlements. Status, bank reference, paid date, return reason. |

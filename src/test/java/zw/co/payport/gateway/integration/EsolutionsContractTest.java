@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Contract tests for the eSolutions billers against spec-shaped fixtures (no eSolutions sandbox
- * access): what PayPort sends (message type, processing code, references, amounts, currency,
+ * access): what Payport sends (message type, processing code, references, amounts, currency,
  * auth) and how each answer is interpreted. Evidence level: SPEC_FIXTURE.
  */
 class EsolutionsContractTest {

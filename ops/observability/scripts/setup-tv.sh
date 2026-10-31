@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates (or updates) the "PayPort TV" playlist in Grafana: the five Control Centre dashboards, 60 seconds each.
+# Creates (or updates) the "Payport TV" playlist in Grafana: the five Control Centre dashboards, 60 seconds each.
 # Prints the address to open on the TV.   Usage: scripts/setup-tv.sh [seconds-per-dashboard]
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -9,7 +9,7 @@ G=${GRAFANA_LOCAL_URL:-http://127.0.0.1:3300}
 AUTH="${GRAFANA_ADMIN_USER:-admin}:${GRAFANA_ADMIN_PASSWORD}"
 for i in $(seq 1 30); do curl -fsS "$G/api/health" >/dev/null 2>&1 && break; sleep 2; done
 body=$(cat <<JSON
-{"name":"PayPort TV","interval":"$INTERVAL","items":[
+{"name":"Payport TV","interval":"$INTERVAL","items":[
  {"type":"dashboard_by_uid","value":"pp-cc-overview"},
  {"type":"dashboard_by_uid","value":"pp-cc-infrastructure"},
  {"type":"dashboard_by_uid","value":"pp-cc-payments"},
@@ -17,7 +17,7 @@ body=$(cat <<JSON
  {"type":"dashboard_by_uid","value":"pp-cc-integrations"}]}
 JSON
 )
-uid=$(curl -fsS -u "$AUTH" "$G/api/playlists?query=PayPort%20TV" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["uid"] if d else "")')
+uid=$(curl -fsS -u "$AUTH" "$G/api/playlists?query=Payport%20TV" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["uid"] if d else "")')
 if [ -n "$uid" ]; then
   curl -fsS -u "$AUTH" -X PUT -H 'Content-Type: application/json' "$G/api/playlists/$uid" -d "$body" >/dev/null
 else

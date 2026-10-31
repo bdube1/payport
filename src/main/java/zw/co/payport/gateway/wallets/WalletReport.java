@@ -313,7 +313,7 @@ public class WalletReport {
         }
         String stamp = LocalDate.now().toString();
         if ("pdf".equalsIgnoreCase(format)) {
-            String title = "PayPort wallet report" + (present(from) || present(to) ? " " + (present(from) ? from : "") + " to " + (present(to) ? to : stamp) : "")
+            String title = "Payport wallet report" + (present(from) || present(to) ? " " + (present(from) ? from : "") + " to " + (present(to) ? to : stamp) : "")
                     + " (" + rows.size() + " operations)";
             return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"wallet-report-" + stamp + ".pdf\"")
                     .contentType(MediaType.APPLICATION_PDF).body(pdf(rows, title));

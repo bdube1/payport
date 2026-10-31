@@ -1,11 +1,11 @@
-# PayPort CI: the real build with real dependencies. This is the verification gate for
+# Payport CI: the real build with real dependencies. This is the verification gate for
 # every phase: no change is considered built or tested until this workflow passes.
 name: ci
 
 on:
   push:
     branches: [ main, 'phase*' ]
-    # PayPort Commerce has its own workflow; monitoring and Commerce documents need no gateway build.
+    # Payport Commerce has its own workflow; monitoring and Commerce documents need no gateway build.
     paths-ignore: [ 'commerce/**', 'ops/observability/**', 'docs/commerce/**', '.github/workflows/commerce.yml' ]
   pull_request:
     paths-ignore: [ 'commerce/**', 'ops/observability/**', 'docs/commerce/**', '.github/workflows/commerce.yml' ]

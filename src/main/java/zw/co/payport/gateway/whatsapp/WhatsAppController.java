@@ -81,7 +81,7 @@ public class WhatsAppController {
         return Web.run(() -> {
             String to = b.to() == null ? "" : b.to().replaceAll("[^0-9]", "");
             if (to.length() < 9) throw new IllegalArgumentException("Enter the number to send the test to, with its country code");
-            String err = sender.send(to, "PayPort WhatsApp is connected. Send MENU to start.");
+            String err = sender.send(to, "Payport WhatsApp is connected. Send MENU to start.");
             return Map.<String, Object>of("sent", err == null, "error", err == null ? "" : err);
         }, req);
     }

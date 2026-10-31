@@ -148,9 +148,9 @@ class ReconSettlementScenarioTest {
                 + csvLine(matched, "", "5.00", "USD", now.minusHours(2))
                 + csvLine(matched, "", "5.00", "USD", now.minusHours(2))            // duplicate
                 + csvLine(amountDiff, "", "7.50", "USD", now.minusHours(1))         // amount mismatch
-                + csvLine(failed, "", "3.00", "USD", now.minusMinutes(50))          // provider paid, PayPort failed
-                + csvLine(timing, "", "4.00", "USD", now.minusMinutes(40))          // PayPort recorded it two days ago
-                + csvLine("", "ECO-UNKNOWN-1", "12.00", "USD", now.plusHours(2));  // no such payment at PayPort (also closes the window)
+                + csvLine(failed, "", "3.00", "USD", now.minusMinutes(50))          // provider paid, Payport failed
+                + csvLine(timing, "", "4.00", "USD", now.minusMinutes(40))          // Payport recorded it two days ago
+                + csvLine("", "ECO-UNKNOWN-1", "12.00", "USD", now.plusHours(2));  // no such payment at Payport (also closes the window)
         byte[] bytes = csv.getBytes(StandardCharsets.UTF_8);
         var lines = recon.parse("SIM", "CSV", bytes);
         var imported = recon.importStatement("SIM", "sim-statement.csv", bytes, lines, "fin.carol");
@@ -318,7 +318,7 @@ class ReconSettlementScenarioTest {
         long m = merchant("Zig Traders " + SEQ.get());
         session(m, z1, 40_000, 1_200, true, "ZWG");
         session(m, z2, 60_000, 1_800, true, "ZWG");
-        // Automatic approval only pays to a destination PayPort staff verified (merchant adds, staff verifies).
+        // Automatic approval only pays to a destination Payport staff verified (merchant adds, staff verifies).
         jdbc.update("INSERT INTO merchant_settlement_destinations (merchant_id, currency, type, account_name, account_number, institution, status, "
                 + "requested_by, requested_at, verified_by, verified_at) VALUES (?, 'ZWG', 'BANK', 'Zig Traders', '9988776655', 'CBZ', 'VERIFIED', "
                 + "'merchant:owner', NOW(), 'ops.verifier', NOW())", m);

@@ -58,10 +58,10 @@ public class MerchantPasswordController {
                 u.setResetToken(PortalCredentials.sha256(token));
                 u.setResetTokenExpiresAt(LocalDateTime.now().plusHours(1));
                 users.save(u);
-                email.sendPortalMail(u.getEmail(), "Reset your PayPort merchant password",
-                        "Hi " + u.getFullName() + ",\n\nA password reset was requested for your PayPort merchant portal login.\n\n"
+                email.sendPortalMail(u.getEmail(), "Reset your Payport merchant password",
+                        "Hi " + u.getFullName() + ",\n\nA password reset was requested for your Payport merchant portal login.\n\n"
                                 + "Choose a new password here (the link works for 1 hour):\n" + portalUrl + "/reset-password?token=" + token
-                                + "\n\nIf you did not ask for this, ignore this email.\n\n-- PayPort");
+                                + "\n\nIf you did not ask for this, ignore this email.\n\n-- Payport");
             });
             return Map.<String, Object>of("sent", true);
         }, req);
@@ -116,9 +116,9 @@ public class MerchantPasswordController {
             u.setResetTokenExpiresAt(null);
             users.save(u);
             audit.record(Web.staff(), "MERCHANT_PASSWORD_RESET", "merchant_user:" + u.getId(), u.getEmail());
-            boolean sent = email.sendPortalMail(u.getEmail(), "Your PayPort merchant password was reset",
-                    "Hi " + u.getFullName() + ",\n\nYour PayPort merchant portal password was reset by PayPort.\n\nTemporary password: " + temp
-                            + "\nSign in at " + portalUrl + "/login and choose a new password.\n\n-- PayPort");
+            boolean sent = email.sendPortalMail(u.getEmail(), "Your Payport merchant password was reset",
+                    "Hi " + u.getFullName() + ",\n\nYour Payport merchant portal password was reset by Payport.\n\nTemporary password: " + temp
+                            + "\nSign in at " + portalUrl + "/login and choose a new password.\n\n-- Payport");
             Map<String, Object> out = new LinkedHashMap<>(view(u));
             out.put("temporaryPassword", temp);
             out.put("emailed", sent);

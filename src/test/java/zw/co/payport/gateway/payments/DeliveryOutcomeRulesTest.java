@@ -12,7 +12,7 @@ class DeliveryOutcomeRulesTest {
     void econetCodesFromTheXmlRpcSpec() {
         assertEquals("8200", DeliveryOutcomeRules.code("ECONET", null, "{Status=0, StatusCode=8200, Description=(8200) External Temp Error}"));
         assertEquals(RETRYABLE, DeliveryOutcomeRules.classify("ECONET", "8200"));
-        assertEquals(RETRYABLE, DeliveryOutcomeRules.classify("ECONET", "905"));     // insufficient credit: PayPort's float
+        assertEquals(RETRYABLE, DeliveryOutcomeRules.classify("ECONET", "905"));     // insufficient credit: Payport's float
         assertEquals(UNKNOWN, DeliveryOutcomeRules.classify("ECONET", "990"));       // request timeout
         assertEquals(UNKNOWN, DeliveryOutcomeRules.classify("ECONET", "8210"));      // external timeout
         assertEquals(UNKNOWN, DeliveryOutcomeRules.classify("ECONET", "8060"));      // duplicate

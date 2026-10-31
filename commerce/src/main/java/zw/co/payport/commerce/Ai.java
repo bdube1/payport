@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * PayPort AI in the store (owner, 31 Oct 2026): the shopping assistant behind the search box (plain words such as
+ * Payport AI in the store (owner, 31 Oct 2026): the shopping assistant behind the search box (plain words such as
  * "school shoes for my son delivered" find the right stores and items, with a short answer), and the writer of product
  * descriptions for merchants.
  *
@@ -121,7 +121,7 @@ public class Ai {
             facts.append("- ").append(it.get("name")).append(", ").append(it.get("price")).append(", at ").append(it.get("store"))
                     .append(Boolean.TRUE.equals(it.get("cod")) ? " (pay on delivery available)" : "").append('\n');
         }
-        String prompt = "A shopper on PayPort Store (Zimbabwe) asked: \"" + q.text().replace("\"", "'") + "\".\nMatching items:\n" + facts
+        String prompt = "A shopper on Payport Store (Zimbabwe) asked: \"" + q.text().replace("\"", "'") + "\".\nMatching items:\n" + facts
                 + "\nIn at most two short sentences, tell the shopper which items fit best and where. Use only the items listed; "
                 + "do not invent products, prices or stores. Plain text, no lists, no greetings.";
         String out = complete(prompt, 160);
@@ -155,7 +155,7 @@ public class Ai {
             if (out != null && !out.isBlank()) return Shop.clip(out.trim(), 2000);
         }
         StringBuilder b = new StringBuilder();
-        b.append(n).append(service ? " — booked online and paid securely with PayPort." : " — order online and pay securely with PayPort.");
+        b.append(n).append(service ? " — booked online and paid securely with Payport." : " — order online and pay securely with Payport.");
         if (no != null) b.append(' ').append(Character.toUpperCase(no.charAt(0))).append(no.substring(1)).append(no.endsWith(".") ? "" : ".");
         if (c != null) b.append(" Part of our ").append(c.toLowerCase(Locale.ROOT)).append(" range.");
         return b.toString();

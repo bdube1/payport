@@ -1,4 +1,4 @@
-/* PayPort Store front page (owner's design, 31 Oct 2026). Sizes in rem follow the design at 1936px wide (1rem = 16px there)
+/* Payport Store front page (owner's design, 31 Oct 2026). Sizes in rem follow the design at 1936px wide (1rem = 16px there)
    and scale with the window, so every width shows the same proportions; phones get their own layout below. */
 @font-face{font-family:"Plus Jakarta Sans";font-weight:400;font-style:normal;font-display:swap;src:url(/assets/fonts/plus-jakarta-sans-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:"Plus Jakarta Sans";font-weight:500;font-style:normal;font-display:swap;src:url(/assets/fonts/plus-jakarta-sans-latin-500-normal.woff2) format("woff2")}
@@ -107,7 +107,7 @@ a{color:inherit}
 .d-tag.rate{background:#FFF4E0;color:#9A5B00}
 .d-empty{color:var(--muted);font-size:1.4rem}
 
-/* PayPort AI answer */
+/* Payport AI answer */
 .d-ai{margin-top:2.4rem;background:#fff;border-radius:1.75rem;padding:1.6rem 1.8rem;box-shadow:0 .6rem 1.8rem rgba(16,72,120,.08)}
 .d-ai-head{display:flex;justify-content:space-between;align-items:center}
 .d-ai-badge{display:inline-flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.3rem;color:#5B3FD6;background:#EFEBFF;border-radius:999px;padding:.35rem .9rem}
@@ -195,3 +195,19 @@ a{color:inherit}
 .d-list form{margin:0}
 @media (max-width:700px){.d-two{grid-template-columns:1fr}.d-order{flex-direction:column}.d-order-side{justify-items:start;text-align:left}.d-hello{font-size:26px}
   .d-signout{font-size:14px}.d-order-store{font-size:16px}.d-order-meta,.d-list li{font-size:14px}.d-btn{font-size:14px}}
+
+/* Store user sign-in */
+.d-auth{display:grid;place-items:start center;padding:4rem 1.5rem 3rem}
+.d-auth-card{width:100%;max-width:34rem;background:#fff;border-radius:1.75rem;padding:2.6rem 2.4rem;box-shadow:0 .8rem 2.4rem rgba(16,72,120,.1)}
+.d-auth-card h1{margin:0 0 1.4rem;font-size:2.4rem;font-weight:800;letter-spacing:-.03em;color:var(--ink-2)}
+.d-auth-sub{color:var(--muted);font-size:1.35rem;margin:-.6rem 0 1.2rem}
+.d-form{display:grid;gap:1.1rem}
+.d-form label{display:grid;gap:.4rem;font-size:1.3rem;font-weight:600;color:var(--ink-2)}
+.d-form input{font:inherit;font-size:1.45rem;font-weight:400;padding:1rem 1.1rem;border:1px solid #CFDCE6;border-radius:1rem;color:var(--ink);background:#fff}
+.d-form input:focus{outline:2px solid #0C6CA6;outline-offset:1px}
+.d-auth-btn{font:inherit;font-weight:600;font-size:1.5rem;color:#fff;border:0;border-radius:1rem;padding:1.1rem;cursor:pointer;margin-top:.4rem;background:linear-gradient(180deg,#1784BC,#0B6493)}
+.d-auth-alt{text-align:center;color:var(--muted);font-size:1.3rem;margin:1.2rem 0 0}
+.d-auth-alt a{color:var(--blue);font-weight:600}
+.d-auth-err{background:#FFF1F0;color:#A8071A;border-radius:1rem;padding:1rem 1.2rem;font-size:1.3rem;margin:0 0 1.2rem}
+@media (max-width:700px){.d-auth{padding:24px 16px}.d-auth-card{padding:22px 18px;border-radius:18px}.d-auth-card h1{font-size:24px}
+  .d-form label{font-size:14px}.d-form input{font-size:16px;padding:12px}.d-auth-btn{font-size:16px;padding:13px}.d-auth-alt,.d-auth-sub,.d-auth-err{font-size:14px}}

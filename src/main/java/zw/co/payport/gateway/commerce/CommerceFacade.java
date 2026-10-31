@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The only door between PayPort Commerce and the PSP (PspPaymentsApi in the Phase 0 assessment). Commerce runs as
+ * The only door between Payport Commerce and the PSP (PspPaymentsApi in the Phase 0 assessment). Commerce runs as
  * its own service with its own database, so it keeps working when the PSP is down (owner, 2026-10-31); it asks the
  * PSP for money things only through here, and the PSP stays the only authority on money:
  *
@@ -67,7 +67,7 @@ public class CommerceFacade {
 
     /** The service key check: a missing or wrong key is refused; no key configured means the door is closed. */
     public void requireKey(String presented) {
-        if (key.length() < 24) throw new SecurityException("PayPort Commerce is not connected");
+        if (key.length() < 24) throw new SecurityException("Payport Commerce is not connected");
         if (presented == null || !MessageDigest.isEqual(key.getBytes(StandardCharsets.UTF_8), presented.trim().getBytes(StandardCharsets.UTF_8))) {
             throw new SecurityException("Wrong service key");
         }
@@ -94,7 +94,7 @@ public class CommerceFacade {
         String description = b.description() == null ? null : b.description().length() > 200 ? b.description().substring(0, 200) : b.description();
         CheckoutSession s;
         try {
-            // Store payments are test mode (sandbox) until PayPort switches them to live with the owner's approval.
+            // Store payments are test mode (sandbox) until Payport switches them to live with the owner's approval.
             s = checkouts.createSession(m, null, new CheckoutSessionService.CreateSessionRequest(ref, b.amountMinor(), b.currency(), description,
                     null, null, b.successUrl(), b.cancelUrl(), meta), methods.commerceLive());
             String pick = methods.preferred(m.getId(), b.method());
@@ -204,6 +204,7 @@ public class CommerceFacade {
      * to the customer who placed the order. Short, capped per merchant per day; the number is not stored.
      */
     public Map<String, Object> message(NewMessage b) {
+        if ("STORE_USER".equals(b.to())) return storeUserMessage(b);
         Merchant m = merchant(b.merchantId());
         if (!"ACTIVE".equals(m.getStatus())) throw new IllegalStateException("This merchant cannot send messages at the moment");
         String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
@@ -220,7 +221,25 @@ public class CommerceFacade {
         return Map.of("queued", true);
     }
 
-    /** For PayPort Commerce's sign-in: who the merchant user behind a merchant portal token is. */
+    /**
+     * A text to a Payport Store user that no merchant sends (their password reset code). At most three an hour and ten
+     * a day per number; the number is kept only as a hash for that count.
+     */
+    Map<String, Object> storeUserMessage(NewMessage b) {
+        String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
+        if (text.isEmpty() || text.length() > 160) throw new IllegalArgumentException("A message is 1 to 160 characters");
+        String phone = b.phone() == null ? null : b.phone().replaceAll("[\\s()-]", "");
+        if (phone == null || !phone.matches("\\+?[0-9]{9,15}")) throw new IllegalArgumentException("Invalid phone number");
+        String who = "SU-" + StoreUsers.sha(phone.replaceAll("\\D", "")).substring(0, 40);
+        Integer hour = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = 0 AND reference = ? AND created_at >= NOW() - INTERVAL 1 HOUR", Integer.class, who);
+        Integer day = jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = 0 AND reference = ? AND created_at >= NOW() - INTERVAL 1 DAY", Integer.class, who);
+        if ((hour != null && hour >= 3) || (day != null && day >= 10)) throw new IllegalStateException("Too many messages to this number. Please try again later.");
+        jdbc.update("INSERT INTO commerce_messages (merchant_id, kind, reference, created_at) VALUES (0, 'STORE_USER', ?, NOW(6))", who);
+        if (sms != null) sms.sendText(phone, text, "STORE", "STORE_USER_CODE");
+        return Map.of("queued", true);
+    }
+
+    /** For Payport Commerce's sign-in: who the merchant user behind a merchant portal token is. */
     public Map<String, Object> identity(Merchant m, zw.co.payport.gateway.entity.MerchantUser u) {
         Map<String, Object> v = merchantInfo(m.getId());
         v.put("userId", u == null ? null : u.getId());

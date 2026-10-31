@@ -117,7 +117,7 @@ BASE=http://localhost:8085 scripts/staging/provider-sandbox.sh run ECOCASH  ZESA
 BASE=http://localhost:8085 ADMIN_TOKEN=<admin login> scripts/staging/provider-sandbox.sh record ECOCASH collection pass staging-evidence/sandbox-<ref>.json
 ```
 
-Each run goes through PayPort's public API (initiate, pay, follow to a final status) and saves the full
+Each run goes through Payport's public API (initiate, pay, follow to a final status) and saves the full
 timeline. The runner does not judge pass or fail; a person does, against the provider's test case. Then
 `record` files the result in the integration register.
 
@@ -182,7 +182,7 @@ The script:
 - stops if a batch is not in PARALLEL mode.
 
 Every discrepancy is explained in the Phase 11 report: fee rule, cut-off timing, refund, legacy error or
-PayPort error.
+Payport error.
 
 **No live payout is initiated, and the legacy process is not retired.** Both need the owner's explicit
 approval after a clean run of agreed length (proposed: 20 consecutive business days with every discrepancy

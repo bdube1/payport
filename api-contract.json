@@ -1,0 +1,2450 @@
+{
+ "generatedBy": "ApiContractExportTest (verified in CI against the running application)",
+ "routes": [
+  {
+   "method": "GET",
+   "path": "/",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/account/change-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/account/change-pin",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/agents",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/agents/dashboard",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/agents/float-deposits",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/float-deposits",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/float-deposits/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/agents/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/agents/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/status",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/users",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/agents/{id}/users/{userId}/reset-password",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/cards",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/cards/{ref}/refresh",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/cards/{ref}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/channels",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/channels/{code}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/report",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/requests/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/{code}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/codes/{type}/{partyId}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/codes/{type}/{partyId}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/assist",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/catalog",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/explain",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/summary",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/trace",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/triage",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/assign",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/notes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/{id}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance-authorities",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance-authorities/requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance-authorities/revoke",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/alerts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/audit",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/audit/verify",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/authorities",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/authority-requests/{approvalId}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/cases",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/cases/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/assign",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/notes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/cases/{id}/propose",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/parameter-changes/{approvalId}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/parameters",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/parameters/{key}/change-requests",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/report-templates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/report-templates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/report-templates/{id}/activate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/reports",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/ctr",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/reports/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/{id}/approve",
+   "access": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/admin/compliance/reports/{id}/fields",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/reports/{id}/submitted",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/rule-changes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rule-changes/{approvalId}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/rules",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rules",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/rules/{code}/change-requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/check",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/lists",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists/UN-CONSOLIDATED/refresh",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/compliance/screening/lists/{code}/load",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/runs",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/compliance/screening/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/payment-methods",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/payment-methods/{id}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/prefixes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/config/prefixes",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/config/prefixes/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/prefixes/{id}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/products",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/config/products",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/config/products/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/products/{id}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/config/products/{id}/currencies",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/config/products/{id}/currencies/{currency}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/consumers/dashboard",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/customer-statement",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dashboard/attention-queue",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dashboard/kpis",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dashboard/volume",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dispute-timelines",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/dispute-timelines/settings",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/dispute-timelines/{id}/acknowledge",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/dispute-timelines/{id}/updates",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/disputes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/disputes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/disputes/{id}/resolve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/iso20022/camt053",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/iso20022/pain002",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/schemas",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/statements",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/iso20022/statements/{id}/entries",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/recon/exceptions",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/exceptions/{id}/resolve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/statements",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/recon/statements/{id}/run",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/approve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/cancel",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/batches/{id}/instruct",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/finance/settlement/eligible",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/finance/settlement/payout-results",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/float-thresholds",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/float-thresholds",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/fx/rates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/fx/rates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/fx/rates/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/health-lookups",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/health-lookups",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/health-lookups/check",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/health-status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/health-status/{providerCode}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/integrations",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/integrations/connectivity",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/integrations/{code}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/resume",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/suspend",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/integrations/{code}/verifications",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/intelligence",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/features/{feature}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/triage/retrain",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/accounts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/categories",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/integrity",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/integrity/run",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/backfill",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/shadow/comparison",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/shadow/failures",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/failures/resolve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/shadow/run",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/tax-rates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates/{id}/approve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ledger/tax-rates/{id}/reject",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ledger/trial-balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/logs/audit",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/logs/notifications",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/currencies/{currency}/disable",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/currencies/{currency}/live-off",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets/requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/requests/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/markets/settings",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/{country}/change-requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/markets/{country}/suspend",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchant-transactions",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/commission/default",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/commission/default",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/dashboard",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/approve",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/merchants/{id}/commission",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/reactivate",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/reject",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/request-info",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}/review-notes",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/review-notes/{noteId}/resolve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/start-review",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/suspend",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{id}/users",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/merchants/{id}/users/{userId}/reset-password",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{merchantId}/documents",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/merchants/{merchantId}/documents/{documentId}/download",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/data-bundles",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/end-user-balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/pin-stock",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/query-transaction",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/wallet-balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/netone/wallet-balance-usd",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/payments/live-readiness",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/payments/store-live",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/assign",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/decide",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/kyb/{merchantId}/recommend",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/merchants/{merchantId}/enablements",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/merchants/{merchantId}/readiness",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/settlement-destinations",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/platform/settlement-destinations/{id}/verify",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/platform/work-queues",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/pos/terminals",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/pos/terminals/{terminalId}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-health",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/ecocash",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/omari",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/onemoney",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-query/zimswitch",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-settlement-rules",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/provider-settlement-rules/positions",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules/{id}/decide",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/provider-settlement-rules/{id}/retire",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/by-reference/{referenceNumber}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/attachments",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/attachments",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/attachments/{attachmentId}/download",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/queries/{id}/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/respond",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/queries/{id}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/run",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/statements/runs",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reconciliation/statements/runs/{id}/matches",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reconciliation/statements/upload",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reports/commission",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reports/consolidated",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversal-approvals",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/approve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/payout",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversal-approvals/{ref}/reject",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversals",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/reversals",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/reversals/trace",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/roles",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/roles",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/roles/catalog",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/roles/me",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/roles/{code}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/roles/{code}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/roles/{code}/reset",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/rules/{party}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/rules/{party}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/rules/{party}/options",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/rules/{party}/{id}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/service-lines",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/service-lines/{code}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/session-timeouts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/settlements",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/run",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/{id}/paid",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/settlements/{id}/processing",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/transactions-export/csv",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/transactions-search",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/complete-refund",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/refund",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/transactions/{ref}/retry-fulfilment",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/upload-logo",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/user-history",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/users",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/admin/users/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/users/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/activate",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/reset-pin",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/users/{id}/unlock",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ussd/networks",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/ussd/networks/{code}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ussd/networks/{code}/access-key",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/ussd/simulate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallet-balances",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallet-balances/{providerCode}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/balances",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/refunds/{reference}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/report",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/report/export",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/totals",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/{ref}/statement",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/wallets/{ref}/statement-report",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/{ref}/status",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/wallets/{ref}/tier",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/whatsapp",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/admin/whatsapp/settings",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/whatsapp/simulate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/whatsapp/simulate/outbox",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/whatsapp/test",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/apply",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/forgot-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/login",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent-portal/reset-password",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent-portal/track/{reference}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/cash-in",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/change-password",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/codes",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/codes/report",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/codes/requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/codes/{code}/qr",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/commissions",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/customer",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/dashboard",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/float-deposits",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/float-deposits",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/me",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/transactions",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/assistant/chat",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/login",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/forgot-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/login",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/ops/reset-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/register",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beneficiaries",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/beneficiaries",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/beneficiaries/{id}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/beneficiaries/{id}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/billers",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/billers/{code}/lookup",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bills/customer-info",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/NETONE/sync",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/upload",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/admin/{provider}/all",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/{provider}/bulk-status",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/bundles/admin/{provider}/code/{bundleCode}",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/bundles/admin/{provider}/code/{bundleCode}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bundles/admin/{provider}/create",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}/categories",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bundles/{provider}/code/{bundleCode}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/airtel-money",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/ecocash",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/innbucks",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/mtn-momo",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/callbacks/mtn-momo",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/onemoney",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/telecash",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/callbacks/zimswitch",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/callbacks/zimswitch/result",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/charges/quote",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/checkout/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/checkout/{id}/pay",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/checkout/{id}/qr",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/codes/scan",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/checkouts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/checkouts/{merchantId}/{reference}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/events",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commerce/merchants/{merchantId}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commerce/refunds",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/transaction-status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/econet/admin/validate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/fx/quote",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/forgot-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/login",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/reset-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/signup",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant-portal/track/{reference}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/track/{reference}/documents",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant-portal/track/{reference}/review-notes/{noteId}/resolve",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/api-keys",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys/{id}/revoke",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/api-keys/{id}/rotate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/application",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/application-status",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/application-status/review-notes/{id}/resolve",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/application/review-notes/{id}/resolve",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/balances",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/by-reference/{reference}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{id}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions/{id}/cancel",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/disputes",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/refunds",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/checkout-sessions/{sessionId}/refunds",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/codes",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/codes/report",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/codes/requests",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/codes/{code}/qr",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/collections-by-method",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/commerce/identity",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/documents",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/documents",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payment-links",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/payment-links",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/payment-links/{id}/disable",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payment-methods",
+   "access": null
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/merchant/payment-methods",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/payouts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/pos/sales",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/pos/terminals",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/pos/terminals",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/pos/terminals/{terminalId}/status",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/by-reference/{referenceNumber}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/by-session/{sessionId}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/attachments",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/attachments",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/attachments/{attachmentId}/download",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/queries/{id}/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/messages",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/queries/{id}/reopen",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/readiness",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/reports/trends",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/settlement-destinations",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/settlement-destinations",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/settlements",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/statement",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/team",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/change-password",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/deactivate",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/reactivate",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/team/{id}/reset-password",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/webhooks",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/deliveries/{deliveryId}/replay",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchant/webhooks/{id}/deliveries",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/disable",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/rotate-secret",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchant/webhooks/{id}/test",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/merchants/by-code/{code}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/merchants/by-code/{code}/payments",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/monitoring/targets",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/auth",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/payment",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/omari/admin/query/{reference}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/test-flow",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/test-payment",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/omari/admin/void",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pay/{slug}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pay/{slug}/start",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pos/sales",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pos/sales/{saleRef}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pos/sales/{saleRef}/card",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/data-bundles",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/detect-network/{phone}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/payment-methods",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/products/{code}/currencies",
+   "access": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/profile/push-token",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/profile/push-token",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/qr/resolve",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/session-timeouts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/orders",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/orders",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/orders/{ref}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/quote",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores/{slug}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/stores/{slug}/slots",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/initiate",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/my-history",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/pay",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/transactions/{reference}/confirm-omari-otp",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}/outcome",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/transactions/{reference}/timeline",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ussd",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ussd/econet",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ussd/netone",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ussd/telecel",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/vendors/balance",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/agents/{code}",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/cards",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/action",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/refresh",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cards/{ref}/reveal",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/cash-out",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/charges",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/fx/conversions",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/fx/quotes",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/merchants/{code}",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/open",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay-checkout",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/pay-merchant",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/transfers",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/{ref}/statement",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/whatsapp/webhook",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/whatsapp/webhook",
+   "access": null
+  },
+  {
+   "method": "ANY",
+   "path": "/error",
+   "access": null
+  }
+ ]
+}

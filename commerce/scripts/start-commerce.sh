@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts PayPort Commerce (its own process, port and database, so it stays up when the PSP is down).
+# Starts Payport Commerce (its own process, port and database, so it stays up when the PSP is down).
 #
 #   cd /opt/payport/staging/commerce && mvn clean package -DskipTests && scripts/start-commerce.sh
 #
@@ -25,7 +25,7 @@ fi
 JAR=$(find "$DIR/target" -maxdepth 1 -name "payport-commerce*.jar" ! -name "*original*" | head -1)
 [ -n "$JAR" ] || { echo "No jar in $DIR/target. Run: mvn clean package -DskipTests"; exit 1; }
 cp "$JAR" "$DIR/payport-commerce-run.jar"
-echo "Starting PayPort Commerce on port ${PORT:-8086}, database '$db'"
+echo "Starting Payport Commerce on port ${PORT:-8086}, database '$db'"
 nohup java ${JAVA_OPTS:--Xmx384m} -jar "$DIR/payport-commerce-run.jar" > "$LOG" 2>&1 &
 echo $! > "$PID_FILE"
 for i in $(seq 1 60); do

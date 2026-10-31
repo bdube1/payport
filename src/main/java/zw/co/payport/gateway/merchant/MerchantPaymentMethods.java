@@ -15,11 +15,11 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Payment methods a merchant accepts (owner, 31 Oct 2026). PayPort switches a method on for the platform; the merchant
+ * Payment methods a merchant accepts (owner, 31 Oct 2026). Payport switches a method on for the platform; the merchant
  * then chooses which of those it takes. Hosted checkout, payment links and the store show only those, and a payment
  * with any other method is refused before anything is sent to a provider.
  *
- * Store payments stay in sandbox (test mode) until PayPort switches them to live ("commerce_livemode"), which needs the
+ * Store payments stay in sandbox (test mode) until Payport switches them to live ("commerce_livemode"), which needs the
  * owner's approval; the readiness view shows which providers have their credentials in place, never the credentials.
  */
 @Service
@@ -45,7 +45,7 @@ public class MerchantPaymentMethods {
         this.env = env;
     }
 
-    /** Every method PayPort has switched on, with whether this merchant accepts it. */
+    /** Every method Payport has switched on, with whether this merchant accepts it. */
     public List<Map<String, Object>> forMerchant(long merchantId) {
         Map<String, Boolean> mine = new LinkedHashMap<>();
         jdbc.query("SELECT method_code, enabled FROM merchant_payment_methods WHERE merchant_id = ?",
@@ -89,10 +89,10 @@ public class MerchantPaymentMethods {
         return forMerchant(merchantId);
     }
 
-    /** Refuses a method this merchant does not take (or PayPort has switched off), before anything reaches a provider. */
+    /** Refuses a method this merchant does not take (or Payport has switched off), before anything reaches a provider. */
     public void require(long merchantId, String code) {
         String c = code == null ? "" : code.toUpperCase(Locale.ROOT);
-        if (!CHECKOUT.contains(c)) return;   // the PayPort wallet and other rails have their own switches
+        if (!CHECKOUT.contains(c)) return;   // the Payport wallet and other rails have their own switches
         if (!accepted(merchantId).contains(c)) {
             throw new IllegalArgumentException("This business does not accept " + label(c, c) + ". Choose another way to pay. No money was taken.");
         }

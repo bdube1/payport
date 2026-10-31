@@ -3,7 +3,7 @@
 - **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
-PayPort's gateway is a working Spring Boot/MySQL application with production provider adaptors (EcoCash, OneMoney, O'mari, ZimSwitch, Econet, NetOne, Telecel, e-Solutions). The PSP needs strong financial consistency, and the team is small.
+Payport's gateway is a working Spring Boot/MySQL application with production provider adaptors (EcoCash, OneMoney, O'mari, ZimSwitch, Econet, NetOne, Telecel, e-Solutions). The PSP needs strong financial consistency, and the team is small.
 
 ## Options considered
 (a) Rewrite as microservices. (b) A new PSP application beside the gateway. (c) Evolve the gateway into a modular monolith with enforced module boundaries.

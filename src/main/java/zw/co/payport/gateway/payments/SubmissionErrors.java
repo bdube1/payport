@@ -8,7 +8,7 @@ import java.net.UnknownHostException;
 /**
  * Classifies an error from a provider call: could the request have reached the provider?
  *
- * Only errors that prove the request never left PayPort count as NOT_SENT (safe to treat as
+ * Only errors that prove the request never left Payport count as NOT_SENT (safe to treat as
  * a definite failure). Everything else - read timeouts, broken connections, 5xx responses,
  * unparseable responses - is UNKNOWN: the provider may have accepted and charged the
  * customer, so the payment must stay pending and be resolved by a status query, never by

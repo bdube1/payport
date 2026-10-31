@@ -10,7 +10,7 @@ import zw.co.payport.gateway.platform.Web;
 import java.util.List;
 import java.util.Map;
 
-/** Rules that recognise payment-rail settlements on PayPort's bank statements (four-eyes). */
+/** Rules that recognise payment-rail settlements on Payport's bank statements (four-eyes). */
 @RestController
 @RequestMapping("/api/v1/admin/provider-settlement-rules")
 public class ProviderSettlementController {

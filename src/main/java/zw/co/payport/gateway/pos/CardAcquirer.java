@@ -5,7 +5,7 @@ package zw.co.payport.gateway.pos;
  * acquiring needs an acquiring licence or sponsor arrangement and PCI DSS scope, so with no
  * configured implementation every card request is refused (fails closed). An implementation is a
  * Spring bean of this type; terminals must send only point-to-point encrypted card data, which
- * PayPort passes through and never stores.
+ * Payport passes through and never stores.
  */
 public interface CardAcquirer {
 

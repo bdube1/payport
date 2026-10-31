@@ -61,7 +61,7 @@
 | P9 | Settlement engine (batches, four-eyes, bank file, proof, failure and return) | Implemented but not verified | [Observed] Bank-file rail only; no live payout rail. |
 | P10 | Reconciliation breaks, bank CSV import, receivable ageing | Implemented but not verified | [Observed] **Duplicates** the gateway's statement reconciliation rather than extending it. |
 | P11 | Fee agreements, tax rates, tax remittance | Implemented but not verified | [Observed] |
-| P12 | Customer KYC tiers, e-money wallets, PINs | Implemented but not verified | [Observed] **Needs an e-money/mobile money licence** that PayPort may not hold. Belongs to a later phase. |
+| P12 | Customer KYC tiers, e-money wallets, PINs | Implemented but not verified | [Observed] **Needs an e-money/mobile money licence** that Payport may not hold. Belongs to a later phase. |
 | P13 | Agent network (float, cash-in/out, commissions) | Implemented but not verified | [Observed] Needs RBZ agency approval. Later phase. |
 | P14 | ZiG/USD FX | Implemented but not verified | [Observed] Two-currency assumption. Exchange-control treatment not established. |
 | P15 | Fraud rules, blocklists, cases | Implemented but not verified | [Observed] **Live-blocking from the first deploy** with untuned placeholder thresholds. |
@@ -70,7 +70,7 @@
 | P18 | Regulatory reports (RBZ NPS, safeguarding, FIU, ZIMRA) | Stub or simulation | [Observed] Report layouts were designed without the official templates. |
 | P19 | Notifications (SMS, email, WhatsApp templates) | Implemented but not verified | [Observed] |
 | P20 | Partner API (HMAC, nonce, mTLS pinning, scopes) | Implemented but not verified | [Tested: unit] Signature maths. |
-| P21 | EMV QR | **Defective (regulatory)** | [Observed] Generates PayPort-specific merchant-presented codes. The RBZ QR Guidelines (effective 11 March 2026) require a scheme Merchant Account Information ID obtained via the National Switch and **end closed-loop QR**. Not usable as built. |
+| P21 | EMV QR | **Defective (regulatory)** | [Observed] Generates Payport-specific merchant-presented codes. The RBZ QR Guidelines (effective 11 March 2026) require a scheme Merchant Account Information ID obtained via the National Switch and **end closed-loop QR**. Not usable as built. |
 | P22 | USSD, WhatsApp channels | Implemented but not verified | [Observed] Short code, Meta verification and aggregator contracts not in place. Later phase. |
 | P23 | POS terminal API | Implemented but not verified | [Observed] No terminal hardware or certification. |
 | P24 | Payout rails, ID verifier, credit bureau | Stub or simulation | [Observed] Manual and sandbox adapters only. |

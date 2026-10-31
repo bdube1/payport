@@ -54,7 +54,7 @@ public class AuthService {
     }
 
     /**
-     * Registration where the PIN was set on PayPort's own PIN page (WhatsApp): only its hash reached here.
+     * Registration where the PIN was set on Payport's own PIN page (WhatsApp): only its hash reached here.
      * Same checks and effects as register.
      */
     public Map<String, Object> registerWithPinHash(String fullName, String rawPhone, String idNumber, String pinHash) {

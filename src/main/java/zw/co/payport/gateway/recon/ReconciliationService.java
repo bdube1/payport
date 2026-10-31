@@ -22,11 +22,11 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Phase 3 reconciliation of provider statements against PayPort's payments.
+ * Phase 3 reconciliation of provider statements against Payport's payments.
  *
  *  1. importStatement: stores the file once (same provider + same file hash = the same
  *     statement; re-importing returns the existing one) and its transaction lines.
- *  2. run: matches the lines against PayPort's payments for the statement window
+ *  2. run: matches the lines against Payport's payments for the statement window
  *     (ReconEngine) and records every difference as a recon exception with evidence.
  *     Re-running is safe: exceptions are de-duplicated. Nothing is ever adjusted.
  *
@@ -37,11 +37,11 @@ import java.util.Set;
 @Service("statementReconciliationEngineService")
 public class ReconciliationService {
 
-    /** Statuses in which PayPort holds that the provider collected the money. */
+    /** Statuses in which Payport holds that the provider collected the money. */
     static final Set<String> PAID_STATUSES = Set.of("PAYMENT_CONFIRMED", "FULFILMENT_PENDING", "FULFILMENT_FAILED", "FULFILMENT_RETRY",
             "MANUAL_FULFILMENT", "COMPLETED", "REFUND_PENDING", "REFUNDED");
 
-    /** Statuses in which PayPort holds that the provider delivered (delivery-side providers). */
+    /** Statuses in which Payport holds that the provider delivered (delivery-side providers). */
     static final Set<String> DELIVERED_STATUSES = Set.of("COMPLETED", "REFUND_PENDING", "REFUNDED");
 
     public record ImportResult(long statementId, boolean alreadyImported, int lines) {}
@@ -166,9 +166,9 @@ public class ReconciliationService {
     }
 
     /**
-     * The PayPort side for a provider. Payment providers (payment_methods) are matched against the
+     * The Payport side for a provider. Payment providers (payment_methods) are matched against the
      * payments they collected; delivery providers (airtime, bills: product_types.provider_code, e.g.
-     * NETONE, TELECEL) against what PayPort recorded as delivered.
+     * NETONE, TELECEL) against what Payport recorded as delivered.
      */
     private List<ReconEngine.Payment> loadPayments(String provider, LocalDateTime from, LocalDateTime to, List<ReconEngine.Line> lines) {
         Integer paymentSide = jdbc.queryForObject("SELECT COUNT(*) FROM payment_methods WHERE code = ?", Integer.class, provider);

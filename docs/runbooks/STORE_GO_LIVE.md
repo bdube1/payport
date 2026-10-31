@@ -1,4 +1,4 @@
-# PayPort Store: going live
+# Payport Store: going live
 
 The owner approved going live on 31 Oct 2026. These are the steps on the server, in order. Nothing here moves money until the last step,
 and the last step can be undone in one click.

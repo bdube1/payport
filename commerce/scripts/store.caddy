@@ -1,4 +1,4 @@
-# PayPort Commerce store pages and merchant API (import from the Caddyfile; point DNS at this server).
+# Payport Commerce store pages and merchant API (import from the Caddyfile; point DNS at this server).
 store-staging.payport.africa {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8086

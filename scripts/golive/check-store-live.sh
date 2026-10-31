@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PayPort Store go-live check (read-only: changes nothing, prints no secret values).
+# Payport Store go-live check (read-only: changes nothing, prints no secret values).
 #
 #   API=https://api.payport.africa STORE=https://store.payport.africa ADMIN_TOKEN=<an ADMIN login token> scripts/golive/check-store-live.sh
 #
@@ -15,7 +15,7 @@ bad()  { printf '  [todo] %s\n' "$1"; fail=1; }
 [ -n "${ADMIN_TOKEN:-}" ] || { echo "Set ADMIN_TOKEN (an ADMIN staff login token)"; exit 2; }
 command -v jq >/dev/null || { echo "Install jq first"; exit 2; }
 
-echo "PayPort Store go-live check"
+echo "Payport Store go-live check"
 echo "1. Services"
 curl -fsS "$API/actuator/health/readiness" >/dev/null 2>&1 && ok "Gateway answers ($API)" || bad "Gateway does not answer at $API"
 curl -fsS "$COMMERCE_LOCAL/actuator/health/readiness" >/dev/null 2>&1 && ok "Commerce answers ($COMMERCE_LOCAL)" || bad "Commerce does not answer at $COMMERCE_LOCAL"
@@ -48,7 +48,7 @@ else
 fi
 
 echo "4. Monitoring"
-curl -fsS "$COMMERCE_LOCAL/internal/metrics" | grep -q '^commerce_psp_up 1' && ok "Commerce reaches PayPort Payments" || bad "Commerce cannot reach PayPort Payments (check PAYPORT_COMMERCE_KEY on both sides)"
+curl -fsS "$COMMERCE_LOCAL/internal/metrics" | grep -q '^commerce_psp_up 1' && ok "Commerce reaches Payport Payments" || bad "Commerce cannot reach Payport Payments (check PAYPORT_COMMERCE_KEY on both sides)"
 curl -fsS http://127.0.0.1:9090/-/ready >/dev/null 2>&1 && ok "Prometheus is running" || echo "  [--]   Prometheus not found on this machine (alerts for the store need ops/observability)"
 
 echo

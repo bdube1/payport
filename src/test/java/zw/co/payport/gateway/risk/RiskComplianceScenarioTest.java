@@ -289,7 +289,7 @@ class RiskComplianceScenarioTest {
         assertEquals(409, incomplete.status(), "missing required fields block approval");
         assertTrue(incomplete.body().toString().contains("Complete the report first"));
         Map<String, Object> manual = new java.util.LinkedHashMap<>();
-        // The goAML reporting-entity ID is a compliance parameter (two officers set it once PayPort is registered).
+        // The goAML reporting-entity ID is a compliance parameter (two officers set it once Payport is registered).
         Res idReq = call("POST", "/api/v1/admin/compliance/parameters/FIU.REPORTING_ENTITY_ID/change-requests", carol,
                 Map.of("value", "RE-TEST-0001", "confirm", true, "source", "goAML registration letter (test)", "reason", "registered on goAML"));
         assertEquals(200, idReq.status(), idReq.body().toString());

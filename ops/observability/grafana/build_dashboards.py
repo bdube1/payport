@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the PayPort Operations Control Centre dashboards (grafana/dashboards/*.json).
+"""Builds the Payport Operations Control Centre dashboards (grafana/dashboards/*.json).
 
 Run after changing a panel:  python3 grafana/build_dashboards.py
 The JSON files are what Grafana loads; this script keeps the five dashboards consistent (same colours, sizes and

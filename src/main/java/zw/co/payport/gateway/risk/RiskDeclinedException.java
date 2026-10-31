@@ -6,6 +6,6 @@ package zw.co.payport.gateway.risk;
  */
 public class RiskDeclinedException extends RuntimeException {
     public RiskDeclinedException(String reference) {
-        super("This payment cannot be processed. Please contact PayPort support quoting reference " + reference + ".");
+        super("This payment cannot be processed. Please contact Payport support quoting reference " + reference + ".");
     }
 }

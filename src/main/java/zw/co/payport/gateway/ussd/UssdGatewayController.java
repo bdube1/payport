@@ -63,7 +63,7 @@ public class UssdGatewayController {
         UssdService.Hop hop;
         if (refused != null) {
             log.warn("[USSD-ECONET] refused from {}: {}", req.getRemoteAddr(), refused);
-            hop = new UssdService.Hop("PayPort is not available at the moment.", true);
+            hop = new UssdService.Hop("Payport is not available at the moment.", true);
         } else if (txId == null || subscriber == null) {
             hop = new UssdService.Hop("Invalid request.", true);
         } else if ("COMPLETE".equalsIgnoreCase(stage)) {
@@ -105,7 +105,7 @@ public class UssdGatewayController {
         UssdService.Hop hop;
         if (refused != null) {
             log.warn("[USSD-NETONE] refused from {}: {}", req.getRemoteAddr(), refused);
-            hop = new UssdService.Hop("PayPort is not available at the moment.", true);
+            hop = new UssdService.Hop("Payport is not available at the moment.", true);
         } else if (requestId == null || msisdn == null) {
             hop = new UssdService.Hop("Invalid request.", true);
         } else {
@@ -159,7 +159,7 @@ public class UssdGatewayController {
         UssdService.Hop hop;
         if (refused != null) {
             log.warn("[USSD-TELECEL] refused from {}: {}", req.getRemoteAddr(), refused);
-            hop = new UssdService.Hop("PayPort is not available at the moment.", true);
+            hop = new UssdService.Hop("Payport is not available at the moment.", true);
         } else if (session.isEmpty() || subscriber.isEmpty()) {
             hop = new UssdService.Hop("Invalid request.", true);
         } else if ("78".equals(type)) {

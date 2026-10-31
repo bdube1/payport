@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 11 provider sandbox runs against STAGING, through PayPort's own public API (the same path a
+# Phase 11 provider sandbox runs against STAGING, through Payport's own public API (the same path a
 # customer takes), so each run tests the adapter, the lifecycle, callbacks/queries and delivery together.
 #
 #   BASE=http://localhost:8085 scripts/staging/provider-sandbox.sh run <METHOD> <PRODUCT> <RECIPIENT> <AMOUNT_CENTS> <CURRENCY> <PAYER_PHONE>

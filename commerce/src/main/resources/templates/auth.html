@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+  <title th:text="${title}">Sign in</title>
+  <link rel="stylesheet" href="/assets/dir.css">
+</head>
+<body class="dir2">
+<header class="d-top">
+  <div class="d-wrap d-top-in">
+    <a class="d-brand" href="/"><span class="d-brand-a">Payport</span> <span class="d-brand-b">Store</span></a>
+  </div>
+</header>
+<main class="d-auth">
+  <div class="d-auth-card" th:switch="${mode}">
+    <p th:if="${problem != null}" class="d-auth-err" role="alert" th:text="${problem}"></p>
+
+    <th:block th:case="'register'">
+      <h1>Create your account</h1>
+      <form method="post" action="/register" class="d-form">
+        <input type="hidden" name="next" th:value="${next}">
+        <label>Full name<input name="name" th:value="${v.name}" maxlength="120" autocomplete="name" required></label>
+        <label>Phone number<input name="phone" th:value="${v.phone}" maxlength="20" inputmode="tel" autocomplete="tel" placeholder="077 123 4567" required></label>
+        <label>Email (optional)<input name="email" type="email" th:value="${v.email}" maxlength="190" autocomplete="email"></label>
+        <label>Password<input name="password" type="password" minlength="8" maxlength="100" autocomplete="new-password" required></label>
+        <button type="submit" class="d-auth-btn">Create account</button>
+      </form>
+      <p class="d-auth-alt">Already have an account? <a th:href="@{/signin(next=${next})}">Sign in</a></p>
+    </th:block>
+
+    <th:block th:case="'forgot'">
+      <h1>Reset your password</h1>
+      <form method="post" action="/forgot" class="d-form">
+        <label>Phone number on your account<input name="phone" th:value="${v.phone}" maxlength="20" inputmode="tel" autocomplete="tel" required></label>
+        <button type="submit" class="d-auth-btn">Send me a code</button>
+      </form>
+      <p class="d-auth-alt"><a href="/signin">Back to sign in</a></p>
+    </th:block>
+
+    <th:block th:case="'reset'">
+      <h1>Enter the code</h1>
+      <p class="d-auth-sub">If an account uses that number, we sent it a 6-digit code by SMS.</p>
+      <form method="post" action="/reset" class="d-form">
+        <input type="hidden" name="phone" th:value="${v.phone}">
+        <label>Code<input name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label>
+        <label>New password<input name="password" type="password" minlength="8" maxlength="100" autocomplete="new-password" required></label>
+        <button type="submit" class="d-auth-btn">Save and sign in</button>
+      </form>
+      <p class="d-auth-alt"><a href="/forgot">Send a new code</a></p>
+    </th:block>
+
+    <th:block th:case="*">
+      <h1>Sign in</h1>
+      <form method="post" action="/signin" class="d-form">
+        <input type="hidden" name="next" th:value="${next}">
+        <label>Email or phone number<input name="who" th:value="${v.who}" maxlength="190" autocomplete="username" required></label>
+        <label>Password<input name="password" type="password" maxlength="100" autocomplete="current-password" required></label>
+        <button type="submit" class="d-auth-btn">Sign in</button>
+      </form>
+      <p class="d-auth-alt"><a href="/forgot">Forgot your password?</a></p>
+      <p class="d-auth-alt">New to Payport Store? <a th:href="@{/register(next=${next})}">Create an account</a></p>
+    </th:block>
+  </div>
+</main>
+<footer class="d-foot"><span>Payments by <strong>Payport</strong></span></footer>
+</body>
+</html>

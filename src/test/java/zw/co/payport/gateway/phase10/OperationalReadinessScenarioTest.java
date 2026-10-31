@@ -422,7 +422,7 @@ class OperationalReadinessScenarioTest {
         assertEquals(Set.of(), Set.copyOf(ledger.integrityReport()));
     }
 
-    // ─── 4. PayPort Commerce's door into the PSP (owner, 2026-10-31) ─────────
+    // ─── 4. Payport Commerce's door into the PSP (owner, 2026-10-31) ─────────
 
     Res commerce(String method, String path, String key, Object body) throws Exception {
         String raw = body == null ? null : JSON.writeValueAsString(body);
@@ -442,7 +442,7 @@ class OperationalReadinessScenarioTest {
     void commerceFacade_keyRequired_oneCheckoutPerOrder_paidOnlyWhenConfirmed_eventsOncePerChange_merchantRefundsFromItsBalance() throws Exception {
         MerchantLogin a = merchant("Shop"), b = merchant("Other");
 
-        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until PayPort switches them to live; the merchant
+        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until Payport switches them to live; the merchant
         // chooses the methods it accepts and the customer's choice in the store comes first.
         assertEquals("false", jdbc.queryForObject("SELECT setting_value FROM platform_settings WHERE setting_key = 'commerce_livemode'", String.class));
         Res methods = call("GET", "/api/v1/merchant/payment-methods", a.token(), null);
@@ -536,7 +536,7 @@ class OperationalReadinessScenarioTest {
         Res late = commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 100, "reason", "late refund"));
         assertTrue(late.status() == 409 && late.raw().contains("paid out"), late.raw());
 
-        // The merchant portal login tells PayPort Commerce who the merchant is.
+        // The merchant portal login tells Payport Commerce who the merchant is.
         Res me = call("GET", "/api/v1/merchant/commerce/identity", a.token(), null);
         assertEquals(200, me.status(), me.raw());
         assertEquals(a.id(), me.data().path("merchantId").asLong());
@@ -552,22 +552,10 @@ class OperationalReadinessScenarioTest {
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "12", "text", "Hi")).status());
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "+263771234567", "text", "x".repeat(301))).status());
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = ?", Integer.class, a.id()));
+        // A store user's own code (no merchant): at most three an hour to one number.
+        Map<String, Object> code = Map.of("to", "STORE_USER", "phone", "+263771999888", "text", "Your Payport Store code is 123456");
+        for (int i = 0; i < 3; i++) assertEquals(200, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, code).status());
+        assertEquals(409, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, code).status(), "three an hour");
 
-        // Sign in with PayPort on the store: a one-time code, back to the store's own address only, used once.
-        Customer shopper = customer();
-        Res link = call("POST", "/api/v1/store/sign-in", shopper.token(), Map.of("next", "/s/mais-kitchen"));
-        assertEquals(200, link.status(), link.raw());
-        String url = link.data().path("url").asText();
-        assertTrue(url.startsWith("https://store.payport.africa/auth/callback?code=") && url.endsWith("&next=%2Fs%2Fmais-kitchen"), url);
-        assertTrue(call("POST", "/api/v1/store/sign-in", shopper.token(), Map.of("next", "https://evil.example/x")).data().path("url").asText().endsWith("&next=%2Fme"),
-                "never another site");
-        assertTrue(call("POST", "/api/v1/store/sign-in", null, Map.of()).status() >= 401);
-        String code = url.replaceAll(".*code=([0-9a-f]+).*", "$1");
-        assertEquals(403, commerce("POST", "/api/v1/commerce/customer-code", null, Map.of("code", code)).status());
-        Res who = commerce("POST", "/api/v1/commerce/customer-code", COMMERCE_KEY, Map.of("code", code));
-        assertEquals(200, who.status(), who.raw());
-        assertEquals(shopper.id(), who.data().path("userId").asLong());
-        assertEquals(shopper.phone(), who.data().path("phone").asText());
-        assertEquals(400, commerce("POST", "/api/v1/commerce/customer-code", COMMERCE_KEY, Map.of("code", code)).status(), "once only");
     }
 }

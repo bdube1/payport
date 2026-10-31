@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🛑 Stopping PayPort Gateway..."
+echo "🛑 Stopping Payport Gateway..."
 
 # start.sh runs the JAR with nohup + & directly -- it never writes a PID
 # file anywhere, so a PID-file check here was dead code that silently

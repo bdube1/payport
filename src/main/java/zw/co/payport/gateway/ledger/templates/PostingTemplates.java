@@ -73,7 +73,7 @@ public final class PostingTemplates {
 
     /**
      * Dr PROVIDER_RECEIVABLE[rail] gross · Cr MERCHANT_PAYABLE[merchant] net · Cr FEE_REVENUE[checkout] gross - net.
-     * VAT is not split out in v1: whether PayPort's commission is VAT-inclusive is a tax
+     * VAT is not split out in v1: whether Payport's commission is VAT-inclusive is a tax
      * question awaiting advice (PHASE1_DESIGN.md section 7); v2 will add the TAX_PAYABLE line.
      */
     public static JournalRequest merchantCollection(String entity, Collection c) {

@@ -1,4 +1,4 @@
--- The read-only database user for mysqld-exporter (server health only: no access to PayPort's tables).
+-- The read-only database user for mysqld-exporter (server health only: no access to Payport's tables).
 -- mysql -u root -p < mysql-monitor-user.sql   (replace the password first)
 CREATE USER IF NOT EXISTS 'pp_monitor'@'localhost' IDENTIFIED BY 'CHANGE-ME' WITH MAX_USER_CONNECTIONS 3;
 CREATE USER IF NOT EXISTS 'pp_monitor'@'127.0.0.1' IDENTIFIED BY 'CHANGE-ME' WITH MAX_USER_CONNECTIONS 3;

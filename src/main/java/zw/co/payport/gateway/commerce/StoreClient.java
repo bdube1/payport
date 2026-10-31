@@ -16,7 +16,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * PayPort Commerce's store for the app, WhatsApp and USSD (owner, 31 Oct 2026: the four channels are identical). The
+ * Payport Commerce's store for the app, WhatsApp and USSD (owner, 31 Oct 2026: the four channels are identical). The
  * gateway asks Commerce for stores, items and orders with the shared service key; Commerce places the order exactly as
  * on the website and returns the PSP checkout the channel then pays. If Commerce cannot be reached the store is
  * briefly unavailable on the channel; payments themselves are unaffected.

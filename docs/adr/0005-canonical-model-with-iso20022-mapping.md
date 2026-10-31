@@ -3,10 +3,10 @@
 - **Status:** **Accepted** (approved 2026-10-15).
 
 ## Context
-ISO 20022 interoperability is required, but most PayPort flows (mobile money, billers) have no ISO counterpart. Target scheme versions (ZIPSS, sponsor banks, PAPSS) are not yet confirmed.
+ISO 20022 interoperability is required, but most Payport flows (mobile money, billers) have no ISO counterpart. Target scheme versions (ZIPSS, sponsor banks, PAPSS) are not yet confirmed.
 
 ## Options considered
-(a) Use ISO 20022 messages as the internal model. (b) A PayPort canonical model informed by ISO 20022 business components, with versioned mappers and separate transport.
+(a) Use ISO 20022 messages as the internal model. (b) A Payport canonical model informed by ISO 20022 business components, with versioned mappers and separate transport.
 
 ## Decision
 (b). Message versions are chosen per integration only after its implementation guide is obtained. Originals are retained with full correlation to the ledger.

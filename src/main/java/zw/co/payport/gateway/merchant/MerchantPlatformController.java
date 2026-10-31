@@ -78,7 +78,7 @@ public class MerchantPlatformController {
 
     public record DestinationBody(String currency, String type, String accountName, String accountNumber, String institution, String branch) {}
 
-    /** The owner adds where to be paid; PayPort staff verify it before any payout uses it. */
+    /** The owner adds where to be paid; Payport staff verify it before any payout uses it. */
     @PostMapping("/settlement-destinations")
     @PreAuthorize("hasRole('MERCHANT_OWNER')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> addDestination(@RequestBody DestinationBody b, HttpServletRequest req) {

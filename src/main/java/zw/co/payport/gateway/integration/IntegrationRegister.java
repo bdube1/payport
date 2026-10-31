@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The integration register: every provider PayPort talks to, what it can do (capability
+ * The integration register: every provider Payport talks to, what it can do (capability
  * declarations), which environment it is configured against right now, and how far it has been
  * verified, with the evidence (provider_verifications). Source: classpath integrations/register.json,
  * kept in step with the adaptors by IntegrationRegisterTest.

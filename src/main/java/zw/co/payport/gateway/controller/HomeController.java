@@ -14,7 +14,7 @@ public class HomeController {
     public ResponseEntity<Map<String, Object>> home() {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "UP");
-        response.put("service", "PayPort Gateway");
+        response.put("service", "Payport Gateway");
         response.put("version", "1.0.0");
         response.put("timestamp", java.time.LocalDateTime.now().toString());
         response.put("endpoints", Map.of(

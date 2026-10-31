@@ -40,7 +40,7 @@ peak_pending=$(awk -F, 'NR>1 && $4!="" {if ($4+0>m) m=$4+0} END {print m+0}' "$O
 peak_active=$(awk -F, 'NR>1 && $2!="" {if ($2+0>m) m=$2+0} END {print m+0}' "$OUT/pool.csv")
 timeouts=$(awk -F, 'NR>1 && $6!="" {first = (first=="" ? $6 : first); last=$6} END {print (last-first)+0}' "$OUT/pool.csv")
 {
-  echo "PayPort staging load test, $BASE, $(date -u +%FT%TZ)"
+  echo "Payport staging load test, $BASE, $(date -u +%FT%TZ)"
   echo "k6 thresholds (SLOs):          $([ "$k6_exit" = 0 ] && echo MET || echo "BREACHED (exit $k6_exit)")"
   echo "pool: peak active / max:       $peak_active / $(awk -F, 'NR>1 && $5!="" {m=$5} END {print m}' "$OUT/pool.csv")"
   echo "pool: peak waiting threads:    $peak_pending"

@@ -11,9 +11,9 @@ Source documents (supplied by the owner, 2026-10-16):
 
 The rules are implemented in `DeliveryOutcomeRules` (deliveries) and `ZimSwitchAdaptor.classifyResultCode` (card payments), and unit-tested.
 
-| Verdict | Meaning | What PayPort does |
+| Verdict | Meaning | What Payport does |
 |---|---|---|
-| RETRYABLE | The provider definitely did not act, and the cause is temporary or is PayPort's own float | Automatic retry with back-off (30 s, 2 min, 5 min), at most 4 deliveries |
+| RETRYABLE | The provider definitely did not act, and the cause is temporary or is Payport's own float | Automatic retry with back-off (30 s, 2 min, 5 min), at most 4 deliveries |
 | UNKNOWN | The code does not say whether it happened | Never re-sent; resolved by the provider's status query, or by a person |
 | FINAL | The provider definitely did not act, and a retry will not help | No retry; the customer sees the provider's message; ops refund |
 
@@ -21,12 +21,12 @@ The rules are implemented in `DeliveryOutcomeRules` (deliveries) and `ZimSwitchA
 
 | Provider | RETRYABLE | UNKNOWN (query) | Everything else | Status query |
 |---|---|---|---|---|
-| Econet (7.1) | 8200 External Temp Error; 905 Insufficient Credit; 8104 Insufficient Funds (PayPort's float); 8209 Out of Stock | 990 Request Timeout; 999 General Error; 8060 Duplicate; 8061 Pending; 8201/8202 External System/Technical; 8205/8207 Processing Error; 8206 Already Processed; 8208 In Progress; 8210 External Timeout; 8211 Already Submitted | FINAL | `get_transaction_status` (3.6), **now implemented** (it previously returned "not implemented") |
+| Econet (7.1) | 8200 External Temp Error; 905 Insufficient Credit; 8104 Insufficient Funds (Payport's float); 8209 Out of Stock | 990 Request Timeout; 999 General Error; 8060 Duplicate; 8061 Pending; 8201/8202 External System/Technical; 8205/8207 Processing Error; 8206 Already Processed; 8208 In Progress; 8210 External Timeout; 8211 Already Submitted | FINAL | `get_transaction_status` (3.6), **now implemented** (it previously returned "not implemented") |
 | NetOne (16) | 206 platform down; 208 insufficient wallet (float); 209 stock; 210 "try again later"; 702 webservice unavailable | 216 duplicate; 219 web exception; 312 received/processing; 700 timeout; 701 connection issue; 703/704 errors; query codes 0 pending and 1 busy | FINAL (217 wrong number, 222 limits, ...) | `query-transaction` (9). Code 3 "not found" means the request was never received, so it is safe to send. Each query now uses a fresh agent reference, because a reused reference is rejected with HTTP 429. HTTP 400 replies are now read as NetOne's answer |
-| e-Solutions: ZESA, ZOL, Nyaradzo, Moonlight, Bulawayo (4.2) | 51 vendor out of credit (PayPort's float) | 09 in progress; 94 duplicate | FINAL. The spec says "all other codes indicate a failed transaction"; 68 is a failure like any other | Resend/lookup (4.2.2), every 5 minutes while unknown, as the spec requires |
+| e-Solutions: ZESA, ZOL, Nyaradzo, Moonlight, Bulawayo (4.2) | 51 vendor out of credit (Payport's float) | 09 in progress; 94 duplicate | FINAL. The spec says "all other codes indicate a failed transaction"; 68 is a failure like any other | Resend/lookup (4.2.2), every 5 minutes while unknown, as the spec requires |
 | Telecel, merchant checkout | none (no code table supplied) | adaptor-flagged transport errors only | FINAL | Telecel: a failed query is now UNKNOWN, not FAILED |
 
-A delivery that provably never left PayPort (connection refused, unknown host, connect timeout) is retried automatically for every provider.
+A delivery that provably never left Payport (connection refused, unknown host, connect timeout) is retried automatically for every provider.
 
 ## Payments
 
@@ -47,7 +47,7 @@ The customer sees the provider's own text:
 - OPPWA: the result description;
 - O'mari: its `message`.
 
-PayPort writes its own words only where the provider gave none:
+Payport writes its own words only where the provider gave none:
 - "Could not reach EcoCash. No money was taken.";
 - "The transaction timed out.";
 - "No response from EcoCash. The transaction timed out.".

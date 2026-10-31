@@ -74,7 +74,7 @@ The provider said no, with a code its specification marks as final (`docs/phase2
 | `FULFILMENT_UNKNOWN_MANUAL_AFTER_MINUTES` | `120` | Unknown delivery → MANUAL |
 | `FULFILMENT_AUTO_RETRY` | `true` | Automatic retry of delivery failures whose code the provider spec marks as temporary |
 | `PAYMENT_TIMEOUT_SECONDS` | `180` | Payment window; `ZIMSWITCH_TIMEOUT_SECONDS` 1800, `OMARI_TIMEOUT_SECONDS` 300. Per-channel overrides `payport.payments.window-seconds.<CHANNEL>[.<PROVIDER>]` (none set). **Owner approval required to change any window** |
-| `PAYMENT_LATE_DETECTION_HOURS` | `24` | How long after the window closes PayPort keeps asking, to detect a late payment |
+| `PAYMENT_LATE_DETECTION_HOURS` | `24` | How long after the window closes Payport keeps asking, to detect a late payment |
 | `PAYMENT_MAX_ATTEMPTS` | `3` | Attempts per transaction after definite failures |
 | `ZIMSWITCH_WEBHOOK_SECRET` | none | AES-256-GCM key of the OPPWA webhook; without it encrypted webhooks are rejected (the resolver still confirms payments) |
 | `SETTLEMENT_MODE` | `PARALLEL` | PARALLEL: draft and approve only. LIVE: legacy settlement stops, batches can be instructed |
@@ -91,7 +91,7 @@ The provider confirmed a payment after the customer was told it timed out (or go
 
 ## 8. Statement reconciliation
 
-`POST /api/v1/admin/finance/recon/statements?provider=ECOCASH` with the file (`format=CSV` for PayPort's generic CSV: `reference,provider_reference,amount,currency,timestamp[,type]`). The same file is imported only once. Review `GET /api/v1/admin/finance/recon/exceptions`; record each decision with a note (`EXPLAINED_TIMING`, `REFUND_REQUIRED`, `REFUNDED`, `PROVIDER_CORRECTED`, `WRITTEN_OFF`, `FALSE_POSITIVE`). Reconciliation never changes a payment.
+`POST /api/v1/admin/finance/recon/statements?provider=ECOCASH` with the file (`format=CSV` for Payport's generic CSV: `reference,provider_reference,amount,currency,timestamp[,type]`). The same file is imported only once. Review `GET /api/v1/admin/finance/recon/exceptions`; record each decision with a note (`EXPLAINED_TIMING`, `REFUND_REQUIRED`, `REFUNDED`, `PROVIDER_CORRECTED`, `WRITTEN_OFF`, `FALSE_POSITIVE`). Reconciliation never changes a payment.
 
 ## 9. Settlement batches
 

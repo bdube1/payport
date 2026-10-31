@@ -121,10 +121,21 @@ public class Marketing {
         return jdbc.queryForList("SELECT loyalty_enabled FROM stores WHERE merchant_id = ?", Boolean.class, merchantId).stream().findFirst().orElse(false);
     }
 
-    public int points(long merchantId, String phone) {
-        String p9 = phone9(phone);
-        if (p9 == null) return 0;
-        Integer n = jdbc.queryForObject("SELECT COALESCE(SUM(points), 0) FROM loyalty_points WHERE merchant_id = ? AND phone9 = ?", Integer.class, merchantId, p9);
+    /**
+     * Whose points: a store user's account ("s:<id>"), or, for orders placed on USSD, WhatsApp or the app, the phone
+     * number the order came from (last nine digits). A store user cannot spend points earned on someone's phone.
+     */
+    public static String holder(Shoppers.Shopper s) {
+        return "s:" + s.id();
+    }
+
+    public static String holderOfPhone(String phone) {
+        return phone9(phone);
+    }
+
+    public int points(long merchantId, String holder) {
+        if (holder == null) return 0;
+        Integer n = jdbc.queryForObject("SELECT COALESCE(SUM(points), 0) FROM loyalty_points WHERE merchant_id = ? AND phone9 = ?", Integer.class, merchantId, holder);
         return n == null ? 0 : Math.max(0, n);
     }
 
@@ -136,12 +147,12 @@ public class Marketing {
     }
 
     /** Spends points on an order (once per order). False if the balance is no longer there. */
-    public boolean redeem(long merchantId, String phone, String orderRef, int points) {
-        if (points <= 0) return true;
-        if (points(merchantId, phone) < points) return false;
+    public boolean redeem(long merchantId, String holder, String orderRef, int points) {
+        if (points <= 0 || holder == null) return true;
+        if (points(merchantId, holder) < points) return false;
         try {
             jdbc.update("INSERT INTO loyalty_points (merchant_id, phone9, points, reason, order_ref, created_at) VALUES (?,?,?, 'REDEEM', ?, ?)",
-                    merchantId, phone9(phone), -points, orderRef, Shop.now());
+                    merchantId, holder, -points, orderRef, Shop.now());
             jdbc.update("UPDATE orders SET points_used = ? WHERE order_ref = ?", points, orderRef);
             return true;
         } catch (DuplicateKeyException e) {
@@ -151,9 +162,9 @@ public class Marketing {
 
     /** Paid: points earned (1 per whole unit paid), once per order. */
     void earn(long orderId) {
-        Map<String, Object> o = jdbc.queryForMap("SELECT merchant_id, order_ref, amount_minor, customer_phone FROM orders WHERE id = ?", orderId);
+        Map<String, Object> o = jdbc.queryForMap("SELECT merchant_id, order_ref, amount_minor, customer_phone, shopper_id FROM orders WHERE id = ?", orderId);
         long merchantId = ((Number) o.get("merchant_id")).longValue();
-        String p9 = phone9((String) o.get("customer_phone"));
+        String p9 = holderOf(o);
         if (p9 == null || !loyaltyOn(merchantId)) return;
         int pts = (int) (((Number) o.get("amount_minor")).longValue() / 100);
         if (pts <= 0) return;
@@ -167,15 +178,20 @@ public class Marketing {
 
     /** The order did not go ahead: points spent on it come back (once). */
     void giveBack(long orderId) {
-        Map<String, Object> o = jdbc.queryForMap("SELECT merchant_id, order_ref, customer_phone, points_used, payment_status FROM orders WHERE id = ?", orderId);
+        Map<String, Object> o = jdbc.queryForMap("SELECT merchant_id, order_ref, customer_phone, points_used, payment_status, shopper_id FROM orders WHERE id = ?", orderId);
         int used = ((Number) o.get("points_used")).intValue();
         if (used <= 0 || "PAID".equals(o.get("payment_status"))) return;
         try {
             jdbc.update("INSERT INTO loyalty_points (merchant_id, phone9, points, reason, order_ref, created_at) VALUES (?,?,?, 'RETURN', ?, ?)",
-                    o.get("merchant_id"), phone9((String) o.get("customer_phone")), used, o.get("order_ref"), Shop.now());
+                    o.get("merchant_id"), holderOf(o), used, o.get("order_ref"), Shop.now());
         } catch (DuplicateKeyException e) {
             // given back already
         }
+    }
+
+    /** A store user's order is theirs; any other order belongs to the phone it was placed from. */
+    static String holderOf(Map<String, Object> o) {
+        return o.get("shopper_id") != null ? "s:" + ((Number) o.get("shopper_id")).longValue() : phone9((String) o.get("customer_phone"));
     }
 
     // ─── reports ─────────────────────────────────────────────────────────────

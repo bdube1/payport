@@ -13,7 +13,7 @@ _Branch `phase2-payment-lifecycle`, 2026-10-16._
 
 **Result: met** (`RiskComplianceScenarioTest`, CI run 38895163667: 173 passed, 0 failed).
 
-Two items depend on information PayPort does not have yet. They are built so that the confirmed values can be dropped in, and are marked PROVISIONAL:
+Two items depend on information Payport does not have yet. They are built so that the confirmed values can be dropped in, and are marked PROVISIONAL:
 - **FIU report format:** reports are produced in a documented provisional structure.
 - **RBZ dispute deadlines:** they are configuration.
 
