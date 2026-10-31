@@ -274,12 +274,12 @@ class CommerceScenarioTest {
         assertTrue(cart.body().contains("USD 69.00") && cart.body().contains("delivery USD 3.00") && cart.body().contains("Harare only"), "delivery fee shown: " + cart.body());
         assertTrue(form(productUrl + "/buy", Map.of("qty", "3"), cookie).body().contains("Only 5 left"), "never more than in stock");
         assertTrue(form(productUrl + "/buy", Map.of("qty", "0"), cookie).body().contains("quantity"));
-        String k = key();
-        assertTrue(form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo"), cookie).body().contains("name and phone"));
-        assertTrue(form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111"), cookie).body().contains("delivery address"));
-        Res bought = form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111", "address", "12 Samora Machel Ave, Harare"), cookie);
+        String ck = key();
+        assertTrue(form(storePath + "/checkout", Map.of("k", ck, "method", "DELIVERY", "name", "Rudo"), cookie).body().contains("name and phone"));
+        assertTrue(form(storePath + "/checkout", Map.of("k", ck, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111"), cookie).body().contains("delivery address"));
+        Res bought = form(storePath + "/checkout", Map.of("k", ck, "method", "DELIVERY", "name", "Rudo", "phone", "0772000111", "address", "12 Samora Machel Ave, Harare"), cookie);
         assertEquals(302, bought.status(), bought.body());
-        String ref = orderRefOf(k);
+        String ref = orderRefOf(ck);
         assertEquals(6_900L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE order_ref = ?", Long.class, ref), "items plus delivery");
         assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.order_ref = ?", Integer.class, ref));
         assertTrue(page(storePath + "/cart", cookie).body().contains("Your cart is empty"));
@@ -294,7 +294,7 @@ class CommerceScenarioTest {
         assertEquals(404, api("POST", "/api/commerce/orders/" + ref + "/delivery", bravoSession, Map.of("status", "OUT")).status());
         assertEquals(400, api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "COLLECTED")).status(), "collected is for pickup");
         assertEquals(200, api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "OUT")).status());
-        assertTrue(page("/o/" + ref + "?t=" + payments.viewToken(k)).body().contains("on its way"));
+        assertTrue(page("/o/" + ref + "?t=" + payments.viewToken(ck)).body().contains("on its way"));
         assertEquals("FULFILLED", api("POST", "/api/commerce/orders/" + ref + "/delivery", alpha, Map.of("status", "DELIVERED")).data().path("orderStatus").asText());
         Res customers = api("GET", "/api/commerce/customers", alpha, null);
         assertTrue(customers.body().contains("Rudo") && customers.body().contains("0772000111"), customers.body());
