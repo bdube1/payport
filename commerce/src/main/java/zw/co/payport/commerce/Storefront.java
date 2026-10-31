@@ -46,6 +46,22 @@ public class Storefront {
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
     @org.springframework.beans.factory.annotation.Autowired Options options;
     @org.springframework.beans.factory.annotation.Autowired Ai ai;
+    @org.springframework.beans.factory.annotation.Autowired Shoppers shoppers;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
+
+    /** The signed-in shopper on this request (the store's own session cookie), if any. */
+    Optional<Shoppers.Shopper> shopper() {
+        var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (!(attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) || sra.getRequest().getCookies() == null) return Optional.empty();
+        for (jakarta.servlet.http.Cookie c : sra.getRequest().getCookies())
+            if (Shoppers.COOKIE.equals(c.getName())) return shoppers.current(c.getValue());
+        return Optional.empty();
+    }
+
+    Map<String, Object> meModel() {
+        return shopper().<Map<String, Object>>map(s -> new LinkedHashMap<>(Map.of("first", s.firstName(), "name", s.name() == null ? "" : s.name(),
+                "phone", s.phone() == null ? "" : s.phone().replaceFirst("^\\+263", "0")))).orElse(null);
+    }
     @org.springframework.beans.factory.annotation.Value("${commerce.directory-announcement:Free delivery this weekend at selected stores}") String directoryAnnouncement;
 
     public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
@@ -221,7 +237,8 @@ public class Storefront {
             tiles.add(Map.of("code", code, "name", SHORT.get(code), "count", counts.get(code), "on", code.equals(type), "icon", code, "url", "/?t=" + code));
         }
         model.addAttribute("announcement", directoryAnnouncement.isBlank() ? null : directoryAnnouncement);
-        model.addAttribute("signIn", settings.checkoutOrigin + "/login");
+        model.addAttribute("signIn", "/signin");
+        model.addAttribute("me", meModel());
         model.addAttribute("tiles", tiles);
         model.addAttribute("featured", featured);
         model.addAttribute("stores", stores);
@@ -309,6 +326,9 @@ public class Storefront {
         Map<String, Object> sm = storeModel(st);
         sm.put("cartCount", carts.count(((Number) st.get("id")).longValue(), cart));
         sm.put("rating", growth.storeRating(storeId));
+        Optional<Shoppers.Shopper> who = shopper();
+        sm.put("favourite", who.map(x -> shoppers.favourite(x, storeId)).orElse(false));
+        model.addAttribute("me", meModel());
         model.addAttribute("store", sm);
         model.addAttribute("products", items);
         model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on PayPort"));
@@ -394,6 +414,10 @@ public class Storefront {
         } catch (IllegalArgumentException e) {
             return productPage(st, p.get(), model, e.getMessage(), token);
         }
+        // A signed-in shopper's cart can be reminded about later (only with their agreement, see Marketing).
+        final String ct = token;
+        shopper().ifPresent(x -> shop.jdbc().update("UPDATE carts SET shopper_id = ?, reminded_at = NULL WHERE token_hash = ? AND store_id = ?",
+                x.id(), Shop.sha256(ct), st.get("id")));
         return "redirect:/s/" + st.get("slug") + "/cart";
     }
 
@@ -488,6 +512,20 @@ public class Storefront {
         model.addAttribute("cart", cm);
         model.addAttribute("key", Shop.token() + Shop.token());
         model.addAttribute("problem", problem);
+        Optional<Shoppers.Shopper> who = shopper();
+        model.addAttribute("me", meModel());
+        model.addAttribute("addresses", who.map(x -> shoppers.addresses(x)).orElse(List.of()));
+        long mid = ((Number) st.get("merchant_id")).longValue();
+        String offer = null;
+        if (who.isPresent() && ccy != null && marketing.loyaltyOn(mid)) {
+            int bal = marketing.points(mid, who.get().phone());
+            int use = Marketing.usable(bal, v.map(Carts.View::itemsMinor).orElse(0L));
+            if (use > 0) offer = "Use " + use + " of your " + bal + " points (−" + price(use, ccy) + ")";
+            else if (bal > 0) cm.put("pointsNote", "You have " + bal + " points here");
+        }
+        cm.put("pointsOffer", offer);
+        cm.putIfAbsent("pointsNote", null);
+        cm.put("askOffers", who.map(x -> !marketing.consented(mid, x.phone())).orElse(true));
         model.addAttribute("title", "Cart | " + st.get("name"));
         return "cart";
     }
@@ -514,6 +552,7 @@ public class Storefront {
                            @RequestParam(required = false) String note, @RequestParam String k,
                            @RequestParam(required = false) String code, @RequestParam(required = false) String pay,
                            @RequestParam(required = false) String zone, @RequestParam(required = false) String slot,
+                           @RequestParam(required = false) String points, @RequestParam(required = false) String offers,
                            @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                            Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
@@ -529,6 +568,9 @@ public class Storefront {
         if (how == null || ("DELIVERY".equals(how) && !Shop.bool(st.get("delivery_enabled"))) || ("PICKUP".equals(how) && !Shop.bool(st.get("pickup_enabled"))))
             return cartPage(slug, cart, "Choose pickup or delivery.", model, res);
         Customer c;
+        Optional<Shoppers.Shopper> signedIn = shopper();
+        if ((name == null || name.isBlank()) && signedIn.isPresent()) name = signedIn.get().name();
+        if ((phone == null || phone.isBlank()) && signedIn.isPresent()) phone = signedIn.get().phone();
         try {
             c = customer(name, phone, note);
         } catch (IllegalArgumentException e) {
@@ -549,6 +591,12 @@ public class Storefront {
         }
         boolean cash = "CASH".equals(pay) && Shop.bool(st.get("cod_enabled"));
         long merchantId = ((Number) st.get("merchant_id")).longValue();
+        // Loyalty points: a signed-in shopper may use theirs (whole hundreds, at most half the items).
+        int usePoints = 0;
+        if ("on".equals(points) && signedIn.isPresent() && marketing.loyaltyOn(merchantId)) {
+            usePoints = Marketing.usable(marketing.points(merchantId, signedIn.get().phone()), items);
+            items -= usePoints;
+        }
         String payChoice = pay != null && options.accepted(merchantId).contains(pay) ? pay : null;
         long fee;
         String zoneName = null;
@@ -580,6 +628,11 @@ public class Storefront {
             return cartPage(slug, cart, e.getMessage(), model, res);
         }
         carts.empty(v.get().cartId());
+        final String claimed = "DELIVERY".equals(how) ? addr : null;
+        final String placedRef = placed.orderRef();
+        signedIn.ifPresent(x -> shoppers.claim(x, placedRef, claimed));
+        if (!placed.existing() && usePoints > 0) marketing.redeem(merchantId, signedIn.get().phone(), placedRef, usePoints);
+        if ("on".equals(offers)) marketing.consent(merchantId, c.phone(), c.name());
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());
             payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor(), cash ? null : payChoice, zoneName);

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+  <title th:text="${title}">My account</title>
+  <link rel="stylesheet" href="/assets/dir.css">
+</head>
+<body class="dir2">
+<header class="d-top">
+  <div class="d-wrap d-top-in">
+    <a class="d-brand" href="/"><span class="d-brand-a">Payport</span> <span class="d-brand-b">Store</span></a>
+    <form method="post" action="/signout"><button type="submit" class="d-signout">Sign out</button></form>
+  </div>
+</header>
+<main class="d-main">
+  <div class="d-wrap d-account">
+    <h1 class="d-hello" th:text="'Hi, ' + ${me.first}">Hi</h1>
+    <p class="d-sub" th:text="${me.phone}"></p>
+
+    <section class="d-section">
+      <div class="d-section-head"><h2>My orders</h2><a href="/" class="d-link">Shop</a></div>
+      <p th:if="${#lists.isEmpty(orders)}" class="d-empty">No orders yet.</p>
+      <ul class="d-orders">
+        <li th:each="o : ${orders}" class="d-order">
+          <div class="d-order-main">
+            <a th:href="${o.storeUrl}" class="d-order-store" th:text="${o.store}">Store</a>
+            <span class="d-order-meta" th:text="${o.ref} + ' · ' + ${o.date} + ' · ' + ${o.summary}"></span>
+            <span th:if="${o.booking != null}" class="d-order-meta" th:text="'Appointment ' + ${o.booking}"></span>
+          </div>
+          <div class="d-order-side">
+            <strong th:text="${o.total}">USD 1.00</strong>
+            <span class="d-state" th:text="${o.state}">Paid</span>
+            <div class="d-order-acts">
+              <a th:href="${o.url}" class="d-btn ghost">View</a>
+              <form th:if="${o.reorder}" method="post" th:action="@{/me/orders/{r}/reorder(r=${o.ref})}"><button type="submit" class="d-btn">Order again</button></form>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="d-section d-two">
+      <div>
+        <div class="d-section-head"><h2>Favourite stores</h2></div>
+        <p th:if="${#lists.isEmpty(favourites)}" class="d-empty">Tap ♡ on a store to keep it here.</p>
+        <ul class="d-list">
+          <li th:each="f : ${favourites}"><a th:href="${f.url}"><strong th:text="${f.name}">Store</strong> <span th:text="${f.type}"></span></a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="d-section-head"><h2>Saved addresses</h2></div>
+        <p th:if="${#lists.isEmpty(addresses)}" class="d-empty">Addresses you deliver to are saved here.</p>
+        <ul class="d-list">
+          <li th:each="a : ${addresses}"><span th:text="${a.address}">Address</span>
+            <form method="post" th:action="@{/me/addresses/{i}/delete(i=${a.id})}"><button type="submit" class="d-btn ghost">Remove</button></form></li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</main>
+<footer class="d-foot"><span>Payments by <strong>PayPort</strong></span></footer>
+</body>
+</html>

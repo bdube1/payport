@@ -187,6 +187,8 @@ public class Shop {
         v.put("listed", bool(r.get("listed")));
         v.put("alertsEnabled", bool(r.get("alerts_enabled")));
         v.put("customerSms", bool(r.get("customer_sms")));
+        v.put("cartReminders", bool(r.get("cart_reminders")));
+        v.put("loyaltyEnabled", bool(r.get("loyalty_enabled")));
         return v;
     }
 
@@ -226,11 +228,13 @@ public class Shop {
         boolean listed = b.containsKey("listed") ? bool(b.get("listed")) : (Boolean) cur.get("listed");
         boolean alerts = b.containsKey("alertsEnabled") ? bool(b.get("alertsEnabled")) : (Boolean) cur.get("alertsEnabled");
         boolean customerSms = b.containsKey("customerSms") ? bool(b.get("customerSms")) : (Boolean) cur.get("customerSms");
+        boolean reminders = b.containsKey("cartReminders") ? bool(b.get("cartReminders")) : (Boolean) cur.get("cartReminders");
+        boolean loyalty = b.containsKey("loyaltyEnabled") ? bool(b.get("loyaltyEnabled")) : (Boolean) cur.get("loyaltyEnabled");
         try {
             jdbc.update("UPDATE stores SET name = ?, about = ?, whatsapp = ?, theme_color = ?, slug = ?, logo_image = ?, status = ?, pickup_enabled = ?, pickup_note = ?, "
-                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, design = ?, banner_image = ?, tagline = ?, business_type = ?, announcement = ?, cod_enabled = ?, listed = ?, alerts_enabled = ?, customer_sms = ?, updated_at = ? WHERE merchant_id = ?",
+                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, design = ?, banner_image = ?, tagline = ?, business_type = ?, announcement = ?, cod_enabled = ?, listed = ?, alerts_enabled = ?, customer_sms = ?, cart_reminders = ?, loyalty_enabled = ?, updated_at = ? WHERE merchant_id = ?",
                     name, about, wa == null ? null : wa.replaceAll("[\\s-]", ""), color.toUpperCase(Locale.ROOT), slug, logo, status, pickup, pickupNote,
-                    delivery, fee, freeFrom, deliveryNote, design, banner, tagline, type, announcement, cod, listed, alerts, customerSms, now(), merchantId);
+                    delivery, fee, freeFrom, deliveryNote, design, banner, tagline, type, announcement, cod, listed, alerts, customerSms, reminders, loyalty, now(), merchantId);
         } catch (DuplicateKeyException e) {
             throw new IllegalArgumentException("That store address is taken");
         }

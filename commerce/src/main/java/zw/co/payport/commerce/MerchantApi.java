@@ -37,6 +37,7 @@ public class MerchantApi {
     @org.springframework.beans.factory.annotation.Autowired Options options;
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
     @org.springframework.beans.factory.annotation.Autowired Ai ai;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
 
     public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
         this.catalog = catalog;
@@ -276,6 +277,25 @@ public class MerchantApi {
                 b.get("category") == null ? null : String.valueOf(b.get("category")), String.valueOf(b.get("kind")),
                 b.get("notes") == null ? null : String.valueOf(b.get("notes")), store == null ? null : String.valueOf(store)),
                 "byModel", ai.modelOn()));
+    }
+
+    // ─── growth: reports, offers by text, loyalty ────────────────────────────
+
+    @GetMapping("/api/commerce/reports")
+    public Map<String, Object> reports(@RequestParam(defaultValue = "30") int days, HttpServletRequest req) {
+        return ok(marketing.report(me(req).merchantId(), days));
+    }
+
+    @GetMapping("/api/commerce/campaigns")
+    public Map<String, Object> campaigns(HttpServletRequest req) {
+        long m = me(req).merchantId();
+        return ok(Map.of("audience", marketing.audience(m), "campaigns", marketing.campaigns(m)));
+    }
+
+    @PostMapping("/api/commerce/campaigns")
+    public Map<String, Object> sendCampaign(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        Tokens.Merchant m = manager(req);
+        return ok(marketing.send(m.merchantId(), b.get("text") == null ? null : String.valueOf(b.get("text")), "merchant-user:" + m.userId()));
     }
 
     @GetMapping("/api/commerce/business-types")

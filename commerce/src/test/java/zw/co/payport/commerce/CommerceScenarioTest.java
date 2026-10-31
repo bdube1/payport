@@ -76,6 +76,7 @@ class CommerceScenarioTest {
     @Autowired EventReader reader;
     @Autowired Payments payments;
     @Autowired Domains domains;
+    @Autowired Marketing marketing;
     @org.springframework.test.context.bean.override.mockito.MockitoBean Domains.TxtLookup dns;
 
     static final ObjectMapper JSON = new ObjectMapper();
@@ -662,5 +663,201 @@ class CommerceScenarioTest {
         assertEquals("Avondale", o4.get("delivery_zone"));
         assertEquals(700L, ((Number) o4.get("amount_minor")).longValue());
         assertEquals("ECOCASH", o4.get("pay_choice"));
+    }
+
+    Res channel(String method, String path, Object body, String key) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30)).header("Content-Type", "application/json");
+        if (key != null) b.header("X-PayPort-Commerce-Key", key);
+        b.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+        HttpResponse<String> r = HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        return new Res(r.statusCode(), r.body(), null);
+    }
+
+    /** Owner, 31 Oct 2026: the app, WhatsApp and USSD order from the same stores, with the same rules, through the PSP. */
+    @Test
+    void channels_sameStoresAndRules_orderPlacedLikeTheWeb_paidOnThePspCheckout() throws Exception {
+        PSP.down = false;
+        String bravo = signIn("portal-token-B");
+        api("PUT", "/api/commerce/store", bravo, Map.of("pickupEnabled", true, "codEnabled", true, "listed", true));
+        Res p = api("POST", "/api/commerce/products", bravo, Map.of("name", "Chicken and chips", "priceMinor", 450, "currency", "USD", "stock", 3));
+        long pid = p.data().path("id").asLong();
+        String slug = p.data().path("url").asText().replaceAll(".*/s/([^/]+)/.*", "$1");
+        assertEquals(403, channel("GET", "/api/channel/stores", null, null).status(), "service key only");
+        assertEquals(403, channel("GET", "/api/channel/stores", null, "wrong").status());
+        Res stores = channel("GET", "/api/channel/stores", null, FakePsp.KEY);
+        assertEquals(200, stores.status(), stores.body());
+        assertTrue(stores.body().contains(slug));
+        Res one = channel("GET", "/api/channel/stores/" + slug, null, FakePsp.KEY);
+        assertTrue(one.body().contains("Chicken and chips") && one.data().path("payOnDelivery").asBoolean(), one.body());
+
+        Map<String, Object> base = new java.util.LinkedHashMap<>(Map.of("store", slug, "items", java.util.List.of(Map.of("productId", pid, "quantity", 2)),
+                "method", "PICKUP", "name", "Chipo", "phone", "+263774111222", "channel", "USSD"));
+        Res quote = channel("POST", "/api/channel/quote", base, FakePsp.KEY);
+        assertEquals(900, quote.data().path("totalMinor").asLong(), quote.body());
+        Map<String, Object> tooMany = new java.util.LinkedHashMap<>(base);
+        tooMany.put("items", java.util.List.of(Map.of("productId", pid, "quantity", 5)));
+        assertTrue(channel("POST", "/api/channel/quote", tooMany, FakePsp.KEY).body().contains("Only 3 left"), "same stock rules as the web");
+
+        Map<String, Object> cash = new java.util.LinkedHashMap<>(base);
+        cash.put("pay", "CASH");
+        cash.put("key", key());
+        Res placed = channel("POST", "/api/channel/orders", cash, FakePsp.KEY);
+        assertEquals(200, placed.status(), placed.body());
+        String ref = placed.data().path("orderRef").asText();
+        assertEquals("ON_DELIVERY", placed.data().path("paymentStatus").asText());
+        assertEquals("USSD", jdbc.queryForObject("SELECT channel FROM orders WHERE order_ref = ?", String.class, ref));
+        assertEquals(1, jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, pid), "held like a web order");
+        assertEquals(ref, channel("POST", "/api/channel/orders", cash, FakePsp.KEY).data().path("orderRef").asText(), "the same key gives the same order");
+
+        Map<String, Object> online = new java.util.LinkedHashMap<>(base);
+        online.put("items", java.util.List.of(Map.of("productId", pid, "quantity", 1)));
+        online.put("key", key());
+        online.put("channel", "APP");
+        Res paid = channel("POST", "/api/channel/orders", online, FakePsp.KEY);
+        assertEquals(200, paid.status(), paid.body());
+        assertTrue(paid.data().path("checkoutSessionId").asLong() > 0, "the PSP checkout the channel pays: " + paid.body());
+        String ref2 = paid.data().path("orderRef").asText();
+        PSP.set(2002, ref2 + "-1", "PAID", "PAID");
+        reader.poll();
+        Res mine = channel("GET", "/api/channel/orders?phone=0774111222", null, FakePsp.KEY);
+        assertTrue(mine.body().contains(ref) && mine.body().contains(ref2), mine.body());
+        assertEquals("PAID", channel("GET", "/api/channel/orders/" + ref2 + "?phone=%2B263774111222", null, FakePsp.KEY).data().path("paymentStatus").asText());
+        assertEquals(404, channel("GET", "/api/channel/orders/" + ref2 + "?phone=0779999999", null, FakePsp.KEY).status(), "only the phone that ordered");
+    }
+
+    /** Owner, 31 Oct 2026: shoppers sign in with PayPort; their orders, saved addresses, favourites and reorder. */
+    @Test
+    void shopperAccounts_signInWithPayPort_ordersAddressesFavouritesReorder() throws Exception {
+        PSP.down = false;
+        String bravo = signIn("portal-token-B");
+        api("PUT", "/api/commerce/store", bravo, Map.of("pickupEnabled", true, "deliveryEnabled", true, "deliveryFeeMinor", 100, "listed", true));
+        Res p = api("POST", "/api/commerce/products", bravo, Map.of("name", "Beef stew", "priceMinor", 700, "currency", "USD", "stock", 20));
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+
+        Res go = page("/signin?next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8));
+        assertEquals(302, go.status());
+        assertTrue(go.location().startsWith("https://app.test/store-signin?next="), go.location());
+        assertTrue(page("/signin?next=" + URLEncoder.encode("//evil.example", StandardCharsets.UTF_8)).location().endsWith("next=%2Fme"), "never another site");
+        assertEquals(302, page("/me").status(), "the account page needs a sign-in");
+
+        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8))).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(302, cb.statusCode());
+        assertTrue(cb.headers().firstValue("Location").orElse("").endsWith(storePath), "back where sign-in was asked for");
+        String me = cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
+        assertTrue(cb.headers().allValues("Set-Cookie").stream().anyMatch(c -> c.startsWith("pp_me=") && c.contains("HttpOnly")), "HttpOnly session cookie");
+        assertEquals(302, HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=%2Fme")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode());
+
+        // Signed in: name and phone filled in at checkout; the order and the address are the shopper's.
+        String cookie = form(url + "/buy", Map.of("qty", "2"), me).cookie();
+        String both = cookie + "; " + me;
+        Res cart = page(storePath + "/cart", both);
+        assertTrue(cart.body().contains("value=\"Rudo Moyo\"") && cart.body().contains("value=\"0776000333\""), cart.body());
+        String k = key();
+        Res placed = form(storePath + "/checkout", Map.of("k", k, "method", "DELIVERY", "address", "7 Fife Avenue, Harare"), both);
+        assertEquals(302, placed.status(), placed.body());
+        String ref = orderRefOf(k);
+        assertNotNull(jdbc.queryForObject("SELECT shopper_id FROM orders WHERE order_ref = ?", Long.class, ref));
+        assertEquals("Rudo Moyo", jdbc.queryForObject("SELECT customer_name FROM orders WHERE order_ref = ?", String.class, ref));
+        String nextCart = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        assertTrue(page(storePath + "/cart", nextCart + "; " + me).body().contains("7 Fife Avenue, Harare"), "the saved address is offered next time");
+
+        Res account = page("/me", me);
+        assertEquals(200, account.status());
+        assertTrue(account.body().contains("Hi, Rudo") && account.body().contains(ref) && account.body().contains("7 Fife Avenue, Harare"), account.body());
+
+        // Favourites and reorder.
+        assertEquals(302, form(storePath + "/favourite", Map.of(), me).status());
+        assertTrue(page("/me", me).body().contains("Bravo Foods"), "a favourite store");
+        assertTrue(page(storePath, me).body().contains("♥ Favourite"));
+        String fresh = form(url + "/buy", Map.of("qty", "1"), null).cookie();
+        Res again = form("/me/orders/" + ref + "/reorder", Map.of(), fresh + "; " + me);
+        assertEquals(302, again.status());
+        assertTrue(again.location().endsWith(storePath + "/cart"), again.location());
+        assertTrue(page(storePath + "/cart", fresh).body().contains("Beef stew"));
+        assertEquals(404, form("/me/orders/CO-NOTMINE1/reorder", Map.of(), me).status(), "only the shopper's own orders");
+
+        assertEquals(302, form("/signout", Map.of(), me).status());
+        assertEquals(302, page("/me", me).status(), "signed out");
+    }
+
+    String shopperCookie(String code) throws Exception {
+        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=" + code + "&next=%2Fme")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        return cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
+    }
+
+    /** Owner, 31 Oct 2026: reports, offers only to customers who agreed (with a stop link), cart reminders, loyalty points. */
+    @Test
+    void merchantGrowth_reports_offersWithConsent_cartReminders_loyaltyPoints() throws Exception {
+        PSP.down = false;
+        String alpha = signIn("portal-token-A");
+        assertEquals(200, api("PUT", "/api/commerce/store", alpha, Map.of("pickupEnabled", true, "loyaltyEnabled", true, "cartReminders", true)).status());
+        Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Carved bowl", "priceMinor", 5_000, "currency", "USD", "stock", 50));
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        String me = shopperCookie("c0de-loyal");
+
+        // First order: the shopper agrees to offers; paying earns points (1 per dollar).
+        String c1 = form(url + "/buy", Map.of("qty", "2"), me).cookie();
+        Res cart = page(storePath + "/cart", c1 + "; " + me);
+        assertTrue(cart.body().contains("Send me offers from"), cart.body());
+        String k1 = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k1, "method", "PICKUP", "offers", "on"), c1 + "; " + me).status());
+        String ref1 = orderRefOf(k1);
+        PSP.set(1001, ref1 + "-1", "PAID", "PAID");
+        reader.poll();
+        assertEquals(100, marketing.points(1001, "+263777000444"));
+        assertTrue(marketing.consented(1001, "0777000444"));
+
+        // Second order: points used (100 = USD 1.00 off); a failed payment gives them back.
+        String c2 = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        Res cart2 = page(storePath + "/cart", c2 + "; " + me);
+        assertTrue(cart2.body().contains("Use 100 of your 100 points") && !cart2.body().contains("Send me offers from"), cart2.body());
+        String k2 = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k2, "method", "PICKUP", "points", "on"), c2 + "; " + me).status());
+        String ref2 = orderRefOf(k2);
+        assertEquals(4_900L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE order_ref = ?", Long.class, ref2));
+        assertEquals(0, marketing.points(1001, "0777000444"));
+        PSP.set(1001, ref2 + "-1", "FAILED", "FAILED");
+        reader.poll();
+        assertEquals(100, marketing.points(1001, "0777000444"), "points back when the payment fails");
+
+        // A cart left for hours: one reminder, to a customer who agreed.
+        String c3 = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        jdbc.update("UPDATE carts SET updated_at = ? WHERE token_hash = ?", java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().minusHours(3)), shaOf(c3.substring("pp_cart=".length())));
+        int before = PSP.messages.size();
+        marketing.remindCarts();
+        assertNotNull(waitForMessage("CUSTOMER|You left something in your cart at Alpha"), "reminder: " + PSP.messages);
+        marketing.remindCarts();
+        Thread.sleep(300);
+        assertEquals(1, PSP.messages.stream().skip(before).filter(m -> m.contains("You left something")).count(), "once");
+
+        // Offers by text: to customers who agreed, once a day, each with a stop link.
+        String bravo = signIn("portal-token-B");
+        assertEquals(409, api("POST", "/api/commerce/campaigns", signIn("portal-token-C"), Map.of("text", "Hello")).status(), "nobody has agreed yet");
+        Res sent = api("POST", "/api/commerce/campaigns", alpha, Map.of("text", "20% off carved bowls this weekend"));
+        assertEquals(200, sent.status(), sent.body());
+        assertTrue(sent.data().path("recipients").asInt() >= 1);
+        String offer = waitForMessage("CUSTOMER|Alpha Crafts: 20% off carved bowls");
+        assertNotNull(offer, "offer: " + PSP.messages);
+        assertTrue(offer.contains("Stop: https://store.test/u/"), offer);
+        assertEquals(409, api("POST", "/api/commerce/campaigns", alpha, Map.of("text", "Again")).status(), "one offer a day");
+        String stop = offer.replaceAll(".*https://store.test(/u/[a-z0-9]+).*", "$1");
+        Res stopped = page(stop);
+        assertTrue(stopped.status() == 200 && stopped.body().contains("Messages stopped"), stopped.body());
+        assertFalse(marketing.consented(1001, "0777000444"));
+
+        // Reports.
+        Res r = api("GET", "/api/commerce/reports?days=30", alpha, null);
+        assertEquals(200, r.status(), r.body());
+        assertTrue(r.body().contains("Carved bowl") && r.data().path("byChannel").toString().contains("WEB"), r.body());
+        assertFalse(api("GET", "/api/commerce/reports", bravo, null).body().contains("Carved bowl"), "each merchant sees its own");
+    }
+
+    static String shaOf(String s) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
     }
 }

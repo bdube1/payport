@@ -398,6 +398,11 @@ public class Growth {
         });
     }
 
+    /** A text to a customer, off the request (campaigns, reminders). */
+    void textLater(long merchantId, String phone, String text, String ref) {
+        texts.submit(() -> send(merchantId, "CUSTOMER", phone, text, ref));
+    }
+
     private Map<String, Object> order(String ref) {
         return jdbc.queryForList("SELECT * FROM orders WHERE order_ref = ?", ref).stream().findFirst().orElse(null);
     }

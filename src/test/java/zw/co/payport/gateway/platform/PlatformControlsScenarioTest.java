@@ -58,6 +58,15 @@ class PlatformControlsScenarioTest {
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.0");
 
     static final String USSD_SECRET = "ussd-test-secret";
+    static final FakeCommerce COMMERCE;
+
+    static {
+        try {
+            COMMERCE = new FakeCommerce();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
@@ -70,6 +79,8 @@ class PlatformControlsScenarioTest {
         r.add("payport.fulfilment.worker.enabled", () -> "false");
         r.add("payport.push.enabled", () -> "false");
         r.add("payport.ussd.secret", () -> USSD_SECRET);
+        r.add("payport.commerce.url", COMMERCE::url);
+        r.add("payport.commerce.key", () -> FakeCommerce.KEY);
         zw.co.payport.gateway.support.UnListStub.register(r);
     }
 
@@ -345,6 +356,59 @@ class PlatformControlsScenarioTest {
         if (signed) b.header("X-PayPort-Ussd-Signature", sig);
         HttpResponse<String> r = HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
         return new Res(r.statusCode(), JSON.createObjectNode().put("text", r.body()));
+    }
+
+    /** Owner, 31 Oct 2026: the store on USSD (and WhatsApp, the same menus): browse, order, pay on delivery, my orders. */
+    @Test
+    void ussdStore_browseOrderPayOnDelivery_myOrders() throws Exception {
+        String s = "AT-SHOP-" + SEQ.incrementAndGet(), ph = String.format("+263778%06d", 600000 + SEQ.incrementAndGet());
+        String menu = ussd(s, ph, "", true).body().path("text").asText();
+        assertTrue(menu.contains("8. Shop"), menu);
+        String shop = ussd(s, ph, "8", true).body().path("text").asText();
+        assertTrue(shop.startsWith("CON PayPort Store") && shop.contains("2. Food (1)") && shop.contains("3. My orders"), shop);
+        String list = ussd(s, ph, "8*2", true).body().path("text").asText();
+        assertTrue(list.contains("1. Mai's Kitchen"), list);
+        String items = ussd(s, ph, "8*2*1", true).body().path("text").asText();
+        assertTrue(items.contains("1. Sadza and beef USD 6.00"), items);
+        String many = ussd(s, ph, "8*2*1*1", true).body().path("text").asText();
+        assertTrue(many.contains("How many Sadza and beef?"), many);
+        String chosen = ussd(s, ph, "8*2*1*1*2", true).body().path("text").asText();
+        assertTrue(chosen.contains("1. Checkout"), chosen);
+        assertTrue(ussd(s, ph, "8*2*1*1*2*1", true).body().path("text").asText().contains("Your name:"), "a guest gives a name");
+        String disc = ussd(s, ph, "8*2*1*1*2*1*Tendai", true).body().path("text").asText();
+        assertTrue(disc.contains("Discount code?"), disc);
+        String pay = ussd(s, ph, "8*2*1*1*2*1*Tendai*1", true).body().path("text").asText();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\. Pay on delivery").matcher(pay);
+        String all = pay;
+        String path = "8*2*1*1*2*1*Tendai*1";
+        while (!m.find()) {   // the list may run over more than one screen
+            assertTrue(all.contains("0. More"), "pay on delivery offered: " + all);
+            path += "*0";
+            all = ussd(s, ph, path, true).body().path("text").asText();
+            m = java.util.regex.Pattern.compile("(\\d+)\\. Pay on delivery").matcher(all);
+        }
+        path += "*" + m.group(1);
+        String confirm = ussd(s, ph, path, true).body().path("text").asText();
+        assertTrue(confirm.contains("2 x Sadza and beef") && confirm.contains("Total USD 12.00") && confirm.contains("1. Confirm"), confirm);
+        String done = ussd(s, ph, path + "*1", true).body().path("text").asText();
+        assertTrue(done.startsWith("END Order CO-TEST0001 placed") && done.contains("on delivery"), done);
+        JsonNode placed = COMMERCE.orders.get(COMMERCE.orders.size() - 1);
+        assertEquals("USSD", placed.path("channel").asText());
+        assertEquals("CASH", placed.path("pay").asText());
+        assertEquals("PICKUP", placed.path("method").asText());
+        assertEquals("Tendai", placed.path("name").asText());
+        assertEquals(ph, placed.path("phone").asText(), "the order is in this phone's name");
+        assertEquals(2, placed.path("items").get(0).path("quantity").asInt());
+        assertEquals(done, ussd(s, ph, path + "*1", true).body().path("text").asText(), "a repeated hop places nothing twice");
+        assertEquals(1, COMMERCE.orders.size());
+        String mine = ussd("AT-SHOP-" + SEQ.incrementAndGet(), ph, "8*3", true).body().path("text").asText();
+        assertTrue(mine.startsWith("END Your orders:") && mine.contains("CO-TEST0001") && mine.contains("pay on delivery"), mine);
+        // The app reads the same stores (browsing is open; ordering needs a login).
+        Res apps = call("GET", "/api/v1/store/stores", null, null);
+        assertEquals(200, apps.status(), apps.body().toString());
+        assertTrue(apps.body().toString().contains("Mai's Kitchen"), apps.body().toString());
+        int anon = call("POST", "/api/v1/store/orders", null, Map.of("store", "mais-kitchen")).status();
+        assertTrue(anon == 401 || anon == 403, "ordering needs a login: " + anon);
     }
 
     @Test

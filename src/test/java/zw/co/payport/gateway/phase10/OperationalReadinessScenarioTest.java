@@ -552,5 +552,22 @@ class OperationalReadinessScenarioTest {
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "12", "text", "Hi")).status());
         assertEquals(400, commerce("POST", "/api/v1/commerce/messages", COMMERCE_KEY, Map.of("merchantId", a.id(), "to", "CUSTOMER", "phone", "+263771234567", "text", "x".repeat(301))).status());
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM commerce_messages WHERE merchant_id = ?", Integer.class, a.id()));
+
+        // Sign in with PayPort on the store: a one-time code, back to the store's own address only, used once.
+        Customer shopper = customer();
+        Res link = call("POST", "/api/v1/store/sign-in", shopper.token(), Map.of("next", "/s/mais-kitchen"));
+        assertEquals(200, link.status(), link.raw());
+        String url = link.data().path("url").asText();
+        assertTrue(url.startsWith("https://store.payport.africa/auth/callback?code=") && url.endsWith("&next=%2Fs%2Fmais-kitchen"), url);
+        assertTrue(call("POST", "/api/v1/store/sign-in", shopper.token(), Map.of("next", "https://evil.example/x")).data().path("url").asText().endsWith("&next=%2Fme"),
+                "never another site");
+        assertTrue(call("POST", "/api/v1/store/sign-in", null, Map.of()).status() >= 401);
+        String code = url.replaceAll(".*code=([0-9a-f]+).*", "$1");
+        assertEquals(403, commerce("POST", "/api/v1/commerce/customer-code", null, Map.of("code", code)).status());
+        Res who = commerce("POST", "/api/v1/commerce/customer-code", COMMERCE_KEY, Map.of("code", code));
+        assertEquals(200, who.status(), who.raw());
+        assertEquals(shopper.id(), who.data().path("userId").asLong());
+        assertEquals(shopper.phone(), who.data().path("phone").asText());
+        assertEquals(400, commerce("POST", "/api/v1/commerce/customer-code", COMMERCE_KEY, Map.of("code", code)).status(), "once only");
     }
 }

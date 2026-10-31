@@ -354,9 +354,9 @@ public class UssdService {
         }
     }
 
-    static final List<String> GUEST_MENU = List.of("Buy airtime", "Buy data", "Pay a bill", "Pay a merchant", "Check a payment", "Register", "Help");
+    static final List<String> GUEST_MENU = List.of("Buy airtime", "Buy data", "Pay a bill", "Pay a merchant", "Check a payment", "Register", "Help", "Shop");
     static final List<String> WALLET_MENU = List.of("Buy airtime", "Buy data", "Pay a bill", "Pay a merchant", "Send money", "My wallet",
-            "Cash out at an agent", "More");
+            "Cash out at an agent", "More", "Shop");
     static final List<String> WALLET_SUBMENU = List.of("Balances", "Statement", "Top up", "Convert currency", "Open a wallet");
     static final List<String> MORE_MENU = List.of("History", "Check a payment", "Saved numbers", "Cards", "Change PIN", "Help");
 
@@ -370,6 +370,7 @@ public class UssdService {
             case 4 -> merchant(c, in);
             case 5 -> status(c, in);
             case 6 -> register(c, in);
+            case 8 -> shop(c, in);
             default -> "END " + HELP;
         };
     }
@@ -385,6 +386,7 @@ public class UssdService {
             case 5 -> send(c, in);
             case 6 -> walletMenu(c, in);
             case 7 -> cashOut(c, in);
+            case 9 -> shop(c, in);
             default -> more(c, in);
         };
     }
@@ -706,6 +708,250 @@ public class UssdService {
                 return "END " + clip(e.getMessage() == null ? "Payment could not be started. No money was taken." : e.getMessage(), 150);
             }
         });
+    }
+
+    // ─── the PayPort Store (the same stores, items and orders as the website and the app) ─
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.commerce.StoreClient store;
+
+    static List<com.fasterxml.jackson.databind.JsonNode> list(com.fasterxml.jackson.databind.JsonNode n) {
+        List<com.fasterxml.jackson.databind.JsonNode> out = new ArrayList<>();
+        if (n != null) n.forEach(out::add);
+        return out;
+    }
+
+    private String shop(Ctx c, In in) {
+        if (store == null || !store.on()) return "END The store is not available at the moment. Please try again later.";
+        var all = store.stores(null, null);
+        List<com.fasterxml.jackson.databind.JsonNode> types = list(all.path("types"));
+        List<String> top = new ArrayList<>();
+        top.add("Search");
+        for (var t : types) top.add(t.path("name").asText() + " (" + t.path("stores").asInt() + ")");
+        top.add("My orders");
+        Step<Integer> k = option(c, in, "PayPort Store", top);
+        if (k.asking()) return k.prompt();
+        List<com.fasterxml.jackson.databind.JsonNode> stores;
+        if (k.value() == top.size()) return storeOrders(c);
+        if (k.value() == 1) {
+            Step<String> q = ask(in, "What are you looking for?", "Type a store or item name:", "END Cancelled.", t -> {
+                if (t.isBlank() || t.trim().length() < 2) throw new IllegalArgumentException("Type at least two letters.");
+                return t.trim();
+            });
+            if (q.asking()) return q.prompt();
+            stores = list(store.stores(null, q.value()).path("stores"));
+        } else {
+            stores = list(store.stores(types.get(k.value() - 2).path("code").asText(), null).path("stores"));
+        }
+        if (stores.isEmpty()) return "END No stores found. Try another search.";
+        Step<com.fasterxml.jackson.databind.JsonNode> ps = choose(c, in, "Choose a store:", stores, x -> clip(x.path("name").asText(), 26));
+        if (ps.asking()) return ps.prompt();
+        return storeOrder(c, in, ps.value().path("slug").asText());
+    }
+
+    private String storeOrder(Ctx c, In in, String slug) {
+        var st = store.store(slug, null, null);
+        String name = clip(st.path("name").asText(), 24);
+        if (!st.path("open").asBoolean()) return "END " + name + " is not taking orders at the moment.";
+        List<com.fasterxml.jackson.databind.JsonNode> items = new ArrayList<>();
+        for (var i : list(st.path("items"))) if (!i.path("soldOut").asBoolean()) items.add(i);
+        if (items.isEmpty()) return "END " + name + " has nothing on sale at the moment.";
+        Map<Long, Integer> cart = new java.util.LinkedHashMap<>();
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> chosen = new java.util.LinkedHashMap<>();
+        for (int round = 0; round < 5; round++) {
+            Step<com.fasterxml.jackson.databind.JsonNode> pi = choose(c, in, name + (cart.isEmpty() ? ":" : ": add an item"), items,
+                    i -> clip(i.path("name").asText(), 22) + " " + i.path("price").asText());
+            if (pi.asking()) return pi.prompt();
+            var item = pi.value();
+            int qty = 1;
+            if (!item.path("service").asBoolean()) {
+                Step<Integer> pq = ask(in, "How many " + clip(item.path("name").asText(), 30) + "?", "Enter a number from 1 to 20:", "END Cancelled. Nothing was ordered.", t -> {
+                    int n;
+                    try { n = Integer.parseInt(t.trim()); } catch (NumberFormatException e) { throw new IllegalArgumentException("Enter a number."); }
+                    if (n < 1 || n > 20) throw new IllegalArgumentException("Enter a number from 1 to 20.");
+                    return n;
+                });
+                if (pq.asking()) return pq.prompt();
+                qty = pq.value();
+            }
+            cart.merge(item.path("id").asLong(), qty, Integer::sum);
+            chosen.put(item.path("id").asLong(), item);
+            if (round == 4) break;
+            Step<Integer> next = option(c, in, cart.size() + (cart.size() == 1 ? " item" : " items") + " chosen", List.of("Checkout", "Add another item"));
+            if (next.asking()) return next.prompt();
+            if (next.value() == 1) break;
+        }
+        List<Map<String, Object>> lines = new ArrayList<>();
+        cart.forEach((id, q) -> lines.add(Map.of("productId", id, "quantity", q)));
+        boolean servicesOnly = chosen.values().stream().allMatch(i -> i.path("service").asBoolean());
+        boolean anyService = chosen.values().stream().anyMatch(i -> i.path("service").asBoolean());
+        Map<String, Object> order = new java.util.LinkedHashMap<>();
+        order.put("store", slug);
+        order.put("items", lines);
+        order.put("channel", c.ussd() ? "USSD" : "WHATSAPP");
+        order.put("phone", c.phone());
+        if (c.holder() != null) order.put("name", c.holder().getFullName());
+        if (anyService && st.path("bookings").asBoolean()) {
+            List<com.fasterxml.jackson.databind.JsonNode> slots = list(store.slots(slug, lines));
+            if (slots.isEmpty()) return "END " + name + " has no free times in the next two weeks.";
+            Step<com.fasterxml.jackson.databind.JsonNode> pt = choose(c, in, "Choose a time:", slots, x -> x.path("label").asText());
+            if (pt.asking()) return pt.prompt();
+            order.put("slot", pt.value().path("value").asText());
+        }
+        if (!servicesOnly) {
+            List<String> ways = new ArrayList<>();
+            if (st.path("pickup").asBoolean()) ways.add("PICKUP");
+            if (st.path("delivery").asBoolean()) ways.add("DELIVERY");
+            if (ways.isEmpty()) return "END " + name + " is not taking orders at the moment.";
+            String how = ways.get(0);
+            if (ways.size() > 1) {
+                Step<String> pw = choose(c, in, "How do you want it?", ways, w -> "PICKUP".equals(w) ? "Collect it" : "Deliver it");
+                if (pw.asking()) return pw.prompt();
+                how = pw.value();
+            }
+            order.put("method", how);
+            if ("DELIVERY".equals(how)) {
+                List<com.fasterxml.jackson.databind.JsonNode> zones = list(st.path("zones"));
+                if (!zones.isEmpty()) {
+                    Step<com.fasterxml.jackson.databind.JsonNode> pz = choose(c, in, "Your area:", zones, z -> clip(z.path("name").asText(), 24));
+                    if (pz.asking()) return pz.prompt();
+                    order.put("zone", pz.value().path("id").asText());
+                }
+                Step<String> pa = ask(in, "Delivery address:", "Enter the street address:", "END Cancelled. Nothing was ordered.", t -> {
+                    if (t.trim().length() < 6) throw new IllegalArgumentException("Enter the full address.");
+                    return clip(t.trim(), 300);
+                });
+                if (pa.asking()) return pa.prompt();
+                order.put("address", pa.value());
+            }
+        }
+        if (c.holder() == null) {
+            Step<String> pn = ask(in, "Your name:", "Enter your name:", "END Cancelled. Nothing was ordered.", t -> {
+                if (t.trim().length() < 2) throw new IllegalArgumentException("Enter your name.");
+                return clip(t.trim(), 60);
+            });
+            if (pn.asking()) return pn.prompt();
+            order.put("name", pn.value());
+        }
+        Step<String> pd = ask(in, "Discount code? (1 for none)", "Enter the code, or 1 for none:", "END Cancelled. Nothing was ordered.", t -> {
+            String v = t.trim();
+            if ("1".equals(v)) return "";
+            if (!v.matches("[A-Za-z0-9_-]{3,30}")) throw new IllegalArgumentException("That code is not valid.");
+            store.quote(with(order, "code", v));   // a wrong or used-up code is said now, with a chance to change it
+            return v;
+        });
+        if (pd.asking()) return pd.prompt();
+        if (!pd.value().isEmpty()) order.put("code", pd.value());
+        var pre = store.quote(order);
+        if (pre.path("pointsUsable").asInt() > 0) {
+            Step<Boolean> pts = confirm(c, in, "Use " + pre.path("pointsUsable").asInt() + " of your " + pre.path("pointsBalance").asInt() + " points?", "Yes", "No");
+            if (pts.asking()) return pts.prompt();
+            if (pts.value()) order.put("points", true);
+        }
+        if (pre.path("askOffers").asBoolean()) {
+            Step<Boolean> off = confirm(c, in, "Get offers from " + name + " by SMS?", "Yes", "No");
+            if (off.asking()) return off.prompt();
+            if (off.value()) order.put("offers", true);
+        }
+        List<String> accepted = list(st.path("methods")).stream().map(com.fasterxml.jackson.databind.JsonNode::asText).toList();
+        List<String> pays = new ArrayList<>();
+        for (String m : methods(c.wallet())) if (WalletService.RAIL.equals(m) || accepted.isEmpty() || accepted.contains(m)) pays.add(m);
+        if (st.path("payOnDelivery").asBoolean()) pays.add("CASH");
+        Step<String> pm = choose(c, in, "Pay with:", pays, m -> "CASH".equals(m) ? (servicesOnly ? "Pay at the appointment" : "Pay on delivery") : methodName(m));
+        if (pm.asking()) return pm.prompt();
+        String method = pm.value();
+        if (!WalletService.RAIL.equals(method)) order.put("pay", method);   // CASH, or the mobile money / card method (the wallet pays the checkout itself)
+        String payer = c.phone();
+        if (!"CASH".equals(method)) {
+            Step<String> pp = payer(c, in, method);
+            if (pp.asking()) return pp.prompt();
+            payer = pp.value();
+        }
+        var quote = store.quote(order);
+        String total = quote.path("total").asText();
+        Step<Boolean> ok = confirm(c, in, clip(name + ": " + summary(quote), c.ussd() ? 70 : 600) + "\nTotal " + total
+                + ("CASH".equals(method) ? ", pay on " + (servicesOnly ? "the day" : "delivery") : "\nWith " + payingWith(c, method, payer)), "Confirm", "Cancel");
+        if (ok.asking()) return ok.prompt();
+        if (!ok.value()) return "END Cancelled. Nothing was ordered.";
+        if (in.has()) return omari(c, in.last());
+        final String from = payer;
+        return once(c, () -> {
+            try {
+                var placed = store.order(with(order, "key", "ch" + sha(c.channel() + ":" + c.session())));
+                String ref = placed.path("orderRef").asText();
+                if ("CASH".equals(method)) {
+                    return fit(c, "END Order " + ref + " placed at " + name + ". Pay " + total + (servicesOnly ? " at your appointment." : " on delivery.")
+                            + (placed.path("booking").isTextual() ? " " + placed.path("booking").asText() + "." : "") + " The store will contact you.");
+                }
+                long sid = placed.path("checkoutSessionId").asLong(0);
+                if (sid == 0) return "END " + clip(placed.path("problem").asText("Your order " + ref + " is saved. Pay it from the order link."), 150);
+                if (WalletService.RAIL.equals(method)) {
+                    Map<String, Object> r = walletPayments.payCheckoutAs(c.holder(), sid, c.channel().toLowerCase(Locale.ROOT), c.rules());
+                    record(c, (String) r.get("reference"));
+                    return walletResult(r, name + " order " + ref);
+                }
+                CheckoutSessionService.PaymentSubmissionResult r = checkout.submitPayment(sid, from, null, method, c.channel().toLowerCase(Locale.ROOT));
+                String tx = r.session().getTransactionReference();
+                record(c, tx);
+                String ccy = quote.path("currency").asText();
+                long amount = quote.path("totalMinor").asLong();
+                if (CARD.contains(method) || r.widgetJsUrl() != null) return cardLink(c, tx, ccy, amount, from);
+                watch(c, tx, method);
+                return afterSubmit(c, tx, method, from, ccy, amount, name + " order " + ref, null);
+            } catch (zw.co.payport.gateway.commerce.StoreClient.Unavailable e) {
+                return "END The store is not available at the moment. Nothing was ordered.";
+            } catch (Exception e) {
+                return "END " + clip(e.getMessage() == null ? "The order could not be placed. No money was taken." : e.getMessage(), 150);
+            }
+        });
+    }
+
+    private String storeOrders(Ctx c) {
+        List<com.fasterxml.jackson.databind.JsonNode> orders = list(store.orders(c.phone()));
+        if (orders.isEmpty()) return "END You have no store orders yet.";
+        StringBuilder b = new StringBuilder("END Your orders:");
+        for (var o : orders) {
+            String line = "\n" + o.path("orderRef").asText() + " " + clip(o.path("store").asText(), 16) + " " + o.path("total").asText() + " " + orderState(o);
+            if (c.ussd() && b.length() + line.length() > 175) break;
+            b.append(line);
+        }
+        return b.toString();
+    }
+
+    static String orderState(com.fasterxml.jackson.databind.JsonNode o) {
+        if ("CANCELLED".equals(o.path("orderStatus").asText())) return "cancelled";
+        String d = o.path("deliveryStatus").asText();
+        if ("READY".equals(d)) return "ready";
+        if ("OUT".equals(d)) return "on its way";
+        if ("DELIVERED".equals(d) || "COLLECTED".equals(d)) return "done";
+        return switch (o.path("paymentStatus").asText()) {
+            case "PAID" -> "paid";
+            case "ON_DELIVERY" -> "pay on delivery";
+            case "PENDING", "CONFIRMING" -> "confirming";
+            case "FAILED", "EXPIRED" -> "not paid";
+            default -> "awaiting payment";
+        };
+    }
+
+    static String summary(com.fasterxml.jackson.databind.JsonNode quote) {
+        List<String> parts = new ArrayList<>();
+        for (var l : list(quote.path("lines"))) parts.add(l.path("quantity").asInt() + " x " + l.path("name").asText());
+        return String.join(", ", parts);
+    }
+
+    static Map<String, Object> with(Map<String, Object> m, String k, Object v) {
+        Map<String, Object> o = new java.util.LinkedHashMap<>(m);
+        o.put(k, v);
+        return o;
+    }
+
+    static String sha(String s) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(d).substring(0, 40);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private long withCharge(Ctx c, List<String> products, String ccy, long amount) {

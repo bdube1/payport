@@ -1382,6 +1382,10 @@
    "path": "/api/v1/commerce/checkouts/{merchantId}/{reference}"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/commerce/customer-code"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/commerce/events"
   },
@@ -1796,6 +1800,38 @@
   {
    "method": "GET",
    "path": "/api/v1/session-timeouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/orders"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/orders"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/orders/{ref}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/quote"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/sign-in"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/stores/{slug}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/store/stores/{slug}/slots"
   },
   {
    "method": "POST",

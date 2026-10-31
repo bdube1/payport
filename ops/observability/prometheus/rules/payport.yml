@@ -100,3 +100,31 @@ groups:
         expr: sum(payport_cc_risk_alerts_open{severity=~"HIGH|CRITICAL"}) > 0
         labels: { severity: warning, dashboard: security }
         annotations: { summary: "High-severity fraud alerts are open" }
+
+  - name: store
+    rules:
+      - alert: StoreDown
+        expr: up{job="payport-commerce"} == 0
+        for: 2m
+        labels: { severity: critical, dashboard: overview }
+        annotations: { summary: "PayPort Commerce (the store) is not answering" }
+      - alert: StoreCannotReachPayments
+        expr: commerce_psp_up == 0
+        for: 5m
+        labels: { severity: critical, dashboard: overview }
+        annotations: { summary: "The store cannot reach PayPort Payments: orders are kept but payments wait" }
+      - alert: StorePaymentEventsBehind
+        expr: commerce_events_lag_seconds > 600
+        for: 5m
+        labels: { severity: warning, dashboard: overview }
+        annotations: { summary: "The store has not read payment events for over 10 minutes" }
+      - alert: StorePaymentsStuck
+        expr: commerce_orders_confirming_stale > 0
+        for: 15m
+        labels: { severity: warning, dashboard: overview }
+        annotations: { summary: "{{ $value }} store orders have been 'being confirmed' for over 30 minutes" }
+      - alert: StoreFailedPaymentsHigh
+        expr: sum(commerce_orders_last_hour{state=~"FAILED|EXPIRED"}) > 5 and sum(commerce_orders_last_hour{state=~"FAILED|EXPIRED"}) > 2 * (commerce_orders_paid_last_hour + 1)
+        for: 15m
+        labels: { severity: warning, dashboard: overview }
+        annotations: { summary: "More store payments are failing than succeeding in the last hour" }

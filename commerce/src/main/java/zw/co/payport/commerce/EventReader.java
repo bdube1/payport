@@ -24,6 +24,12 @@ public class EventReader {
     private final Psp psp;
     private final Payments payments;
     private volatile boolean pspUp = true;
+    private volatile long lastRead = System.currentTimeMillis();
+
+    /** When the event stream was last read (for monitoring). */
+    public long lastRead() {
+        return lastRead;
+    }
 
     public EventReader(JdbcTemplate jdbc, Psp psp, Payments payments) {
         this.jdbc = jdbc;
@@ -43,6 +49,7 @@ public class EventReader {
             try {
                 events = psp.events(cursor, 200);
                 pspUp = true;
+                lastRead = System.currentTimeMillis();
             } catch (Psp.Unavailable e) {
                 if (pspUp) log.warn("[COMMERCE] PayPort Payments unavailable: {}", e.getMessage());
                 pspUp = false;

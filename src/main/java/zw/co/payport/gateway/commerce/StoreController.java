@@ -1,0 +1,110 @@
+package zw.co.payport.gateway.commerce;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import zw.co.payport.gateway.entity.User;
+import zw.co.payport.gateway.model.response.ApiResponse;
+import zw.co.payport.gateway.platform.Web;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * The PayPort Store in the mobile app (the same stores and orders as the website, WhatsApp and USSD). Browsing is open;
+ * ordering is for a signed-in customer, whose own name and phone number go on the order. The order is then paid with the
+ * hosted checkout it returns (mobile money, card) or from the wallet (/api/v1/wallet/pay-checkout).
+ */
+@RestController
+public class StoreController {
+
+    private final StoreClient store;
+    private final zw.co.payport.gateway.channels.ChannelService channels;
+    private final zw.co.payport.gateway.repository.UserRepository users;
+    @org.springframework.beans.factory.annotation.Autowired StoreSignIn signIn;
+
+    public StoreController(StoreClient store, zw.co.payport.gateway.channels.ChannelService channels, zw.co.payport.gateway.repository.UserRepository users) {
+        this.store = store;
+        this.channels = channels;
+        this.users = users;
+    }
+
+    private User me() {
+        return users.findByPhone(Web.principal()).orElseThrow(() -> new SecurityException("not authenticated"));
+    }
+
+    @GetMapping("/api/v1/store/stores")
+    public ResponseEntity<ApiResponse<Object>> stores(@RequestParam(required = false) String type, @RequestParam(required = false) String q, HttpServletRequest req) {
+        return Web.run(() -> plain(store.stores(type, q)), req);
+    }
+
+    @GetMapping("/api/v1/store/stores/{slug}")
+    public ResponseEntity<ApiResponse<Object>> one(@PathVariable String slug, @RequestParam(required = false) String c, @RequestParam(required = false) String q,
+                                                   HttpServletRequest req) {
+        return Web.run(() -> plain(store.store(slug, c, q)), req);
+    }
+
+    @PostMapping("/api/v1/store/stores/{slug}/slots")
+    public ResponseEntity<ApiResponse<Object>> slots(@PathVariable String slug, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> plain(store.slots(slug, b.get("items"))), req);
+    }
+
+    @PostMapping("/api/v1/store/quote")
+    public ResponseEntity<ApiResponse<Object>> quote(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> plain(store.quote(clean(b, null))), req);
+    }
+
+    @PostMapping("/api/v1/store/orders")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> order(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> {
+            channels.require("MOB");
+            return plain(store.order(clean(b, me())));
+        }, req);
+    }
+
+    @GetMapping("/api/v1/store/orders")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> mine(HttpServletRequest req) {
+        return Web.run(() -> plain(store.orders(me().getPhone())), req);
+    }
+
+    @GetMapping("/api/v1/store/orders/{ref}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> get(@PathVariable String ref, HttpServletRequest req) {
+        return Web.run(() -> plain(store.order(ref, me().getPhone())), req);
+    }
+
+    /** "Sign in with PayPort" on the store: where to send the customer (the store's own address, with a one-time code). */
+    @PostMapping("/api/v1/store/sign-in")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> signIn(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> signIn.code(me(), b == null || b.get("next") == null ? null : String.valueOf(b.get("next"))), req);
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Plain maps and lists for the response (the API's own JSON writer, whatever its version). */
+    static Object plain(JsonNode n) {
+        return JSON.convertValue(n, Object.class);
+    }
+
+    /** Only the order's own fields; the customer's name and phone come from the signed-in account, never the request. */
+    static Map<String, Object> clean(Map<String, Object> b, User u) {
+        Map<String, Object> o = new LinkedHashMap<>();
+        for (String k : new String[]{"store", "items", "method", "address", "zone", "slot", "note", "code", "pay", "key", "points", "offers"}) if (b.get(k) != null) o.put(k, b.get(k));
+        o.put("channel", "APP");
+        if (u != null) {
+            o.put("name", u.getFullName());
+            o.put("phone", u.getPhone());
+        }
+        return o;
+    }
+}
