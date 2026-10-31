@@ -118,7 +118,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/sales/*/card").permitAll()
                         // PayPort Commerce, server to server: the service key is checked by CommerceFacade (closed without one).
                         .requestMatchers(HttpMethod.GET, "/api/v1/commerce/events", "/api/v1/commerce/checkouts/*/*", "/api/v1/commerce/merchants/*").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/commerce/checkouts", "/api/v1/commerce/refunds", "/api/v1/commerce/messages").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/whatsapp/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/whatsapp/webhook").permitAll()
 
