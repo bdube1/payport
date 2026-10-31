@@ -842,6 +842,17 @@ public class UssdService {
         });
         if (pd.asking()) return pd.prompt();
         if (!pd.value().isEmpty()) order.put("code", pd.value());
+        var pre = store.quote(order);
+        if (pre.path("pointsUsable").asInt() > 0) {
+            Step<Boolean> pts = confirm(c, in, "Use " + pre.path("pointsUsable").asInt() + " of your " + pre.path("pointsBalance").asInt() + " points?", "Yes", "No");
+            if (pts.asking()) return pts.prompt();
+            if (pts.value()) order.put("points", true);
+        }
+        if (pre.path("askOffers").asBoolean()) {
+            Step<Boolean> off = confirm(c, in, "Get offers from " + name + " by SMS?", "Yes", "No");
+            if (off.asking()) return off.prompt();
+            if (off.value()) order.put("offers", true);
+        }
         List<String> accepted = list(st.path("methods")).stream().map(com.fasterxml.jackson.databind.JsonNode::asText).toList();
         List<String> pays = new ArrayList<>();
         for (String m : methods(c.wallet())) if (WalletService.RAIL.equals(m) || accepted.isEmpty() || accepted.contains(m)) pays.add(m);

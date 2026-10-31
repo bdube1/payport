@@ -40,6 +40,7 @@ public class ChannelApi {
     private final Growth growth;
     private final Options options;
     private final DeliveryProvider.Registry delivery;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
 
     public ChannelApi(Settings settings, Shop shop, Catalog catalog, Carts carts, Payments payments, Growth growth, Options options, DeliveryProvider.Registry delivery) {
         this.settings = settings;
@@ -216,6 +217,16 @@ public class ChannelApi {
             discount = catalog.apply(storeId, code, items);
             items -= discount.discountMinor();
         }
+        // Loyalty points and offers, as on the website (the order's phone number is the customer's).
+        int balance = 0, usable = 0, usePoints = 0;
+        if (c.phone() != null && marketing.loyaltyOn(merchantId)) {
+            balance = marketing.points(merchantId, c.phone());
+            usable = Marketing.usable(balance, items);
+            if (Boolean.TRUE.equals(b.get("points")) || "true".equals(String.valueOf(b.get("points")))) {
+                usePoints = usable;
+                items -= usePoints;
+            }
+        }
         String pay = text(b.get("pay"));
         boolean cash = "CASH".equals(pay);
         if (cash && !Shop.bool(st.get("cod_enabled"))) throw new IllegalArgumentException("This store does not take pay on delivery");
@@ -248,6 +259,10 @@ public class ChannelApi {
             q.put("totalMinor", items + fee);
             q.put("total", Storefront.price(items + fee, v.currency()));
             q.put("needsBooking", minutes > 0 && growth.takesBookings(storeId));
+            q.put("pointsBalance", balance);
+            q.put("pointsUsable", usable);
+            q.put("pointsUsedMinor", usePoints);
+            q.put("askOffers", c.phone() != null && !marketing.consented(merchantId, c.phone()));
             q.put("lines", v.lines().stream().map(l -> Map.of("name", l.name(), "quantity", l.quantity(), "line", Storefront.price(l.unitMinor() * l.quantity(), v.currency()))).toList());
             return q;
         }
@@ -258,6 +273,8 @@ public class ChannelApi {
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());
             payments.channel(placed.orderRef(), channel);
+            if (usePoints > 0) marketing.redeem(merchantId, c.phone(), placed.orderRef(), usePoints);
+            if (Boolean.TRUE.equals(b.get("offers")) || "true".equals(String.valueOf(b.get("offers")))) marketing.consent(merchantId, c.phone(), name);
             payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor(), cash ? null : payChoice, zoneName);
         }
         Map<String, Object> out = view(placed.orderRef(), placed.viewToken());

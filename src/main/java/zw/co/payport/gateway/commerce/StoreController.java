@@ -41,45 +41,45 @@ public class StoreController {
     }
 
     @GetMapping("/api/v1/store/stores")
-    public ResponseEntity<ApiResponse<JsonNode>> stores(@RequestParam(required = false) String type, @RequestParam(required = false) String q, HttpServletRequest req) {
-        return Web.run(() -> store.stores(type, q), req);
+    public ResponseEntity<ApiResponse<Object>> stores(@RequestParam(required = false) String type, @RequestParam(required = false) String q, HttpServletRequest req) {
+        return Web.run(() -> plain(store.stores(type, q)), req);
     }
 
     @GetMapping("/api/v1/store/stores/{slug}")
-    public ResponseEntity<ApiResponse<JsonNode>> one(@PathVariable String slug, @RequestParam(required = false) String c, @RequestParam(required = false) String q,
+    public ResponseEntity<ApiResponse<Object>> one(@PathVariable String slug, @RequestParam(required = false) String c, @RequestParam(required = false) String q,
                                                    HttpServletRequest req) {
-        return Web.run(() -> store.store(slug, c, q), req);
+        return Web.run(() -> plain(store.store(slug, c, q)), req);
     }
 
     @PostMapping("/api/v1/store/stores/{slug}/slots")
-    public ResponseEntity<ApiResponse<JsonNode>> slots(@PathVariable String slug, @RequestBody Map<String, Object> b, HttpServletRequest req) {
-        return Web.run(() -> store.slots(slug, b.get("items")), req);
+    public ResponseEntity<ApiResponse<Object>> slots(@PathVariable String slug, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> plain(store.slots(slug, b.get("items"))), req);
     }
 
     @PostMapping("/api/v1/store/quote")
-    public ResponseEntity<ApiResponse<JsonNode>> quote(@RequestBody Map<String, Object> b, HttpServletRequest req) {
-        return Web.run(() -> store.quote(clean(b, null)), req);
+    public ResponseEntity<ApiResponse<Object>> quote(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> plain(store.quote(clean(b, null))), req);
     }
 
     @PostMapping("/api/v1/store/orders")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<JsonNode>> order(@RequestBody Map<String, Object> b, HttpServletRequest req) {
+    public ResponseEntity<ApiResponse<Object>> order(@RequestBody Map<String, Object> b, HttpServletRequest req) {
         return Web.run(() -> {
             channels.require("MOB");
-            return store.order(clean(b, me()));
+            return plain(store.order(clean(b, me())));
         }, req);
     }
 
     @GetMapping("/api/v1/store/orders")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<JsonNode>> mine(HttpServletRequest req) {
-        return Web.run(() -> store.orders(me().getPhone()), req);
+    public ResponseEntity<ApiResponse<Object>> mine(HttpServletRequest req) {
+        return Web.run(() -> plain(store.orders(me().getPhone())), req);
     }
 
     @GetMapping("/api/v1/store/orders/{ref}")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<JsonNode>> get(@PathVariable String ref, HttpServletRequest req) {
-        return Web.run(() -> store.order(ref, me().getPhone()), req);
+    public ResponseEntity<ApiResponse<Object>> get(@PathVariable String ref, HttpServletRequest req) {
+        return Web.run(() -> plain(store.order(ref, me().getPhone())), req);
     }
 
     /** "Sign in with PayPort" on the store: where to send the customer (the store's own address, with a one-time code). */
@@ -89,10 +89,17 @@ public class StoreController {
         return Web.run(() -> signIn.code(me(), b == null || b.get("next") == null ? null : String.valueOf(b.get("next"))), req);
     }
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Plain maps and lists for the response (the API's own JSON writer, whatever its version). */
+    static Object plain(JsonNode n) {
+        return JSON.convertValue(n, Object.class);
+    }
+
     /** Only the order's own fields; the customer's name and phone come from the signed-in account, never the request. */
     static Map<String, Object> clean(Map<String, Object> b, User u) {
         Map<String, Object> o = new LinkedHashMap<>();
-        for (String k : new String[]{"store", "items", "method", "address", "zone", "slot", "note", "code", "pay", "key"}) if (b.get(k) != null) o.put(k, b.get(k));
+        for (String k : new String[]{"store", "items", "method", "address", "zone", "slot", "note", "code", "pay", "key", "points", "offers"}) if (b.get(k) != null) o.put(k, b.get(k));
         o.put("channel", "APP");
         if (u != null) {
             o.put("name", u.getFullName());

@@ -366,13 +366,17 @@ class PlatformControlsScenarioTest {
         assertTrue(menu.contains("8. Shop"), menu);
         String shop = ussd(s, ph, "8", true).body().path("text").asText();
         assertTrue(shop.startsWith("CON PayPort Store") && shop.contains("2. Food (1)") && shop.contains("3. My orders"), shop);
-        assertTrue(ussd(s, ph, "8*2", true).body().path("text").asText().contains("1. Mai's Kitchen"));
+        String list = ussd(s, ph, "8*2", true).body().path("text").asText();
+        assertTrue(list.contains("1. Mai's Kitchen"), list);
         String items = ussd(s, ph, "8*2*1", true).body().path("text").asText();
         assertTrue(items.contains("1. Sadza and beef USD 6.00"), items);
-        assertTrue(ussd(s, ph, "8*2*1*1", true).body().path("text").asText().contains("How many Sadza and beef?"));
-        assertTrue(ussd(s, ph, "8*2*1*1*2", true).body().path("text").asText().contains("1. Checkout"));
+        String many = ussd(s, ph, "8*2*1*1", true).body().path("text").asText();
+        assertTrue(many.contains("How many Sadza and beef?"), many);
+        String chosen = ussd(s, ph, "8*2*1*1*2", true).body().path("text").asText();
+        assertTrue(chosen.contains("1. Checkout"), chosen);
         assertTrue(ussd(s, ph, "8*2*1*1*2*1", true).body().path("text").asText().contains("Your name:"), "a guest gives a name");
-        assertTrue(ussd(s, ph, "8*2*1*1*2*1*Tendai", true).body().path("text").asText().contains("Discount code?"));
+        String disc = ussd(s, ph, "8*2*1*1*2*1*Tendai", true).body().path("text").asText();
+        assertTrue(disc.contains("Discount code?"), disc);
         String pay = ussd(s, ph, "8*2*1*1*2*1*Tendai*1", true).body().path("text").asText();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\. Pay on delivery").matcher(pay);
         String all = pay;
@@ -402,8 +406,9 @@ class PlatformControlsScenarioTest {
         // The app reads the same stores (browsing is open; ordering needs a login).
         Res apps = call("GET", "/api/v1/store/stores", null, null);
         assertEquals(200, apps.status(), apps.body().toString());
-        assertTrue(apps.body().toString().contains("Mai's Kitchen"));
-        assertTrue(call("POST", "/api/v1/store/orders", null, Map.of("store", "mais-kitchen")).status() >= 401);
+        assertTrue(apps.body().toString().contains("Mai's Kitchen"), apps.body().toString());
+        int anon = call("POST", "/api/v1/store/orders", null, Map.of("store", "mais-kitchen")).status();
+        assertTrue(anon == 401 || anon == 403, "ordering needs a login: " + anon);
     }
 
     @Test
