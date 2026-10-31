@@ -62,6 +62,9 @@
       <label>Phone <input name="phone" maxlength="20" inputmode="tel" autocomplete="tel" required th:value="${me != null ? me.phone : ''}"></label>
       <p th:if="${me == null}" class="muted small"><a th:href="@{/signin(next=${'/s/' + store.slug + '/cart'})}">Sign in with PayPort</a> to fill this in and keep your orders.</p>
       <label>Note for the seller <input name="note" maxlength="300"></label>
+      <label th:if="${cart.pointsOffer != null}" class="opt"><input type="checkbox" name="points" value="on" checked> <span th:text="${cart.pointsOffer}">Use points</span></label>
+      <p th:if="${cart.pointsNote != null}" class="muted small" th:text="${cart.pointsNote}"></p>
+      <label th:if="${cart.askOffers}" class="opt"><input type="checkbox" name="offers" value="on"> <span th:text="'Send me offers from ' + ${store.name} + ' by SMS'">Send me offers</span></label>
       <label th:if="${cart.booking}">Appointment time
         <select name="slot" required>
           <option value="">Choose a time</option>

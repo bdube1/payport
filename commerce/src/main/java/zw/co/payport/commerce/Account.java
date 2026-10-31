@@ -28,6 +28,7 @@ public class Account {
     private final Shop shop;
     private final Growth growth;
     private final Storefront storefront;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
 
     public Account(Shoppers shoppers, Settings settings, Payments payments, Carts carts, Shop shop, Growth growth, Storefront storefront) {
         this.shoppers = shoppers;
@@ -132,6 +133,16 @@ public class Account {
             }
         }
         return "redirect:/s/" + o.get().get("store_slug") + "/cart";
+    }
+
+    /** The link at the end of every offer or reminder: stop them for that store. */
+    @GetMapping("/u/{token}")
+    public String stop(@PathVariable String token, Model model, HttpServletResponse res) {
+        Optional<String> store = marketing.stop(token);
+        if (store.isEmpty()) return storefront.missing(model, res, "This link does not work any more");
+        model.addAttribute("store", store.get());
+        res.setHeader("Cache-Control", "no-store");
+        return "stopped";
     }
 
     @PostMapping("/me/addresses/{id}/delete")

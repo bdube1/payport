@@ -47,6 +47,7 @@ public class Storefront {
     @org.springframework.beans.factory.annotation.Autowired Options options;
     @org.springframework.beans.factory.annotation.Autowired Ai ai;
     @org.springframework.beans.factory.annotation.Autowired Shoppers shoppers;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
 
     /** The signed-in shopper on this request (the store's own session cookie), if any. */
     Optional<Shoppers.Shopper> shopper() {
@@ -413,6 +414,10 @@ public class Storefront {
         } catch (IllegalArgumentException e) {
             return productPage(st, p.get(), model, e.getMessage(), token);
         }
+        // A signed-in shopper's cart can be reminded about later (only with their agreement, see Marketing).
+        final String ct = token;
+        shopper().ifPresent(x -> shop.jdbc().update("UPDATE carts SET shopper_id = ?, reminded_at = NULL WHERE token_hash = ? AND store_id = ?",
+                x.id(), Shop.sha256(ct), st.get("id")));
         return "redirect:/s/" + st.get("slug") + "/cart";
     }
 
@@ -510,6 +515,17 @@ public class Storefront {
         Optional<Shoppers.Shopper> who = shopper();
         model.addAttribute("me", meModel());
         model.addAttribute("addresses", who.map(x -> shoppers.addresses(x)).orElse(List.of()));
+        long mid = ((Number) st.get("merchant_id")).longValue();
+        String offer = null;
+        if (who.isPresent() && ccy != null && marketing.loyaltyOn(mid)) {
+            int bal = marketing.points(mid, who.get().phone());
+            int use = Marketing.usable(bal, v.map(Carts.View::itemsMinor).orElse(0L));
+            if (use > 0) offer = "Use " + use + " of your " + bal + " points (−" + price(use, ccy) + ")";
+            else if (bal > 0) cm.put("pointsNote", "You have " + bal + " points here");
+        }
+        cm.put("pointsOffer", offer);
+        cm.putIfAbsent("pointsNote", null);
+        cm.put("askOffers", who.map(x -> !marketing.consented(mid, x.phone())).orElse(true));
         model.addAttribute("title", "Cart | " + st.get("name"));
         return "cart";
     }
@@ -536,6 +552,7 @@ public class Storefront {
                            @RequestParam(required = false) String note, @RequestParam String k,
                            @RequestParam(required = false) String code, @RequestParam(required = false) String pay,
                            @RequestParam(required = false) String zone, @RequestParam(required = false) String slot,
+                           @RequestParam(required = false) String points, @RequestParam(required = false) String offers,
                            @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                            Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
@@ -574,6 +591,12 @@ public class Storefront {
         }
         boolean cash = "CASH".equals(pay) && Shop.bool(st.get("cod_enabled"));
         long merchantId = ((Number) st.get("merchant_id")).longValue();
+        // Loyalty points: a signed-in shopper may use theirs (whole hundreds, at most half the items).
+        int usePoints = 0;
+        if ("on".equals(points) && signedIn.isPresent() && marketing.loyaltyOn(merchantId)) {
+            usePoints = Marketing.usable(marketing.points(merchantId, signedIn.get().phone()), items);
+            items -= usePoints;
+        }
         String payChoice = pay != null && options.accepted(merchantId).contains(pay) ? pay : null;
         long fee;
         String zoneName = null;
@@ -608,6 +631,8 @@ public class Storefront {
         final String claimed = "DELIVERY".equals(how) ? addr : null;
         final String placedRef = placed.orderRef();
         signedIn.ifPresent(x -> shoppers.claim(x, placedRef, claimed));
+        if (!placed.existing() && usePoints > 0) marketing.redeem(merchantId, signedIn.get().phone(), placedRef, usePoints);
+        if ("on".equals(offers)) marketing.consent(merchantId, c.phone(), c.name());
         if (!placed.existing()) {
             if (discount != null) catalog.use(discount.id());
             payments.finish(placed.orderRef(), cash, discount == null ? null : discount.code(), discount == null ? 0 : discount.discountMinor(), cash ? null : payChoice, zoneName);

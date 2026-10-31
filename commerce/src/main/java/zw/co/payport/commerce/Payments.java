@@ -39,6 +39,7 @@ public class Payments {
     private final Settings settings;
     private final org.springframework.transaction.support.TransactionTemplate tx;
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
+    @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
 
     /** An appointment to book with the order (services): its start (local time) and length. */
     public record Booking(LocalDateTime start, int minutes) {}
@@ -149,6 +150,7 @@ public class Payments {
         long id = ((Number) o.get("id")).longValue();
         jdbc.update("UPDATE orders SET payment_status = 'PAID', paid_at = ?, updated_at = ? WHERE id = ? AND payment_status = 'ON_DELIVERY'", Shop.now(), Shop.now(), id);
         sell(id);
+        marketing.earn(id);
         shop.event("order.paid", merchantId, ref, "cash " + o.get("amount_minor"));
         return merchantOrder(merchantId, ref);
     }
@@ -279,13 +281,17 @@ public class Payments {
         else next = current;
         if ("PAID".equals(current) || next.equals(current)) return;
         // The payment definitively did not happen: the reserved items go back on sale (an uncertain one keeps them).
-        if ("FAILED".equals(next) || "EXPIRED".equals(next)) release(orderId);
+        if ("FAILED".equals(next) || "EXPIRED".equals(next)) {
+            release(orderId);
+            marketing.giveBack(orderId);
+        }
         long merchantId = ((Number) o.get("merchant_id")).longValue();
         jdbc.update("UPDATE orders SET payment_status = ?, paid_at = CASE WHEN ? = 'PAID' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?",
                 next, next, Shop.now(), Shop.now(), orderId);
         if ("PAID".equals(next)) {
             shop.event("order.paid", merchantId, String.valueOf(o.get("order_ref")), String.valueOf(o.get("amount_minor")));
             sell(orderId);
+            marketing.earn(orderId);
             growth.orderConfirmed(String.valueOf(o.get("order_ref")));
             if (!"NONE".equals(o.get("delivery_method"))) jdbc.update("UPDATE orders SET delivery_status = 'PREPARING' WHERE id = ? AND delivery_status = 'NOT_NEEDED'", orderId);
             // A single-use link is closed once it is paid.
@@ -560,7 +566,10 @@ public class Payments {
         if ("CANCELLED".equals(s) && "PAID".equals(o.get("payment_status")) && !"REFUNDED".equals(o.get("refund_status")))
             throw new IllegalStateException("Refund a paid order before cancelling it");
         jdbc.update("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ?", s, Shop.now(), o.get("id"));
-        if ("CANCELLED".equals(s)) release(((Number) o.get("id")).longValue());
+        if ("CANCELLED".equals(s)) {
+            release(((Number) o.get("id")).longValue());
+            marketing.giveBack(((Number) o.get("id")).longValue());
+        }
         return merchantOrder(merchantId, ref);
     }
 

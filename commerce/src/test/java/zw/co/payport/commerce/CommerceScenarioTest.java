@@ -76,6 +76,7 @@ class CommerceScenarioTest {
     @Autowired EventReader reader;
     @Autowired Payments payments;
     @Autowired Domains domains;
+    @Autowired Marketing marketing;
     @org.springframework.test.context.bean.override.mockito.MockitoBean Domains.TxtLookup dns;
 
     static final ObjectMapper JSON = new ObjectMapper();
@@ -779,5 +780,83 @@ class CommerceScenarioTest {
 
         assertEquals(302, form("/signout", Map.of(), me).status());
         assertEquals(302, page("/me", me).status(), "signed out");
+    }
+
+    String shopperCookie(String code) throws Exception {
+        HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=" + code + "&next=%2Fme")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        return cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
+    }
+
+    /** Owner, 31 Oct 2026: reports, offers only to customers who agreed (with a stop link), cart reminders, loyalty points. */
+    @Test
+    void merchantGrowth_reports_offersWithConsent_cartReminders_loyaltyPoints() throws Exception {
+        PSP.down = false;
+        String alpha = signIn("portal-token-A");
+        assertEquals(200, api("PUT", "/api/commerce/store", alpha, Map.of("pickupEnabled", true, "loyaltyEnabled", true, "cartReminders", true)).status());
+        Res p = api("POST", "/api/commerce/products", alpha, Map.of("name", "Carved bowl", "priceMinor", 5_000, "currency", "USD", "stock", 50));
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        String me = shopperCookie("c0de-loyal");
+
+        // First order: the shopper agrees to offers; paying earns points (1 per dollar).
+        String c1 = form(url + "/buy", Map.of("qty", "2"), me).cookie();
+        Res cart = page(storePath + "/cart", c1 + "; " + me);
+        assertTrue(cart.body().contains("Send me offers from"), cart.body());
+        String k1 = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k1, "method", "PICKUP", "offers", "on"), c1 + "; " + me).status());
+        String ref1 = orderRefOf(k1);
+        PSP.set(1001, ref1 + "-1", "PAID", "PAID");
+        reader.poll();
+        assertEquals(100, marketing.points(1001, "+263777000444"));
+        assertTrue(marketing.consented(1001, "0777000444"));
+
+        // Second order: points used (100 = USD 1.00 off); a failed payment gives them back.
+        String c2 = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        Res cart2 = page(storePath + "/cart", c2 + "; " + me);
+        assertTrue(cart2.body().contains("Use 100 of your 100 points") && !cart2.body().contains("Send me offers from"), cart2.body());
+        String k2 = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k2, "method", "PICKUP", "points", "on"), c2 + "; " + me).status());
+        String ref2 = orderRefOf(k2);
+        assertEquals(4_900L, jdbc.queryForObject("SELECT amount_minor FROM orders WHERE order_ref = ?", Long.class, ref2));
+        assertEquals(0, marketing.points(1001, "0777000444"));
+        PSP.set(1001, ref2 + "-1", "FAILED", "FAILED");
+        reader.poll();
+        assertEquals(100, marketing.points(1001, "0777000444"), "points back when the payment fails");
+
+        // A cart left for hours: one reminder, to a customer who agreed.
+        String c3 = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        jdbc.update("UPDATE carts SET updated_at = ? WHERE token_hash = ?", java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().minusHours(3)), shaOf(c3.substring("pp_cart=".length())));
+        int before = PSP.messages.size();
+        marketing.remindCarts();
+        assertNotNull(waitForMessage("CUSTOMER|You left something in your cart at Alpha"), "reminder: " + PSP.messages);
+        marketing.remindCarts();
+        Thread.sleep(300);
+        assertEquals(1, PSP.messages.stream().skip(before).filter(m -> m.contains("You left something")).count(), "once");
+
+        // Offers by text: to customers who agreed, once a day, each with a stop link.
+        String bravo = signIn("portal-token-B");
+        assertEquals(409, api("POST", "/api/commerce/campaigns", signIn("portal-token-C"), Map.of("text", "Hello")).status(), "nobody has agreed yet");
+        Res sent = api("POST", "/api/commerce/campaigns", alpha, Map.of("text", "20% off carved bowls this weekend"));
+        assertEquals(200, sent.status(), sent.body());
+        assertTrue(sent.data().path("recipients").asInt() >= 1);
+        String offer = waitForMessage("CUSTOMER|Alpha Crafts: 20% off carved bowls");
+        assertNotNull(offer, "offer: " + PSP.messages);
+        assertTrue(offer.contains("Stop: https://store.test/u/"), offer);
+        assertEquals(409, api("POST", "/api/commerce/campaigns", alpha, Map.of("text", "Again")).status(), "one offer a day");
+        String stop = offer.replaceAll(".*https://store.test(/u/[a-z0-9]+).*", "$1");
+        Res stopped = page(stop);
+        assertTrue(stopped.status() == 200 && stopped.body().contains("Messages stopped"), stopped.body());
+        assertFalse(marketing.consented(1001, "0777000444"));
+
+        // Reports.
+        Res r = api("GET", "/api/commerce/reports?days=30", alpha, null);
+        assertEquals(200, r.status(), r.body());
+        assertTrue(r.body().contains("Carved bowl") && r.data().path("byChannel").toString().contains("WEB"), r.body());
+        assertFalse(api("GET", "/api/commerce/reports", bravo, null).body().contains("Carved bowl"), "each merchant sees its own");
+    }
+
+    static String shaOf(String s) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
     }
 }

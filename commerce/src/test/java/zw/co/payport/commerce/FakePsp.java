@@ -30,7 +30,7 @@ class FakePsp {
     final List<Map<String, Object>> events = new ArrayList<>();
     final Map<String, Long> users = Map.of("portal-token-A", 1001L, "portal-token-B", 2002L, "portal-token-C", 3003L);
     volatile String lastMethod;
-    volatile boolean codeUnused = true;
+    final java.util.Set<String> usedCodes = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     FakePsp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -141,9 +141,11 @@ class FakePsp {
             }
             if (method.equals("POST") && path.equals("/api/v1/commerce/customer-code")) {
                 JsonNode b = json.readTree(x.getRequestBody());
-                if (!"c0de".equals(b.path("code").asText()) || !codeUnused) { send(x, 400, Map.of("success", false, "error", Map.of("message", "Sign in again"))); return; }
-                codeUnused = false;
-                send(x, 200, Map.of("success", true, "data", Map.of("userId", 501, "name", "Rudo Moyo", "phone", "+263776000333")));
+                String code = b.path("code").asText();
+                Map<String, Object> who = "c0de".equals(code) ? Map.of("userId", 501, "name", "Rudo Moyo", "phone", "+263776000333")
+                        : "c0de-loyal".equals(code) ? Map.of("userId", 502, "name", "Tino Dube", "phone", "+263777000444") : null;
+                if (who == null || !usedCodes.add(code)) { send(x, 400, Map.of("success", false, "error", Map.of("message", "Sign in again"))); return; }
+                send(x, 200, Map.of("success", true, "data", who));
                 return;
             }
             if (method.equals("GET") && path.startsWith("/api/v1/commerce/merchants/")) {
