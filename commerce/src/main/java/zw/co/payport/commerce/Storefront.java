@@ -38,6 +38,8 @@ public class Storefront {
     private final Carts carts;
     private final DeliveryProvider.Registry delivery;
     private final Domains domains;
+    @org.springframework.beans.factory.annotation.Autowired
+    private Insights insights;
 
     public Storefront(Shop shop, Payments payments, Settings settings, Carts carts, DeliveryProvider.Registry delivery, Domains domains) {
         this.delivery = delivery;
@@ -170,6 +172,10 @@ public class Storefront {
     @GetMapping("/s/{slug}")
     public String store(@PathVariable String slug, @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart,
                         @RequestParam(name = "c", required = false) String category, Model model, HttpServletResponse res) {
+        return store(slug, cart, category, null, model, res);
+    }
+
+    String store(String slug, String cart, String category, String q, Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return missing(model, res, "This store does not exist");
         Map<String, Object> st = s.get();
@@ -178,8 +184,9 @@ public class Storefront {
         java.util.TreeSet<String> categories = new java.util.TreeSet<>();
         for (Map<String, Object> p : shopProducts(merchant)) {
             if (p.get("category") != null) categories.add((String) p.get("category"));
-            if (category == null || category.isBlank() || category.equals(p.get("category"))) items.add(productModel(p, (String) st.get("slug")));
+            if ((category == null || category.isBlank() || category.equals(p.get("category"))) && matches(p, q)) items.add(productModel(p, (String) st.get("slug")));
         }
+        model.addAttribute("q", q == null || q.isBlank() ? null : q.trim());
         model.addAttribute("categories", categories);
         model.addAttribute("category", category == null || category.isBlank() ? null : category);
         Map<String, Object> sm = storeModel(st);
@@ -190,6 +197,20 @@ public class Storefront {
         model.addAttribute("title", st.get("name"));
         model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with PayPort." : st.get("about"));
         return "store";
+    }
+
+    /** Search: every word must appear in the name, description or category (any case). */
+    static boolean matches(Map<String, Object> p, String q) {
+        if (q == null || q.isBlank()) return true;
+        String hay = (p.get("name") + " " + (p.get("description") == null ? "" : p.get("description")) + " " + (p.get("category") == null ? "" : p.get("category"))).toLowerCase(Locale.ROOT);
+        for (String w : q.toLowerCase(Locale.ROOT).trim().split("\\s+")) if (!w.isEmpty() && !hay.contains(w)) return false;
+        return true;
+    }
+
+    @GetMapping("/s/{slug}/search")
+    public String search(@PathVariable String slug, @RequestParam(name = "q", required = false) String q,
+                         @org.springframework.web.bind.annotation.CookieValue(name = Carts.COOKIE, required = false) String cart, Model model, HttpServletResponse res) {
+        return store(slug, cart, null, q == null ? null : q.length() > 80 ? q.substring(0, 80) : q, model, res);
     }
 
     List<Map<String, Object>> shopProducts(long merchantId) {
@@ -223,6 +244,9 @@ public class Storefront {
         model.addAttribute("title", p.get("name") + " | " + st.get("name"));
         model.addAttribute("description", p.get("description") == null ? pm.get("price") + " at " + st.get("name") : p.get("description"));
         model.addAttribute("image", pm.get("image"));
+        List<Map<String, Object>> also = new ArrayList<>();
+        for (Map<String, Object> a : insights.alsoBought(((Number) st.get("merchant_id")).longValue(), ((Number) p.get("id")).longValue(), 4)) also.add(productModel(a, (String) st.get("slug")));
+        model.addAttribute("also", also);
         return "product";
     }
 

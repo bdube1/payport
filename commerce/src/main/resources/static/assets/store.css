@@ -99,3 +99,7 @@ input{background:#0F1513;border-color:#33413A}.pic,.hero-pic{background:#1F2A26}
 .d-local .name{grid-area:name;align-self:end;padding:0 12px}
 .d-local .desc-line{grid-area:desc;display:block;align-self:start;padding:0 12px;color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .d-local .price{grid-area:price;align-self:center;padding:0 12px}
+.search{margin:0 0 12px}
+.search input{max-width:420px}
+.also{margin-top:24px}
+.also .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
