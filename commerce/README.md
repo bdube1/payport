@@ -45,4 +45,17 @@ mvn clean package -DskipTests && scripts/start-commerce.sh
 # 4. Caddy: copy scripts/store.caddy to /etc/caddy/, import it, point DNS for store-staging.payport.africa here, reload
 ```
 
+Custom domains: see `scripts/store-domains.caddy` (Caddy on-demand TLS, asking Commerce which domains are verified).
+
+Deploying an update (stops at the first failure):
+
+```bash
+set -e
+mysqldump -u root -p payport_commerce_staging > /opt/payport/backups/commerce-$(date +%F-%H%M).sql   # migrations run on start
+cd /opt/payport/staging && git pull
+cd commerce && mvn clean package -DskipTests      # the same commit already passed CI
+scripts/stop-commerce.sh
+scripts/start-commerce.sh                          # waits for the readiness check, exits non-zero if it fails
+```
+
 Memory: about 300 MB (`-Xmx384m`). The staging server is already short of memory; a second server is better.

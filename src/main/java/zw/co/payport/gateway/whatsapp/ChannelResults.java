@@ -61,12 +61,13 @@ public class ChannelResults {
 
     /** Waits up to maxSeconds for the answer and sends it; returns what was sent (null when nothing is sent). */
     public String watchNow(String waId, String reference, int maxSeconds) throws InterruptedException {
+        if (answered(reference)) return null;   // one result per payment, even if two watchers start
         Optional<TransactionOutcomeService.Result> r = outcomes.waitForFinal(reference, maxSeconds);
         if (r.isPresent() && r.get().status() == TransactionStatus.PAYMENT_PENDING) {
             windows.closeForCustomer(reference);
             r = outcomes.current(reference);
         }
-        if (r.isEmpty()) return null;
+        if (r.isEmpty() || answered(reference)) return null;
         List<Map<String, Object>> t = jdbc.queryForList("SELECT product_name, amount_cents, charge_cents, currency, recipient_identifier FROM transactions WHERE reference = ?", reference);
         String text = message(r.get(), t.isEmpty() ? Map.of() : t.get(0));
         if (text == null) return null;

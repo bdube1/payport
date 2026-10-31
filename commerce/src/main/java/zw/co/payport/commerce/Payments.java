@@ -100,6 +100,8 @@ public class Payments {
                 }
                 jdbc.update("UPDATE orders SET items_minor = ?, delivery_method = ?, delivery_fee_minor = ?, delivery_address = ? WHERE id = ?",
                         o.items().isEmpty() ? null : itemsMinor, o.deliveryMethod() == null ? "NONE" : o.deliveryMethod(), o.deliveryFeeMinor(), o.deliveryAddress(), id);
+                String short_ = reserve(id);
+                if (short_ != null) throw new IllegalArgumentException(short_);   // rolls the whole order back
                 shop.event("order.created", o.merchantId(), ref, o.linkId() != null ? "link" : "store");
                 return new Placed(ref, token, false);
             } catch (DuplicateKeyException e) {
@@ -138,6 +140,8 @@ public class Payments {
         if ("PENDING".equals(ps) || "CONFIRMING".equals(ps)) return new Start(null, "Your payment is being confirmed.", false);
         if ("CANCELLED".equals(o.get("order_status"))) return new Start(null, "This order was cancelled.", false);
         long orderId = ((Number) o.get("id")).longValue(), merchantId = ((Number) o.get("merchant_id")).longValue();
+        String gone = reserveAgain(orderId);
+        if (gone != null) return new Start(null, "Sorry: " + gone, false);
         int attempt = ((Number) o.get("attempts")).intValue();
         boolean reuse = attempt > 0 && "AWAITING_PAYMENT".equals(ps);
         if (!reuse) attempt++;
@@ -217,13 +221,14 @@ public class Payments {
         else if (!tries.isEmpty()) next = tries.get(tries.size() - 1);   // the latest try: AWAITING_PAYMENT, FAILED or EXPIRED
         else next = current;
         if ("PAID".equals(current) || next.equals(current)) return;
+        // The payment definitively did not happen: the reserved items go back on sale (an uncertain one keeps them).
+        if ("FAILED".equals(next) || "EXPIRED".equals(next)) release(orderId);
         long merchantId = ((Number) o.get("merchant_id")).longValue();
         jdbc.update("UPDATE orders SET payment_status = ?, paid_at = CASE WHEN ? = 'PAID' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?",
                 next, next, Shop.now(), Shop.now(), orderId);
         if ("PAID".equals(next)) {
             shop.event("order.paid", merchantId, String.valueOf(o.get("order_ref")), String.valueOf(o.get("amount_minor")));
-            takeStock(orderId);
-            rememberCustomer(o);
+            sell(orderId);
             if (!"NONE".equals(o.get("delivery_method"))) jdbc.update("UPDATE orders SET delivery_status = 'PREPARING' WHERE id = ? AND delivery_status = 'NOT_NEEDED'", orderId);
             // A single-use link is closed once it is paid.
             if (o.get("link_id") != null) jdbc.update("UPDATE links SET status = 'USED', updated_at = ? WHERE id = ? AND reusable = FALSE AND status = 'ACTIVE'",
@@ -231,44 +236,73 @@ public class Payments {
         }
     }
 
-    /** Paid: what was sold leaves the stock. If something sold out meanwhile, the order is marked so the merchant sees it. */
-    void takeStock(long orderId) {
-        if (jdbc.update("UPDATE orders SET stock_taken = TRUE WHERE id = ? AND stock_taken = FALSE", orderId) == 0) return;
-        boolean short_ = false;
-        for (Map<String, Object> it : jdbc.queryForList("SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL", orderId)) {
-            Object pid = it.get("product_id");
+    static final int HOLD_MINUTES = 35;   // a little longer than the PSP's checkout (30 minutes)
+
+    /**
+     * Reserves the order's counted items, atomically (stock >= quantity in the same UPDATE), so two customers can never
+     * both pay for the last one. Returns why not (and reserves nothing) when something is short.
+     */
+    String reserve(long orderId) {
+        List<Map<String, Object>> items = jdbc.queryForList("SELECT i.product_id, i.name, i.quantity, p.stock FROM order_items i JOIN products p ON p.id = i.product_id "
+                + "WHERE i.order_id = ? AND p.stock IS NOT NULL", orderId);
+        if (items.isEmpty()) return null;
+        List<Map<String, Object>> done = new ArrayList<>();
+        for (Map<String, Object> it : items) {
             int q = ((Number) it.get("quantity")).intValue();
-            int n = jdbc.update("UPDATE products SET stock = stock - ? WHERE id = ? AND stock IS NOT NULL AND stock >= ?", q, pid, q);
-            if (n == 0) {
-                Integer counted = jdbc.queryForObject("SELECT COUNT(*) FROM products WHERE id = ? AND stock IS NOT NULL", Integer.class, pid);
-                if (counted != null && counted > 0) {
-                    jdbc.update("UPDATE products SET stock = 0 WHERE id = ?", pid);
-                    short_ = true;
-                }
+            if (jdbc.update("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?", q, it.get("product_id"), q) == 0) {
+                for (Map<String, Object> d : done) jdbc.update("UPDATE products SET stock = stock + ? WHERE id = ?", d.get("quantity"), d.get("product_id"));
+                Integer left = jdbc.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, it.get("product_id"));
+                return (left == null || left == 0 ? it.get("name") + " has just sold out" : "Only " + left + " " + it.get("name") + " left") + ".";
+            }
+            done.add(it);
+        }
+        jdbc.update("UPDATE orders SET stock_state = 'RESERVED', reserved_until = ? WHERE id = ?",
+                java.sql.Timestamp.valueOf(LocalDateTime.now().plusMinutes(HOLD_MINUTES)), orderId);
+        return null;
+    }
+
+    /** Paid: the reservation becomes a sale. If it had been released meanwhile, the items are taken again or the order is flagged. */
+    void sell(long orderId) {
+        if (jdbc.update("UPDATE orders SET stock_state = 'SOLD', reserved_until = NULL WHERE id = ? AND stock_state = 'RESERVED'", orderId) > 0) return;
+        if (jdbc.update("UPDATE orders SET stock_state = 'SOLD' WHERE id = ? AND stock_state = 'RELEASED'", orderId) == 0) return;
+        boolean short_ = false;
+        for (Map<String, Object> it : jdbc.queryForList("SELECT i.product_id, i.quantity FROM order_items i JOIN products p ON p.id = i.product_id "
+                + "WHERE i.order_id = ? AND p.stock IS NOT NULL", orderId)) {
+            int q = ((Number) it.get("quantity")).intValue();
+            if (jdbc.update("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?", q, it.get("product_id"), q) == 0) {
+                jdbc.update("UPDATE products SET stock = 0 WHERE id = ?", it.get("product_id"));
+                short_ = true;
             }
         }
         if (short_) jdbc.update("UPDATE orders SET stock_short = TRUE WHERE id = ?", orderId);
     }
 
-    /** A cancelled order puts its items back in stock. */
-    void returnStock(long orderId) {
-        if (jdbc.update("UPDATE orders SET stock_taken = FALSE WHERE id = ? AND stock_taken = TRUE", orderId) == 0) return;
+    /** Puts reserved (or, for a cancelled paid order, sold) items back on sale, once. */
+    void release(long orderId) {
+        if (jdbc.update("UPDATE orders SET stock_state = 'RELEASED', reserved_until = NULL WHERE id = ? AND stock_state IN ('RESERVED','SOLD')", orderId) == 0) return;
         for (Map<String, Object> it : jdbc.queryForList("SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL", orderId)) {
             jdbc.update("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL", it.get("quantity"), it.get("product_id"));
         }
     }
 
-    /** The merchant's customer list grows from paid orders that left a phone number. */
-    void rememberCustomer(Map<String, Object> o) {
-        Object phone = o.get("customer_phone");
-        if (phone == null || String.valueOf(phone).isBlank()) return;
-        long merchantId = ((Number) o.get("merchant_id")).longValue();
-        jdbc.update("INSERT INTO customers (merchant_id, phone, name, orders, first_order_at, last_order_at) VALUES (?,?,?,1,?,?) "
-                + "ON DUPLICATE KEY UPDATE orders = orders + 1, name = COALESCE(VALUES(name), name), last_order_at = VALUES(last_order_at)",
-                merchantId, phone, o.get("customer_name"), Shop.now(), Shop.now());
-        Long cid = jdbc.queryForObject("SELECT id FROM customers WHERE merchant_id = ? AND phone = ?", Long.class, merchantId, phone);
-        jdbc.update("INSERT INTO customer_spend (customer_id, currency, spent_minor) VALUES (?,?,?) ON DUPLICATE KEY UPDATE spent_minor = spent_minor + VALUES(spent_minor)",
-                cid, o.get("currency"), o.get("amount_minor"));
+    /** A retry after a failed or expired payment reserves again (the items may have sold meanwhile). */
+    String reserveAgain(long orderId) {
+        Integer released = jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE id = ? AND stock_state = 'RELEASED'", Integer.class, orderId);
+        if (released == null || released == 0) return null;
+        return tx.execute(st -> {
+            String why = reserve(orderId);
+            if (why != null) st.setRollbackOnly();
+            return why;
+        });
+    }
+
+    /** Orders whose payment never started (for example while the PSP was down) give their items back after the hold. */
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    public void releaseExpiredHolds() {
+        for (Long id : jdbc.queryForList("SELECT id FROM orders WHERE stock_state = 'RESERVED' AND payment_status = 'NOT_STARTED' AND reserved_until < ?",
+                Long.class, Shop.now())) {
+            release(id);
+        }
     }
 
     /** Refunds as the PSP lists them: COMPLETED only once the customer has been paid back. */
@@ -451,7 +485,7 @@ public class Payments {
         if ("CANCELLED".equals(s) && "PAID".equals(o.get("payment_status")) && !"REFUNDED".equals(o.get("refund_status")))
             throw new IllegalStateException("Refund a paid order before cancelling it");
         jdbc.update("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ?", s, Shop.now(), o.get("id"));
-        if ("CANCELLED".equals(s)) returnStock(((Number) o.get("id")).longValue());
+        if ("CANCELLED".equals(s)) release(((Number) o.get("id")).longValue());
         return merchantOrder(merchantId, ref);
     }
 

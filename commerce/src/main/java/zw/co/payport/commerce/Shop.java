@@ -173,6 +173,10 @@ public class Shop {
         v.put("deliveryFeeMinor", r.get("delivery_fee_minor") == null ? 0L : ((Number) r.get("delivery_fee_minor")).longValue());
         v.put("freeDeliveryFromMinor", r.get("free_delivery_from_minor"));
         v.put("deliveryNote", r.get("delivery_note"));
+        v.put("design", r.get("design"));
+        v.put("bannerImage", r.get("banner_image"));
+        v.put("tagline", r.get("tagline"));
+        v.put("deliveryProvider", r.get("delivery_provider"));
         return v;
     }
 
@@ -200,11 +204,16 @@ public class Shop {
         try { fee = feeIn == null || String.valueOf(feeIn).isBlank() ? 0 : Long.parseLong(String.valueOf(feeIn)); } catch (NumberFormatException e) { throw new IllegalArgumentException("Enter the delivery fee"); }
         if (fee < 0 || fee > 100_000_000L) throw new IllegalArgumentException("Enter the delivery fee");
         Long freeFrom = optionalMoney(b.getOrDefault("freeDeliveryFromMinor", cur.get("freeDeliveryFromMinor")), "free delivery amount");
+        String design = String.valueOf(b.getOrDefault("design", cur.get("design")));
+        if (!java.util.Set.of("PRODUCT", "BOUTIQUE", "LOCAL").contains(design)) throw new IllegalArgumentException("Choose a store design");
+        String banner = b.containsKey("bannerImage") ? text(b.get("bannerImage"), 32, false, "banner") : (String) cur.get("bannerImage");
+        if (banner != null) ownImage(merchantId, banner);
+        String tagline = text(b.getOrDefault("tagline", cur.get("tagline")), 120, false, "tagline");
         try {
             jdbc.update("UPDATE stores SET name = ?, about = ?, whatsapp = ?, theme_color = ?, slug = ?, logo_image = ?, status = ?, pickup_enabled = ?, pickup_note = ?, "
-                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, updated_at = ? WHERE merchant_id = ?",
+                            + "delivery_enabled = ?, delivery_fee_minor = ?, free_delivery_from_minor = ?, delivery_note = ?, design = ?, banner_image = ?, tagline = ?, updated_at = ? WHERE merchant_id = ?",
                     name, about, wa == null ? null : wa.replaceAll("[\\s-]", ""), color.toUpperCase(Locale.ROOT), slug, logo, status, pickup, pickupNote,
-                    delivery, fee, freeFrom, deliveryNote, now(), merchantId);
+                    delivery, fee, freeFrom, deliveryNote, design, banner, tagline, now(), merchantId);
         } catch (DuplicateKeyException e) {
             throw new IllegalArgumentException("That store address is taken");
         }
@@ -251,6 +260,7 @@ public class Shop {
         v.put("currency", r.get("currency"));
         v.put("imageId", r.get("image_id"));
         v.put("stock", r.get("stock") == null ? null : ((Number) r.get("stock")).intValue());
+        v.put("category", r.get("category"));
         v.put("status", r.get("status"));
         String storeSlug = jdbc.queryForList("SELECT slug FROM stores WHERE id = ?", String.class, r.get("store_id")).stream().findFirst().orElse("");
         v.put("url", settings.publicUrl + "/s/" + storeSlug + "/" + r.get("slug"));
@@ -273,6 +283,7 @@ public class Shop {
         String image = text(b.get("imageId"), 32, false, "picture");
         if (image != null) ownImage(merchantId, image);
         String status = "HIDDEN".equals(b.get("status")) ? "HIDDEN" : "ACTIVE";
+        String category = text(b.get("category"), 40, false, "category");
         Integer stock = null;
         Object st = b.get("stock");
         if (st != null && !String.valueOf(st).isBlank()) {
@@ -285,8 +296,8 @@ public class Shop {
             for (int i = 0; i < 20; i++) {
                 String s = i == 0 ? base : base + "-" + code(3).toLowerCase(Locale.ROOT);
                 try {
-                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, created_at, updated_at) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, now(), now());
+                    jdbc.update("INSERT INTO products (merchant_id, store_id, slug, name, description, price_minor, currency, image_id, status, stock, category, created_at, updated_at) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", merchantId, store, s, name, description, price, ccy, image, status, stock, category, now(), now());
                     long nid = jdbc.queryForObject("SELECT id FROM products WHERE store_id = ? AND slug = ?", Long.class, store, s);
                     event("product.created", merchantId, String.valueOf(nid), null);
                     return product(merchantId, nid);
@@ -296,8 +307,8 @@ public class Shop {
             }
             throw new IllegalStateException("Please try again");
         }
-        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
-                name, description, price, ccy, image, status, stock, now(), id, merchantId);
+        int n = jdbc.update("UPDATE products SET name = ?, description = ?, price_minor = ?, currency = ?, image_id = ?, status = ?, stock = ?, category = ?, updated_at = ? WHERE id = ? AND merchant_id = ?",
+                name, description, price, ccy, image, status, stock, category, now(), id, merchantId);
         if (n == 0) throw new NotFound("No such product");
         return product(merchantId, id);
     }
@@ -443,27 +454,34 @@ public class Shop {
         return Boolean.TRUE.equals(o) || Integer.valueOf(1).equals(o) || "true".equals(String.valueOf(o)) || (o instanceof Number n && n.intValue() == 1);
     }
 
-    /** The merchant's customers (from paid orders), most recent first. */
+    /**
+     * The merchant's customers, worked out from its paid orders when asked: paid orders only (pending, failed and
+     * cancelled ones never count), and the amount spent is net of refunds paid out. Grouped by phone number.
+     */
     public List<Map<String, Object>> customers(long merchantId, String q) {
-        StringBuilder sql = new StringBuilder("SELECT c.id, c.name, c.phone, c.orders, c.first_order_at, c.last_order_at, "
-                + "(SELECT GROUP_CONCAT(CONCAT(currency, ' ', FORMAT(spent_minor / 100, 2)) SEPARATOR ' · ') FROM customer_spend s WHERE s.customer_id = c.id) AS spent "
-                + "FROM customers c WHERE c.merchant_id = ?");
+        StringBuilder sql = new StringBuilder("SELECT customer_phone AS phone, MAX(customer_name) AS name, COUNT(*) AS orders, "
+                + "GROUP_CONCAT(DISTINCT currency) AS currencies, MIN(paid_at) AS first_order_at, MAX(paid_at) AS last_order_at FROM orders "
+                + "WHERE merchant_id = ? AND payment_status = 'PAID' AND customer_phone IS NOT NULL");
         List<Object> args = new ArrayList<>(List.of(merchantId));
         if (q != null && !q.isBlank()) {
-            sql.append(" AND (c.name LIKE ? OR c.phone LIKE ?)");
+            sql.append(" AND (customer_name LIKE ? OR customer_phone LIKE ?)");
             String like = "%" + q.trim().replace("%", "") + "%";
             args.add(like);
             args.add(like);
         }
-        sql.append(" ORDER BY c.last_order_at DESC LIMIT 1000");
+        sql.append(" GROUP BY customer_phone ORDER BY last_order_at DESC LIMIT 1000");
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> r : jdbc.queryForList(sql.toString(), args.toArray())) {
+            List<String> spent = new ArrayList<>();
+            for (Map<String, Object> c : jdbc.queryForList("SELECT currency, SUM(amount_minor - refunded_minor) AS net FROM orders WHERE merchant_id = ? AND customer_phone = ? "
+                    + "AND payment_status = 'PAID' GROUP BY currency ORDER BY currency", merchantId, r.get("phone"))) {
+                spent.add(c.get("currency") + " " + major(((Number) c.get("net")).longValue()));
+            }
             Map<String, Object> v = new LinkedHashMap<>();
-            v.put("id", ((Number) r.get("id")).longValue());
             v.put("name", r.get("name"));
             v.put("phone", r.get("phone"));
-            v.put("orders", r.get("orders"));
-            v.put("spent", r.get("spent"));
+            v.put("orders", ((Number) r.get("orders")).longValue());
+            v.put("spent", String.join(" · ", spent));
             v.put("firstOrderAt", String.valueOf(r.get("first_order_at")));
             v.put("lastOrderAt", String.valueOf(r.get("last_order_at")));
             out.add(v);
