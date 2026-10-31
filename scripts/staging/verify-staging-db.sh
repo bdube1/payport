@@ -18,7 +18,7 @@ check() {  # name, actual, expected
 }
 
 {
-  echo "PayPort staging verification, $DB, $(date -u +%FT%TZ)"
+  echo "Payport staging verification, $DB, $(date -u +%FT%TZ)"
   echo
   echo "== migrations"
   check "no failed migration" "$(m "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0")" 0

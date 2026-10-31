@@ -55,7 +55,7 @@ public class TransactionController {
     /**
      * One-session channels: wait for the final outcome; if the customer-facing wait ends while the
      * payment is still open, close it now (final provider query, else TIMED_OUT / NO_RESPONSE --
-     * never FAILED), so what the customer is told and what PayPort does can never differ: a payment
+     * never FAILED), so what the customer is told and what Payport does can never differ: a payment
      * the customer was told timed out is never fulfilled.
      */
     private void answerOnTheSpot(String reference, int waitSeconds) throws InterruptedException {

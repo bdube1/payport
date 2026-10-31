@@ -37,7 +37,7 @@ portal, configures credentials, and switches each line on after internal checks.
 
 **Agents** (`agents/*`)
 - A merchant applies; a COMPLIANCE officer approves (with due-diligence evidence and an optional own commission rate).
-- Float: the agent deposits at PayPort's bank and declares the reference; finance approves after seeing it on the statement (database CHECK: recorder ≠ approver; a bank reference is used once) → Dr BANK_CASH · Cr AGENT_FLOAT.
+- Float: the agent deposits at Payport's bank and declares the reference; finance approves after seeing it on the statement (database CHECK: recorder ≠ approver; a bank reference is used once) → Dr BANK_CASH · Cr AGENT_FLOAT.
 - Cash-in: Dr AGENT_FLOAT · Cr CUSTOMER_WALLET; cash-out against the holder's one-time code (hash only, single use, expiry, per-agent wrong-code limit): Dr CUSTOMER_WALLET · Cr AGENT_FLOAT. Commission in the same journal (Dr AGENT_COMMISSION_EXPENSE · Cr AGENT_FLOAT). AGENT_FLOAT cannot go negative.
 
 **POS** (`pos/*`)

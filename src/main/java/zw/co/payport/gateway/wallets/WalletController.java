@@ -32,7 +32,7 @@ public class WalletController {
         this.merchantCodes = merchantCodes;
     }
 
-    /** The app tells PayPort which channel it is (X-PayPort-Channel: MOB for the mobile app, WEB for the website). */
+    /** The app tells Payport which channel it is (X-PayPort-Channel: MOB for the mobile app, WEB for the website). */
     static String channel(HttpServletRequest req) {
         String c = req.getHeader("X-PayPort-Channel");
         return zw.co.payport.gateway.rules.PartyRules.channel(c == null || c.isBlank() ? "WEB" : c);

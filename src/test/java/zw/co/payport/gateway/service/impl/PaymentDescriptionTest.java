@@ -20,21 +20,21 @@ class PaymentDescriptionTest {
 
     @Test
     void namesTheProductWithItsNetwork() {
-        assertEquals("PayPort Econet Airtime", TransactionOrchestratorService.paymentDescription(tx("AIRTIME_ECONET", "Econet Airtime", null, "ECONET"), null));
-        assertEquals("PayPort Econet Airtime", TransactionOrchestratorService.paymentDescription(tx("AIRTIME_ECONET", "Airtime", null, "ECONET"), null),
+        assertEquals("Payport Econet Airtime", TransactionOrchestratorService.paymentDescription(tx("AIRTIME_ECONET", "Econet Airtime", null, "ECONET"), null));
+        assertEquals("Payport Econet Airtime", TransactionOrchestratorService.paymentDescription(tx("AIRTIME_ECONET", "Airtime", null, "ECONET"), null),
                 "a product renamed to a generic word still says the network");
-        assertEquals("PayPort NetOne Data Bundle", TransactionOrchestratorService.paymentDescription(tx("DATA_NETONE", "NetOne Data Bundle", "NetOne Data Bundle", "NETONE"), null));
-        assertEquals("PayPort ZESA Prepaid", TransactionOrchestratorService.paymentDescription(tx("ZESA_PREPAID", "ZESA Prepaid", null, null), null));
+        assertEquals("Payport NetOne Data Bundle", TransactionOrchestratorService.paymentDescription(tx("DATA_NETONE", "NetOne Data Bundle", "NetOne Data Bundle", "NETONE"), null));
+        assertEquals("Payport ZESA Prepaid", TransactionOrchestratorService.paymentDescription(tx("ZESA_PREPAID", "ZESA Prepaid", null, null), null));
     }
 
     @Test
     void merchantPaymentsNameTheMerchant() {
-        assertEquals("PayPort Acme Stores", TransactionOrchestratorService.paymentDescription(tx("MERCHANT_PAYMENT", "Merchant Payment", null, null), "Acme Stores"));
+        assertEquals("Payport Acme Stores", TransactionOrchestratorService.paymentDescription(tx("MERCHANT_PAYMENT", "Merchant Payment", null, null), "Acme Stores"));
     }
 
     @Test
     void neverLongerThanProvidersAccept() {
         String d = TransactionOrchestratorService.paymentDescription(tx("X", "A".repeat(80), null, null), null);
-        assertTrue(d.length() <= 50 && d.startsWith("PayPort "), d);
+        assertTrue(d.length() <= 50 && d.startsWith("Payport "), d);
     }
 }

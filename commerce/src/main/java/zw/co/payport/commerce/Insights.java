@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Phase 3, from PayPort's own data (no outside AI provider): what sells, what will run out, what customers buy
+ * Phase 3, from Payport's own data (no outside AI provider): what sells, what will run out, what customers buy
  * together. Everything comes from paid orders only.
  */
 @Service

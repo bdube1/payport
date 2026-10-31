@@ -17,7 +17,7 @@ public class AsyncConfig {
         executor.setCorePoolSize(10);
         executor.setMaxPoolSize(50);
         executor.setQueueCapacity(500);
-        executor.setThreadNamePrefix("PayPort-Async-");
+        executor.setThreadNamePrefix("Payport-Async-");
         executor.initialize();
         return executor;
     }

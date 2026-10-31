@@ -91,7 +91,7 @@ public class PosService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("terminalId", terminalId);
         out.put("secret", secret);
-        out.put("note", "Store the secret in the terminal now. PayPort will not show it again.");
+        out.put("note", "Store the secret in the terminal now. Payport will not show it again.");
         return out;
     }
 

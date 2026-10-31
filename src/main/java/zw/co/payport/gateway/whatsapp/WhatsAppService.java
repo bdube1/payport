@@ -26,7 +26,7 @@ import java.util.Set;
  * WhatsApp over the WhatsApp Cloud API webhook. The conversation is the same engine as USSD with channel WHATSAPP
  * (guest and registered features, the same services as the website and the app): each message the customer sends is
  * the next answer; "menu", "hi" or "start" start again, "00" goes back to the main menu. A registered customer logs in
- * with the PayPort PIN typed in the chat (a WhatsApp bundle may have no internet for a web page); the PIN is checked
+ * with the Payport PIN typed in the chat (a WhatsApp bundle may have no internet for a web page); the PIN is checked
  * once and never stored (the kept path carries "#", and only replies are recorded, never what the customer typed).
  * Payment updates are also sent back into the chat.
  *
@@ -138,7 +138,7 @@ public class WhatsAppService {
         return t.end() ? body + "\n\nSend MENU to start again." : body + "\n\nReply with your answer. 00 for the main menu, MENU to start again.";
     }
 
-    /** Sends a message PayPort starts (not a direct answer) and records it. */
+    /** Sends a message Payport starts (not a direct answer) and records it. */
     public void outbox(String waId, String body, String kind) {
         String err = sender.send(waId, body);
         jdbc.update("INSERT INTO whatsapp_outbox (wa_id, body, kind, sent, send_error, created_at) VALUES (?,?,?,?,?,?)",
@@ -146,7 +146,7 @@ public class WhatsAppService {
         if (err != null) log.warn("[WHATSAPP] {} message to {} not sent: {}", kind, mask(waId), err);
     }
 
-    /** Messages PayPort started to this number after the given id (test phone). */
+    /** Messages Payport started to this number after the given id (test phone). */
     public List<Map<String, Object>> outboxFor(String waId, long after) {
         return jdbc.queryForList("SELECT id, body, kind, sent, created_at FROM whatsapp_outbox WHERE wa_id = ? AND id > ? ORDER BY id LIMIT 20", waId, after);
     }

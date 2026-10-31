@@ -15,7 +15,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * The PSP's Commerce API, the only way Commerce reaches PayPort Payments (server to server, service key). Short
+ * The PSP's Commerce API, the only way Commerce reaches Payport Payments (server to server, service key). Short
  * timeouts: a slow or absent PSP makes Commerce say "payments are unavailable, try again", never hang a store page.
  */
 @Component
@@ -54,7 +54,7 @@ public class Psp {
             } catch (IOException e) {
                 n = json.createObjectNode();
             }
-            if (r.statusCode() >= 500) throw new Unavailable("PayPort Payments answered " + r.statusCode());
+            if (r.statusCode() >= 500) throw new Unavailable("Payport Payments answered " + r.statusCode());
             if (r.statusCode() >= 400) {
                 String m = n.path("error").path("message").asText("");
                 if (m.isBlank()) m = n.path("message").asText("The request was refused");
@@ -62,7 +62,7 @@ public class Psp {
             }
             return n.has("data") ? n.path("data") : n;
         } catch (IOException e) {
-            throw new Unavailable("PayPort Payments cannot be reached");
+            throw new Unavailable("Payport Payments cannot be reached");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Unavailable("Interrupted");

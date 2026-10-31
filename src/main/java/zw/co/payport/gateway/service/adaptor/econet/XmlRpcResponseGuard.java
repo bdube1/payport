@@ -14,7 +14,7 @@ import java.util.Locale;
  *    impersonated server). Any response mentioning {@code faultCause}, an {@code ex:serializable}
  *    value or a Java serialisation stream (base64 "rO0AB") is refused BEFORE the library parses it.
  *  - CVE-2016-5004 (GHSA-r2pg-w96p-pcpj, moderate): resource exhaustion through compressed content.
- *    PayPort never asks for compression and reads at most {@link #MAX_BYTES} (after any decompression)
+ *    Payport never asks for compression and reads at most {@link #MAX_BYTES} (after any decompression)
  *    before refusing.
  *  - XML entity tricks: DOCTYPE / ENTITY declarations are refused.
  *

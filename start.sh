@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting PayPort Gateway..."
+echo "🚀 Starting Payport Gateway..."
 
 # Look for the JAR file
 JAR_FILE=$(find /opt/payport/gateway/target -name "*.jar" -type f | grep -v "original" | head -1)
@@ -39,7 +39,7 @@ nohup java -jar "$JAR_FILE" > /opt/payport/gateway/gateway.log 2>&1 &
 # Check if started successfully
 sleep 3
 if pgrep -f "payport-gateway.*.jar" > /dev/null; then
-    echo "✅ PayPort Gateway started successfully!"
+    echo "✅ Payport Gateway started successfully!"
     echo "📝 Logs: tail -f /opt/payport/gateway/gateway.log"
     echo "🛑 Stop: pkill -f 'payport-gateway.*.jar'"
 else

@@ -42,7 +42,7 @@ public class SmsNotificationService {
     @Async
     public void sendPaymentPending(Transaction tx, String paymentMethod) {
         String message = String.format(
-                "PayPort: %s payment of %s initiated. Please approve the prompt on your phone. Ref: %s",
+                "Payport: %s payment of %s initiated. Please approve the prompt on your phone. Ref: %s",
                 paymentMethod, tx.getAmountFormatted(), tx.getReference()
         );
         notify(tx, message, "PAYMENT_PENDING");
@@ -51,7 +51,7 @@ public class SmsNotificationService {
     @Async
     public void sendPaymentConfirmed(Transaction tx) {
         String message = String.format(
-                "PayPort: Payment of %s received. Processing your %s now... Ref: %s",
+                "Payport: Payment of %s received. Processing your %s now... Ref: %s",
                 tx.getAmountFormatted(),
                 tx.getProductType() != null ? tx.getProductType().getName() : "service",
                 tx.getReference()
@@ -62,7 +62,7 @@ public class SmsNotificationService {
     @Async
     public void sendPaymentFailed(Transaction tx, String reason) {
         String message = String.format(
-                "PayPort: Payment of %s was not successful. No money was deducted. Ref: %s. Contact support if needed.",
+                "Payport: Payment of %s was not successful. No money was deducted. Ref: %s. Contact support if needed.",
                 tx.getAmountFormatted(), tx.getReference()
         );
         notify(tx, message, "PAYMENT_FAILED");
@@ -79,7 +79,7 @@ public class SmsNotificationService {
             message = formatZesaTokenMessage(tx);
         } else {
             message = String.format(
-                    "PayPort: %s of %s sent to %s. Ref: %s. Thank you!",
+                    "Payport: %s of %s sent to %s. Ref: %s. Thank you!",
                     productName,
                     tx.getAmountFormatted(),
                     maskRecipient(tx.getRecipientIdentifier()),
@@ -285,7 +285,7 @@ public class SmsNotificationService {
 
     private String fallbackMessage(Transaction tx) {
         return String.format(
-                "PayPort: ZESA Token for %s delivered! Amount: %s. Ref: %s. Please check receipt.",
+                "Payport: ZESA Token for %s delivered! Amount: %s. Ref: %s. Please check receipt.",
                 maskRecipient(tx.getRecipientIdentifier()),
                 tx.getAmountFormatted(),
                 tx.getReference()
@@ -295,7 +295,7 @@ public class SmsNotificationService {
     @Async
     public void sendFulfilmentDelayed(Transaction tx) {
         String message = String.format(
-                "PayPort: Your payment was received but delivery is delayed. Our team is on it. Ref: %s. We will update you shortly.",
+                "Payport: Your payment was received but delivery is delayed. Our team is on it. Ref: %s. We will update you shortly.",
                 tx.getReference()
         );
         notify(tx, message, "FULFILMENT_DELAYED");
@@ -304,7 +304,7 @@ public class SmsNotificationService {
     @Async
     public void sendRefundInitiated(Transaction tx) {
         String message = String.format(
-                "PayPort: A refund of %s has been initiated to your account. Please allow 24-48 hours. Ref: %s",
+                "Payport: A refund of %s has been initiated to your account. Please allow 24-48 hours. Ref: %s",
                 tx.getAmountFormatted(), tx.getReference()
         );
         notify(tx, message, "REFUND_INITIATED");
@@ -314,7 +314,7 @@ public class SmsNotificationService {
     @Async
     public void sendPinReset(String phone, String newPin) {
         String message = String.format(
-                "PayPort: Your PIN has been reset. New PIN: %s. You'll be asked to set a new one when you next log in. If you didn't request this, contact support immediately.",
+                "Payport: Your PIN has been reset. New PIN: %s. You'll be asked to set a new one when you next log in. If you didn't request this, contact support immediately.",
                 newPin
         );
         send(phone, message, "PIN_RESET", "PIN_RESET");

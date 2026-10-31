@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The bank's pain.002.001.10 (Customer Payment Status Report) for a pain.001 PayPort sent.
+ * The bank's pain.002.001.10 (Customer Payment Status Report) for a pain.001 Payport sent.
  * Mapping per transaction (OrgnlPmtInfAndSts/TxInfAndSts):
  *
  *   OrgnlEndToEndId (or OrgnlInstrId) -> stl_items.instruction_ref

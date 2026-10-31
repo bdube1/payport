@@ -20,11 +20,11 @@ import java.util.Map;
 
 /**
  * The central reversal desk (owner, 2026-10-30): the one place staff reverse money. Someone with the Reversals
- * permission requests a reversal of something PayPort recorded (the amount and currency come from the record, never
+ * permission requests a reversal of something Payport recorded (the amount and currency come from the record, never
  * typed); someone else with the Reversal approval permission approves it, and only then is it carried out by the
  * same services that own the money:
  * <ul>
- *   <li>WALLET_REFUND - a payment made from a PayPort wallet goes back to that wallet (WalletPaymentService).</li>
+ *   <li>WALLET_REFUND - a payment made from a Payport wallet goes back to that wallet (WalletPaymentService).</li>
  *   <li>PAYMENT_REFUND - a mobile money or card payment is marked for refund (REFUND_PENDING); the payout to the
  *       customer is made on the provider's side and recorded here with its reference, which closes it (REFUNDED).</li>
  *   <li>WALLET_REVERSAL - a transfer, cash-in, cash-out or conversion is reversed in full by a mirrored ledger entry
@@ -193,7 +193,7 @@ public class ReversalService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.events.PlatformEvents events;
 
-    /** refund.completed on the event stream, for the merchant's records and PayPort Commerce. */
+    /** refund.completed on the event stream, for the merchant's records and Payport Commerce. */
     private void merchantRefundPaid(Map<String, Object> r, String payoutReference, String method) {
         if (events == null) return;
         String target = String.valueOf(r.get("target_ref"));

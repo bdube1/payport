@@ -21,7 +21,7 @@ import java.util.Map;
  *   inSettlement  in a payout that has been drafted/approved/instructed but not confirmed by the bank
  *   paidOut       confirmed paid by the bank (new settlement) or marked paid by the legacy settlement
  *
- * All amounts are net of PayPort's fee and completed refunds, in minor units. Drafts made in
+ * All amounts are net of Payport's fee and completed refunds, in minor units. Drafts made in
  * PARALLEL (comparison) mode are not real payouts and are not shown to merchants.
  */
 @Service

@@ -1,11 +1,11 @@
-# Custom domains for PayPort Commerce stores (Phase 2b).
+# Custom domains for Payport Commerce stores (Phase 2b).
 # 1. At the very top of /etc/caddy/Caddyfile (global options), add:
 #        {
 #            on_demand_tls {
 #                ask http://127.0.0.1:8086/internal/tls/allowed
 #            }
 #        }
-#    Caddy then requests a certificate only for domains a merchant has verified in PayPort Commerce.
+#    Caddy then requests a certificate only for domains a merchant has verified in Payport Commerce.
 # 2. Import this file (import /etc/caddy/store-domains.caddy) and reload Caddy.
 # Merchants point their domain at this server (A record, or CNAME to store-staging.payport.africa) and add the TXT
 # record the merchant portal shows.

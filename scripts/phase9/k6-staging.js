@@ -1,4 +1,4 @@
-// PayPort staging load test (k6, https://k6.io). Never point this at production.
+// Payport staging load test (k6, https://k6.io). Never point this at production.
 //
 //   k6 run -e BASE=https://staging-api.payport.africa -e CUSTOMER_TOKEN=... scripts/phase9/k6-staging.js
 //

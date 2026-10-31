@@ -29,7 +29,7 @@ INSERT IGNORE INTO merchant_enablements (merchant_id, country, currency, status,
 SELECT m.id, mc.country, mc.currency, 'ENABLED', @by, NOW(6) FROM merchants m CROSS JOIN market_currencies mc;
 UPDATE merchant_enablements SET status = 'ENABLED';
 
--- USSD on every network with PayPort's short code. Each network still needs its access key or allowed IPs
+-- USSD on every network with Payport's short code. Each network still needs its access key or allowed IPs
 -- (Platform setup → USSD & WhatsApp) before it accepts traffic.
 UPDATE ussd_networks SET enabled = TRUE, short_code = '*699#', updated_by = @by, updated_at = NOW(6);
 

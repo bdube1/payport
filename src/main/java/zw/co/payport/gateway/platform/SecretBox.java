@@ -13,7 +13,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * Encrypts secrets PayPort must be able to read back (webhook signing secrets) with AES-256-GCM.
+ * Encrypts secrets Payport must be able to read back (webhook signing secrets) with AES-256-GCM.
  * Stored form: "enc:v1:" + base64(iv || ciphertext+tag). Values without the prefix are legacy
  * plaintext and are returned as they are (R14: they are re-encrypted when next written).
  *

@@ -14,7 +14,7 @@ import java.util.List;
 /**
  * A merchant refunds its own customer from its own balance (owner, 2026-10-31).
  *
- * The refund comes out of what PayPort still holds for the merchant: it is allowed only while the payment has not been
+ * The refund comes out of what Payport still holds for the merchant: it is allowed only while the payment has not been
  * paid out to the merchant, and the merchant's balance drops by its share at once (the refund row is COMPLETED, which
  * the balance and settlement already subtract). The money back to the customer is listed in the central reversal
  * register as MERCHANT_REFUND, waiting for the payout (no provider in this codebase can reverse a payment
@@ -51,12 +51,12 @@ public class RefundService {
             throw new RuntimeException("Refund amount exceeds what's left to refund (" +
                     refundableRemaining + " cents remaining)");
         }
-        // From the merchant's own balance: only while PayPort still holds this payment for the merchant.
+        // From the merchant's own balance: only while Payport still holds this payment for the merchant.
         Integer paidOut = jdbc.queryForObject("SELECT COUNT(*) FROM checkout_sessions cs WHERE cs.id = ? AND (cs.settlement_id IS NOT NULL OR EXISTS "
                 + "(SELECT 1 FROM stl_session_claims c JOIN stl_items i ON i.id = c.item_id JOIN stl_batches b ON b.id = i.batch_id "
                 + "WHERE c.session_id = cs.id AND b.mode = 'LIVE'))", Integer.class, session.getId());
         if (paidOut != null && paidOut > 0) {
-            throw new RuntimeException("This payment has already been paid out to you, so it cannot be refunded from your balance. Contact PayPort support.");
+            throw new RuntimeException("This payment has already been paid out to you, so it cannot be refunded from your balance. Contact Payport support.");
         }
 
         Refund refund = Refund.builder()

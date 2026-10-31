@@ -5,7 +5,7 @@ groups:
         expr: up{job="payport-gateway"} == 0
         for: 1m
         labels: { severity: critical, dashboard: overview }
-        annotations: { summary: "The PayPort gateway is not answering" }
+        annotations: { summary: "The Payport gateway is not answering" }
       - alert: PublicSiteDown
         expr: probe_success{job="payport-public"} == 0
         for: 2m
@@ -107,12 +107,12 @@ groups:
         expr: up{job="payport-commerce"} == 0
         for: 2m
         labels: { severity: critical, dashboard: overview }
-        annotations: { summary: "PayPort Commerce (the store) is not answering" }
+        annotations: { summary: "Payport Commerce (the store) is not answering" }
       - alert: StoreCannotReachPayments
         expr: commerce_psp_up == 0
         for: 5m
         labels: { severity: critical, dashboard: overview }
-        annotations: { summary: "The store cannot reach PayPort Payments: orders are kept but payments wait" }
+        annotations: { summary: "The store cannot reach Payport Payments: orders are kept but payments wait" }
       - alert: StorePaymentEventsBehind
         expr: commerce_events_lag_seconds > 600
         for: 5m

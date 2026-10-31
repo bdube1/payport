@@ -1,4 +1,4 @@
-# PayPort Commerce and PayPort Intelligence: Phase 0 assessment
+# Payport Commerce and Payport Intelligence: Phase 0 assessment
 
 30 October 2026. Read from the code on `main` (gateway at commit 2ae14fc, plus the four portal and mobile repositories).
 No feature code was written for this phase. Terms follow the brief: *implemented* = code exists; *tested* = covered by
@@ -37,7 +37,7 @@ This matches the brief's assumed stack (Java/Spring Boot, MySQL, React).
    stream. Add one `platform_events` outbox (stable ID, time, merchant, type, version, source, payload without card
    data or unnecessary personal data), written in the same database transaction as the change it records, with a
    dispatcher and idempotent consumers (`processed_events`). This is the foundation the brief asks for in Phase 1, and
-   it is also what PayPort Intelligence will learn from.
+   it is also what Payport Intelligence will learn from.
 2. **Payment events.** Emit initiated, confirmed, failed, outcome uncertain, reversed, refund requested/completed,
    dispute opened/resolved, settlement created/reconciled into that outbox; merchant webhooks then read from it.
 3. **Payment links v2.** Add expiry, merchant reference and an optional product link to the existing links
@@ -51,9 +51,9 @@ No PSP redesign is needed. Each of these is additive and reversible.
 
 | Risk | Impact | Recommendation |
 |---|---|---|
-| Card acceptance uses the ZimSwitch/OPPWA "copy and pay" widget, which renders the card fields from the provider's script inside PayPort's own consumer page | PCI DSS scope for the consumer site is likely SAQ A-EP, not SAQ A: the page that loads the script must be secured like a payment page | Keep it; Commerce storefronts must always redirect to the PSP-hosted page and never embed card fields. Confirm the SAQ type with your QSA. |
-| Card issuing: "show card details" returns the full card number and CVV from the issuer through PayPort's servers | Those components are in full PCI DSS scope | Before live cards, switch to the issuer's hosted (iframe/token) reveal so the PAN never passes through PayPort |
-| The website assistant sends visitors' messages to Google Gemini (free tier, 900/day cap) | Visitors can type personal data; no data-processing terms on a free tier | Decide the AI provider and data rules before PayPort Intelligence (decision 4) |
+| Card acceptance uses the ZimSwitch/OPPWA "copy and pay" widget, which renders the card fields from the provider's script inside Payport's own consumer page | PCI DSS scope for the consumer site is likely SAQ A-EP, not SAQ A: the page that loads the script must be secured like a payment page | Keep it; Commerce storefronts must always redirect to the PSP-hosted page and never embed card fields. Confirm the SAQ type with your QSA. |
+| Card issuing: "show card details" returns the full card number and CVV from the issuer through Payport's servers | Those components are in full PCI DSS scope | Before live cards, switch to the issuer's hosted (iframe/token) reveal so the PAN never passes through Payport |
+| The website assistant sends visitors' messages to Google Gemini (free tier, 900/day cap) | Visitors can type personal data; no data-processing terms on a free tier | Decide the AI provider and data rules before Payport Intelligence (decision 4) |
 | Tenant isolation is enforced per endpoint by merchant ID from the token | Commerce adds many tenant tables; one missed filter leaks another merchant's data | Tenant-scoped repository layer plus automated cross-tenant tests for every Commerce endpoint |
 | Merchant refunds through the API do not go through the new central reversal desk | Two routes for money going back | Decision 2 |
 | Staging server memory (builds already needed extra memory) | Commerce, the observability stack and the PSP will not fit on one VM | A second VM for monitoring (and later Commerce staging) |
@@ -114,7 +114,7 @@ true if we split the work like this:
 - Labels from operations: complaint categories, reversal reasons and outcomes, and risk-alert outcomes are already
   recorded by the new customer-care desk; we keep them consistent so they can train and evaluate models.
 - AI guard-rails as platform code: per-feature usage limits, cost metering, prompt/response logging without personal
-  data, and a kill switch per feature. The Control Centre gets a "PayPort Intelligence" panel (usage, cost, errors).
+  data, and a kill switch per feature. The Control Centre gets a "Payport Intelligence" panel (usage, cost, errors).
 
 **Early PSP-side assistants (behind feature flags, read-only, human approves)**
 1. *Complaint triage*: suggests the complaint type and priority from the description; staff confirm.

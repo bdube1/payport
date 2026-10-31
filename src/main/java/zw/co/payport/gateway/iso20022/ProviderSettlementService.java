@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Payment rails settle what they collected into PayPort's bank account. A booked credit on a camt.053
+ * Payment rails settle what they collected into Payport's bank account. A booked credit on a camt.053
  * statement that matches an ACTIVE rule (counterparty and/or remittance text contains the pattern,
  * same currency) is booked Dr BANK_CASH[market account] · Cr PROVIDER_RECEIVABLE[provider], idempotent
  * per statement entry, and traced as PROVIDER_SETTLEMENT. Rules are proposed by one FINANCE user and
@@ -90,7 +90,7 @@ public class ProviderSettlementService {
     public LedgerClient.PostResult book(Map<String, Object> rule, String entryKey, long amount, String currency, java.time.LocalDate on, String by) {
         MarketRegistry.Market m = markets.requireForCurrency(currency);
         MarketRegistry.BankAccount bank = markets.bankAccount(currency);
-        if (bank == null || bank.ledgerOwner() == null) throw new IllegalStateException("No PayPort bank account is configured for " + currency);
+        if (bank == null || bank.ledgerOwner() == null) throw new IllegalStateException("No Payport bank account is configured for " + currency);
         String provider = (String) rule.get("provider_code");
         JournalRequest j = JournalRequest.builder("PROVIDER_SETTLEMENT:" + entryKey).entity(m.legalEntity()).book(Book.LIVE).template("PROVIDER_SETTLEMENT", 1)
                 .effectiveDate(on == null ? java.time.LocalDate.now() : on).description(provider + " settlement " + entryKey)
@@ -101,7 +101,7 @@ public class ProviderSettlementService {
     }
 
     /**
-     * Comparison view (no automation): what each rail still owes PayPort per currency, from the ledger.
+     * Comparison view (no automation): what each rail still owes Payport per currency, from the ledger.
      * Positive = collected by the rail and not yet settled to the bank (outstanding or a partial
      * settlement); negative = the bank received more than the ledger shows as collected (over-settled
      * or an unrecognised credit), which needs investigation.

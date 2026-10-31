@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/** Collections (the merchant's own groups), discount codes, and the PayPort store directory. */
+/** Collections (the merchant's own groups), discount codes, and the Payport store directory. */
 @Service
 public class Catalog {
 
@@ -184,7 +184,7 @@ public class Catalog {
         return jdbc.update("UPDATE discount_codes SET used = used + 1 WHERE id = ? AND active = TRUE AND (max_uses IS NULL OR used < max_uses)", discountId) > 0;
     }
 
-    // ─── the PayPort store directory ─────────────────────────────────────────
+    // ─── the Payport store directory ─────────────────────────────────────────
 
     /** Listed, open stores with something on sale, by type; optional search and type filter. */
     public List<Map<String, Object>> directory(String type, String q) {

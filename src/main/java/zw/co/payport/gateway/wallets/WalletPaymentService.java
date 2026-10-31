@@ -54,7 +54,7 @@ public class WalletPaymentService {
         return pins.verify(phone, pin);
     }
 
-    /** Pays an initiated PayPort payment (airtime, bill, ...) from the holder's wallet in its currency. */
+    /** Pays an initiated Payport payment (airtime, bill, ...) from the holder's wallet in its currency. */
     public Map<String, Object> payTransaction(String phone, String reference, String pin) throws Exception {
         wallets.requireOn();
         return payTransactionAs(pins.verify(phone, pin), reference);

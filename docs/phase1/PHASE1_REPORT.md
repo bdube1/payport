@@ -84,8 +84,8 @@ Each of these would have passed a stub-based compile check.
 | # | Decision | Default until decided |
 |---|---|---|
 | 1 | **Chart of accounts sign-off** (finance lead): categories, names and no-negative rules | Proposal as seeded in V33 |
-| 2 | **Is PayPort's commission VAT-inclusive?** (tax adviser) | Template v1 does not split VAT; v2 will add it |
-| 3 | **Who bears IMTT on PayPort's flows** (tax adviser) | Not posted |
+| 2 | **Is Payport's commission VAT-inclusive?** (tax adviser) | Template v1 does not split VAT; v2 will add it |
+| 3 | **Who bears IMTT on Payport's flows** (tax adviser) | Not posted |
 | 4 | **Legal name of the entity** and the ledger codes of the real settlement bank accounts | `PAYPORT_ZW`, `SETTLEMENT_USD`, `SETTLEMENT_ZWG` |
 | 5 | **Vendor commission rates** (Econet, NetOne, Telecel, e-Solutions) | 0, so no commission revenue is recorded |
 | 6 | **Refund-after-settlement policy** (finding above) | Recorded as shadow failures for review |

@@ -43,7 +43,7 @@ To turn shadow posting off, set `LEDGER_SHADOW_ENABLED=false`. Nothing else chan
 - **On demand:**
   - `GET /api/v1/admin/ledger/integrity`;
   - `POST /api/v1/admin/ledger/integrity/run`.
-- **External anchor:** export the newest row of `ledger_seals` (`id`, `to_entry_id`, `seal_hash`) every day to storage PayPort admins cannot rewrite (WORM bucket or SIEM). Without the anchor, a DBA could rebuild the whole chain.
+- **External anchor:** export the newest row of `ledger_seals` (`id`, `to_entry_id`, `seal_hash`) every day to storage Payport admins cannot rewrite (WORM bucket or SIEM). Without the anchor, a DBA could rebuild the whole chain.
 
 | Violation code | Meaning | Treat as |
 |---|---|---|

@@ -21,8 +21,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * InnBucks payment code collection. PayPort asks InnBucks for a payment code for the amount; the
- * customer approves the code in the InnBucks app or on the InnBucks USSD menu; PayPort learns the
+ * InnBucks payment code collection. Payport asks InnBucks for a payment code for the amount; the
+ * customer approves the code in the InnBucks app or on the InnBucks USSD menu; Payport learns the
  * outcome by status query (InnBucks is a query provider: a callback is only a trigger).
  *
  *   auth      POST {base}{auth-path}      {username, password}            -> {accessToken | token}
@@ -91,7 +91,7 @@ public class InnBucksAdaptor implements PaymentProviderAdaptor {
             body.put("amount", BigDecimal.valueOf(r.getAmountCents(), 2).toPlainString());
             body.put("currency", r.getCurrency());
             body.put("reference", r.getPayportReference());
-            body.put("narration", clip(r.getDescription() == null ? "PayPort " + r.getPayportReference() : r.getDescription(), 100));
+            body.put("narration", clip(r.getDescription() == null ? "Payport " + r.getPayportReference() : r.getDescription(), 100));
             if (r.getCustomerPhone() != null) body.put("msisdn", r.getCustomerPhone().replaceAll("[^0-9]", ""));
             ResponseEntity<String> resp = rest.exchange(baseUrl + generatePath, HttpMethod.POST, new HttpEntity<>(json.writeValueAsString(body), headers()), String.class);
             JsonNode n = json.readTree(resp.getBody() == null ? "{}" : resp.getBody());

@@ -149,7 +149,7 @@ public class Account {
         model.addAttribute("orders", orders);
         model.addAttribute("addresses", shoppers.addresses(s.get()));
         model.addAttribute("favourites", shoppers.favourites(s.get()));
-        model.addAttribute("title", "My account | PayPort Store");
+        model.addAttribute("title", "My account | Payport Store");
         res.setHeader("Cache-Control", "no-store");
         return "me";
     }

@@ -1,10 +1,10 @@
-# PayPort Commerce
+# Payport Commerce
 
-Payment links, product pages and mini-stores for PayPort merchants (Phase 1 of the PayPort Commerce brief).
+Payment links, product pages and mini-stores for Payport merchants (Phase 1 of the Payport Commerce brief).
 
 ## Why it is its own service
 
-The owner's rule (31 October 2026): **if PayPort Payments goes down, Commerce must stay available.** So Commerce has
+The owner's rule (31 October 2026): **if Payport Payments goes down, Commerce must stay available.** So Commerce has
 its own process, port (8086), database (`payport_commerce_*`) and database user, which has no rights on any PSP table.
 
 | When the PSP is down | What happens |

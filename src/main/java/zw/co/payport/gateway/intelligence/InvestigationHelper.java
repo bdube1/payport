@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The investigation helper: reads what PayPort recorded for a reference (the same trace the complaint desk shows) and
+ * The investigation helper: reads what Payport recorded for a reference (the same trace the complaint desk shows) and
  * says it in plain words, with what to check next and a draft reply to the customer. Read-only: it never requests or
  * approves a reversal and never contacts the customer; staff read it, change the draft and decide.
  */
@@ -42,9 +42,9 @@ public class InvestigationHelper {
         List<Map<String, Object>> options = (List<Map<String, Object>>) t.getOrDefault("options", List.of());
         List<Map<String, Object>> reversals = (List<Map<String, Object>>) t.getOrDefault("reversals", List.of());
         if (txs.isEmpty() && lines.isEmpty()) {
-            findings.add("PayPort has no payment or wallet movement with the reference " + ref + ".");
+            findings.add("Payport has no payment or wallet movement with the reference " + ref + ".");
             next.add("Ask the customer for the reference on their SMS or provider message, or the date, amount and number used.");
-            reply = "Thank you for contacting PayPort. We could not find a transaction with the reference " + ref
+            reply = "Thank you for contacting Payport. We could not find a transaction with the reference " + ref
                     + ". Please send us the reference from your confirmation message, or the date, amount and phone number used, and we will look into it.";
             return result(ref, findings, next, reply, options);
         }
@@ -80,14 +80,14 @@ public class InvestigationHelper {
 
         String o = outcome == null ? "" : outcome;
         reply = switch (o) {
-            case "SUCCEEDED" -> "Thank you for contacting PayPort. Your payment for " + what + " (reference " + ref + ") was successful and completed. "
+            case "SUCCEEDED" -> "Thank you for contacting Payport. Your payment for " + what + " (reference " + ref + ") was successful and completed. "
                     + "If you have not received it, reply to this message and we will follow it up with the provider.";
-            case "PROCESSING", "NO_RESPONSE" -> "Thank you for contacting PayPort. Your payment for " + what + " (reference " + ref + ") is still being confirmed with the provider. "
+            case "PROCESSING", "NO_RESPONSE" -> "Thank you for contacting Payport. Your payment for " + what + " (reference " + ref + ") is still being confirmed with the provider. "
                     + "We will let you know the result; if money was taken and the payment does not complete, it will be refunded.";
-            case "FAILED", "TIMED_OUT" -> "Thank you for contacting PayPort. Your payment for " + what + " (reference " + ref + ") did not go through, so it was not charged by PayPort. "
+            case "FAILED", "TIMED_OUT" -> "Thank you for contacting Payport. Your payment for " + what + " (reference " + ref + ") did not go through, so it was not charged by Payport. "
                     + "If your statement shows a deduction, please send us the provider's reference and we will investigate.";
-            case "REFUNDED" -> "Thank you for contacting PayPort. Your payment for " + what + " (reference " + ref + ") has been refunded.";
-            default -> "Thank you for contacting PayPort. We are looking into reference " + ref + " and will come back to you shortly.";
+            case "REFUNDED" -> "Thank you for contacting Payport. Your payment for " + what + " (reference " + ref + ") has been refunded.";
+            default -> "Thank you for contacting Payport. We are looking into reference " + ref + " and will come back to you shortly.";
         };
         return result(ref, findings, next, reply, options);
     }

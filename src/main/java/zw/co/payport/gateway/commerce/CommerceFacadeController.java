@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * PayPort Commerce's door into the PSP (CommerceFacade). Server to server: every call carries the service key in
+ * Payport Commerce's door into the PSP (CommerceFacade). Server to server: every call carries the service key in
  * X-PayPort-Commerce-Key. The merchant identity route is the exception: the merchant portal's own login token,
  * which Commerce forwards once when the merchant opens the store.
  */
@@ -69,7 +69,7 @@ public class CommerceFacadeController {
         return Web.run(() -> { facade.requireKey(key); return facade.merchantInfo(merchantId); }, req);
     }
 
-    /** Signed-in merchant users only (an approved merchant): who they are, for PayPort Commerce's own session. */
+    /** Signed-in merchant users only (an approved merchant): who they are, for Payport Commerce's own session. */
     @GetMapping("/api/v1/merchant/commerce/identity")
     @PreAuthorize("hasRole('MERCHANT')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> identity(HttpServletRequest req) {

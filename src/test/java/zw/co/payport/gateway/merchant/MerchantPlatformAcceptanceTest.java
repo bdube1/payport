@@ -156,8 +156,8 @@ class MerchantPlatformAcceptanceTest {
 
     /** Verifies a v2 signature the way the API reference tells merchants to. */
     static void assertSignedV2(Received r, String secret) throws Exception {
-        String sig = header(r, "PayPort-Signature");
-        assertNotNull(sig, "PayPort-Signature header present");
+        String sig = header(r, "Payport-Signature");
+        assertNotNull(sig, "Payport-Signature header present");
         String t = null, v1 = null;
         for (String part : sig.split(",")) {
             String[] kv = part.split("=", 2);
@@ -167,7 +167,7 @@ class MerchantPlatformAcceptanceTest {
         assertNotNull(t);
         assertEquals(hmacHex(secret, t + "." + r.body()), v1, "signature verifies with the webhook secret");
         assertTrue(Math.abs(System.currentTimeMillis() / 1000 - Long.parseLong(t)) < 300, "fresh timestamp");
-        assertEquals(JSON.readTree(r.body()).path("id").asText(), header(r, "PayPort-Event-Id"));
+        assertEquals(JSON.readTree(r.body()).path("id").asText(), header(r, "Payport-Event-Id"));
     }
 
     JsonNode awaitSession(String key, long id, String status) throws Exception {
@@ -301,7 +301,7 @@ class MerchantPlatformAcceptanceTest {
         assertEquals(200, call("POST", "/api/v1/merchant/webhooks/deliveries/" + paidDelivery + "/replay", dashboard, null).status());
         Received replayed = awaitEvent("checkout_session.paid", 1);
         assertSignedV2(replayed, whSecret);
-        assertEquals(header(paid, "PayPort-Event-Id"), header(replayed, "PayPort-Event-Id"), "a replay is the same event (merchants dedupe on the id)");
+        assertEquals(header(paid, "Payport-Event-Id"), header(replayed, "Payport-Event-Id"), "a replay is the same event (merchants dedupe on the id)");
 
         // 9. Rotation without overlap: the old key stops, the new one works.
         Res rotated = call("POST", "/api/v1/merchant/api-keys/" + keyId + "/rotate?overlapHours=0", dashboard, null);
@@ -347,7 +347,7 @@ class MerchantPlatformAcceptanceTest {
         assertEquals(200, visit.status(), visit.body().toString());
         long linkSession = visit.data().path("checkoutSessionId").asLong();
 
-        // PayPort withdraws USD: existing links, open sessions and API sessions all stop taking live money.
+        // Payport withdraws USD: existing links, open sessions and API sessions all stop taking live money.
         assertEquals(200, call("POST", "/api/v1/admin/platform/merchants/" + merchantId + "/enablements", bob,
                 Map.of("country", "ZW", "currency", "USD", "enabled", false)).status());
         assertEquals(400, call("POST", "/api/v1/pay/" + slug + "/start", null, Map.of()).status(), "the link no longer starts a checkout");

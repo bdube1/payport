@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** A stand-in for PayPort Commerce's channel API: one food store, quotes, and the orders the channels place. */
+/** A stand-in for Payport Commerce's channel API: one food store, quotes, and the orders the channels place. */
 class FakeCommerce {
 
     static final String KEY = "commerce-key-for-tests-0123456789";

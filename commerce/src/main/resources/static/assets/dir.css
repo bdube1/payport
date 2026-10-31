@@ -1,4 +1,4 @@
-/* PayPort Store front page (owner's design, 31 Oct 2026). Sizes in rem follow the design at 1936px wide (1rem = 16px there)
+/* Payport Store front page (owner's design, 31 Oct 2026). Sizes in rem follow the design at 1936px wide (1rem = 16px there)
    and scale with the window, so every width shows the same proportions; phones get their own layout below. */
 @font-face{font-family:"Plus Jakarta Sans";font-weight:400;font-style:normal;font-display:swap;src:url(/assets/fonts/plus-jakarta-sans-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:"Plus Jakarta Sans";font-weight:500;font-style:normal;font-display:swap;src:url(/assets/fonts/plus-jakarta-sans-latin-500-normal.woff2) format("woff2")}
@@ -107,7 +107,7 @@ a{color:inherit}
 .d-tag.rate{background:#FFF4E0;color:#9A5B00}
 .d-empty{color:var(--muted);font-size:1.4rem}
 
-/* PayPort AI answer */
+/* Payport AI answer */
 .d-ai{margin-top:2.4rem;background:#fff;border-radius:1.75rem;padding:1.6rem 1.8rem;box-shadow:0 .6rem 1.8rem rgba(16,72,120,.08)}
 .d-ai-head{display:flex;justify-content:space-between;align-items:center}
 .d-ai-badge{display:inline-flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.3rem;color:#5B3FD6;background:#EFEBFF;border-radius:999px;padding:.35rem .9rem}

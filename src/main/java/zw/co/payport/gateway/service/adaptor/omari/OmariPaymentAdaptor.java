@@ -68,7 +68,7 @@ public class OmariPaymentAdaptor implements PaymentProviderAdaptor {
             log.info("╠══════════════════════════════════════════════════════════════════╣");
             log.info("║ MSISDN:        {}", normalizedPhone);
             log.info("║ Amount:        {} {}", request.getAmountCents() / 100.0, request.getCurrency());
-            log.info("║ PayPort Ref:   {}", request.getPayportReference());
+            log.info("║ Payport Ref:   {}", request.getPayportReference());
             log.info("║ Omari UUID:    {}", omariUuid);
             log.info("║ Channel:       WEB");
             log.info("║ API Key:       {}", apiKey.substring(0, Math.min(apiKey.length(), 20)) + "...");

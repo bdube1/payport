@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The mobile network USSD gateways (Econet, NetOne, Telecel) that call PayPort directly. Each one is
+ * The mobile network USSD gateways (Econet, NetOne, Telecel) that call Payport directly. Each one is
  * switched on and off by ops and must present its access key (generated in ops, shown once, stored
  * hashed) or come from one of its allowed IP addresses. A network that is off, or has neither, is
  * refused: fail closed.

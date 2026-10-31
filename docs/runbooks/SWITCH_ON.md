@@ -35,7 +35,7 @@ Balances are the ledger's `CUSTOMER_WALLET` accounts; the ledger refuses any pos
 | Fraud control | `AGENT.MAX_CASH_OUT_FAILURES_PER_HOUR`, `WALLET.CASH_OUT_CODE_TTL_MINUTES` |
 | Line and channel on | ADMIN |
 | Each agent | Merchant applies in the merchant portal (Agent page) → a COMPLIANCE officer approves in *Agents & Float* |
-| Float | Agent deposits at PayPort's bank and declares the reference → FINANCE approves after seeing it on the statement (the person who recorded it cannot approve) |
+| Float | Agent deposits at Payport's bank and declares the reference → FINANCE approves after seeing it on the statement (the person who recorded it cannot approve) |
 
 ## 3. POS terminals (line `POS_ACQUIRING`, channel `POS`)
 

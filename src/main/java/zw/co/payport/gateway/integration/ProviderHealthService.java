@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Health of every provider PayPort calls, and the two ways traffic to one is stopped:
+ * Health of every provider Payport calls, and the two ways traffic to one is stopped:
  *
  *  - automatically: a circuit breaker per provider (payport.integrations.breaker.failure-threshold
  *    consecutive transport failures, default 5, open for payport.integrations.breaker.open-seconds,

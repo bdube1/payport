@@ -422,7 +422,7 @@ class OperationalReadinessScenarioTest {
         assertEquals(Set.of(), Set.copyOf(ledger.integrityReport()));
     }
 
-    // ─── 4. PayPort Commerce's door into the PSP (owner, 2026-10-31) ─────────
+    // ─── 4. Payport Commerce's door into the PSP (owner, 2026-10-31) ─────────
 
     Res commerce(String method, String path, String key, Object body) throws Exception {
         String raw = body == null ? null : JSON.writeValueAsString(body);
@@ -442,7 +442,7 @@ class OperationalReadinessScenarioTest {
     void commerceFacade_keyRequired_oneCheckoutPerOrder_paidOnlyWhenConfirmed_eventsOncePerChange_merchantRefundsFromItsBalance() throws Exception {
         MerchantLogin a = merchant("Shop"), b = merchant("Other");
 
-        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until PayPort switches them to live; the merchant
+        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until Payport switches them to live; the merchant
         // chooses the methods it accepts and the customer's choice in the store comes first.
         assertEquals("false", jdbc.queryForObject("SELECT setting_value FROM platform_settings WHERE setting_key = 'commerce_livemode'", String.class));
         Res methods = call("GET", "/api/v1/merchant/payment-methods", a.token(), null);
@@ -536,7 +536,7 @@ class OperationalReadinessScenarioTest {
         Res late = commerce("POST", "/api/v1/commerce/refunds", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", orderRef, "amountMinor", 100, "reason", "late refund"));
         assertTrue(late.status() == 409 && late.raw().contains("paid out"), late.raw());
 
-        // The merchant portal login tells PayPort Commerce who the merchant is.
+        // The merchant portal login tells Payport Commerce who the merchant is.
         Res me = call("GET", "/api/v1/merchant/commerce/identity", a.token(), null);
         assertEquals(200, me.status(), me.raw());
         assertEquals(a.id(), me.data().path("merchantId").asLong());

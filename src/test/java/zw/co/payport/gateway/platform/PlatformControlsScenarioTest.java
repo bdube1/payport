@@ -167,9 +167,9 @@ class PlatformControlsScenarioTest {
 
         // A complete request: legal name, real bank account, ZMW live.
         Res req = call("POST", "/api/v1/admin/markets/ZM/change-requests", adam, Map.of(
-                "changes", Map.of("status", "LIVE", "legalEntityName", "PayPort Zambia Limited", "bankName", "Example Bank Zambia",
+                "changes", Map.of("status", "LIVE", "legalEntityName", "Payport Zambia Limited", "bankName", "Example Bank Zambia",
                         "bankBic", "EXBKZMLU", "bankFormatStatus", "CONFIRMED by the bank 2026-10-16", "statusNote", "Licensed"),
-                "currencies", List.of(Map.of("currency", "ZMW", "live", true, "bankAccountNumber", "0012345678901", "bankAccountName", "PayPort Zambia settlement")),
+                "currencies", List.of(Map.of("currency", "ZMW", "live", true, "bankAccountNumber", "0012345678901", "bankAccountName", "Payport Zambia settlement")),
                 "reason", "Bank of Zambia licence granted"));
         assertEquals(200, req.status(), req.body().toString());
         assertEquals("COMPLIANCE", req.data().path("requiredRole").asText(), "enabling money needs compliance");
@@ -189,7 +189,7 @@ class PlatformControlsScenarioTest {
         assertFalse(markets.validMobileInAnyMarket("+260111234567"), "but only real mobile ranges");
         assertTrue(jdbc.queryForObject("SELECT enabled FROM ref_countries WHERE code = 'ZM'", Boolean.class));
         assertTrue(jdbc.queryForObject("SELECT enabled FROM ref_currencies WHERE code = 'ZMW'", Boolean.class), "the ledger accepts ZMW");
-        assertEquals("PayPort Zambia Limited", jdbc.queryForObject("SELECT legal_name FROM ref_legal_entities WHERE code = 'PAYPORT_ZM_SANDBOX'", String.class));
+        assertEquals("Payport Zambia Limited", jdbc.queryForObject("SELECT legal_name FROM ref_legal_entities WHERE code = 'PAYPORT_ZM_SANDBOX'", String.class));
         assertEquals(List.of(), markets.problems().getOrDefault("ZM", List.of()));
 
         // A merchant can now be enabled for live ZMW, and live checkout in ZMW is allowed.
@@ -365,7 +365,7 @@ class PlatformControlsScenarioTest {
         String menu = ussd(s, ph, "", true).body().path("text").asText();
         assertTrue(menu.contains("8. Shop"), menu);
         String shop = ussd(s, ph, "8", true).body().path("text").asText();
-        assertTrue(shop.startsWith("CON PayPort Store") && shop.contains("2. Food (1)") && shop.contains("3. My orders"), shop);
+        assertTrue(shop.startsWith("CON Payport Store") && shop.contains("2. Food (1)") && shop.contains("3. My orders"), shop);
         String list = ussd(s, ph, "8*2", true).body().path("text").asText();
         assertTrue(list.contains("1. Mai's Kitchen"), list);
         String items = ussd(s, ph, "8*2*1", true).body().path("text").asText();
@@ -416,7 +416,7 @@ class PlatformControlsScenarioTest {
         String s = "AT-" + SEQ.incrementAndGet(), ph = String.format("+263778%06d", 400000 + SEQ.incrementAndGet());
         assertEquals(401, ussd(s, ph, "", false).status(), "unsigned hops are refused");
         String menu = ussd(s, ph, "", true).body().path("text").asText();
-        assertTrue(menu.startsWith("CON PayPort") && menu.contains("1. Buy airtime") && menu.contains("5. Check a payment"), menu);
+        assertTrue(menu.startsWith("CON Payport") && menu.contains("1. Buy airtime") && menu.contains("5. Check a payment"), menu);
         assertTrue(ussd(s, ph, "1", true).body().path("text").asText().startsWith("CON Airtime for:"));
         String ccy = ussd(s, ph, "1*1", true).body().path("text").asText();
         assertTrue(ccy.startsWith("CON Econet Airtime\nCurrency:") && ccy.contains("USD"), "the product is named: " + ccy);
@@ -426,7 +426,7 @@ class PlatformControlsScenarioTest {
         assertTrue(again.startsWith("CON Invalid amount") && again.contains("Enter another amount (USD)") && again.contains("0. Cancel"), again);
         assertTrue(ussd(s, ph, "1*1*1*abc*0", true).body().path("text").asText().startsWith("END Cancelled"));
         String with = ussd(s, ph, "1*1*1*abc*2.50", true).body().path("text").asText();
-        assertTrue(with.startsWith("CON Pay with:") && !with.contains("PayPort wallet"), "the amended amount carries on; guests pay with the four wallets only: " + with);
+        assertTrue(with.startsWith("CON Pay with:") && !with.contains("Payport wallet"), "the amended amount carries on; guests pay with the four wallets only: " + with);
         assertTrue(ussd(s, ph, "1*1*1*2.50*x", true).body().path("text").asText().startsWith("CON Invalid choice.\nPay with:"), "a wrong choice asks again");
         // Owner, 2026-10-31: the paying number is never assumed.
         String from = ussd(s, ph, "1*1*1*2.50*1", true).body().path("text").asText();
@@ -441,7 +441,7 @@ class PlatformControlsScenarioTest {
         String other = ussd(s, ph, "1*1*1*2.50*1*2*0712345678*0771000111", true).body().path("text").asText();
         assertTrue(other.contains("EcoCash 0771000111") && other.contains("1. Confirm"), "another person's number pays: " + other);
         String home = ussd(s, ph, "1*1*1*2.50*00", true).body().path("text").asText();
-        assertTrue(home.startsWith("CON PayPort") && home.contains("1. Buy airtime"), "00 goes back to the main menu: " + home);
+        assertTrue(home.startsWith("CON Payport") && home.contains("1. Buy airtime"), "00 goes back to the main menu: " + home);
         assertTrue(ussd(s, ph, "5*PP-NOT-MINE", true).body().path("text").asText().contains("No payment with that reference"));
         assertTrue(ussd(s, "+1555000111", "", true).body().path("text").asText().contains("not supported"), "numbers outside configured markets");
 
@@ -463,7 +463,7 @@ class PlatformControlsScenarioTest {
         String guest = says(s, ph, "");
         assertTrue(guest.contains("6. Register") && guest.contains("7. Help"), guest);
         assertTrue(says(s, ph, "7").contains("support@payport.africa"));
-        assertTrue(says(s, ph, "6").startsWith("CON Register with PayPort"));
+        assertTrue(says(s, ph, "6").startsWith("CON Register with Payport"));
         assertTrue(says(s, ph, "6*Rudo Moyo").contains("ID number"));
         assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42").contains("Terms and Privacy Policy"));
         assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42*1").contains("4-digit PIN"));
@@ -471,11 +471,11 @@ class PlatformControlsScenarioTest {
         assertTrue(says(s, ph, "6*Rudo Moyo*63-123456A42*1*1357*2468").contains("do not match"));
         String s2 = "AT-" + SEQ.incrementAndGet();
         String done = says(s2, ph, "6*Rudo Moyo*63-123456A42*1*1357*1357");
-        assertTrue(done.startsWith("END Welcome to PayPort, Rudo"), done);
+        assertTrue(done.startsWith("END Welcome to Payport, Rudo"), done);
         assertEquals("63-123456A42", jdbc.queryForObject("SELECT id_number FROM users WHERE phone = ?", String.class, ph));
 
         String s3 = "AT-" + SEQ.incrementAndGet();
-        assertTrue(says(s3, ph, "").contains("Welcome to PayPort, Rudo"));
+        assertTrue(says(s3, ph, "").contains("Welcome to Payport, Rudo"));
         String menu = says(s3, ph, "1357");
         assertTrue(menu.contains("6. My wallet") && menu.contains("8. More") && menu.contains("5. Send money"), menu);
         assertTrue(says(s3, ph, "1357*8").contains("5. Change PIN"));
@@ -492,7 +492,7 @@ class PlatformControlsScenarioTest {
         assertTrue(ccy.contains("Currency:"), ccy);
         assertTrue(says(s5, ph, "1357*1*3*1*00").contains("what would you like to do"), "00 keeps a logged-in customer logged in");
         String with = says(s5, ph, "1357*1*3*1*1*2.50");
-        assertTrue(with.startsWith("CON Pay with:\n1. PayPort wallet"), "the wallet is the first way to pay: " + with);
+        assertTrue(with.startsWith("CON Pay with:\n1. Payport wallet"), "the wallet is the first way to pay: " + with);
 
         String s6 = "AT-" + SEQ.incrementAndGet();
         assertTrue(says(s6, ph, "1357*8*5*1111").contains("Wrong PIN"));
@@ -544,7 +544,7 @@ class PlatformControlsScenarioTest {
         jdbc.update("INSERT INTO users (full_name, phone, pin_hash, role, is_active, is_verified) VALUES ('Tendai Moyo', ?, ?, 'CUSTOMER', TRUE, TRUE)",
                 "+" + holder, new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("2468"));
         String w = "E" + SEQ.incrementAndGet();
-        assertTrue(econet(key, w, holder, "*123#", "FIRST").contains("Welcome to PayPort, Tendai"));
+        assertTrue(econet(key, w, holder, "*123#", "FIRST").contains("Welcome to Payport, Tendai"));
         String in = econet(key, w, holder, "2468", "PENDING");
         assertTrue(in.contains("Send money") && in.contains("Cash out at an agent"), in);
         assertEquals("#", jdbc.queryForObject("SELECT path FROM ussd_state WHERE session_id = ?", String.class, "ECONET:" + w), "the PIN is never stored");

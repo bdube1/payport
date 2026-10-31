@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The only door between PayPort Commerce and the PSP (PspPaymentsApi in the Phase 0 assessment). Commerce runs as
+ * The only door between Payport Commerce and the PSP (PspPaymentsApi in the Phase 0 assessment). Commerce runs as
  * its own service with its own database, so it keeps working when the PSP is down (owner, 2026-10-31); it asks the
  * PSP for money things only through here, and the PSP stays the only authority on money:
  *
@@ -67,7 +67,7 @@ public class CommerceFacade {
 
     /** The service key check: a missing or wrong key is refused; no key configured means the door is closed. */
     public void requireKey(String presented) {
-        if (key.length() < 24) throw new SecurityException("PayPort Commerce is not connected");
+        if (key.length() < 24) throw new SecurityException("Payport Commerce is not connected");
         if (presented == null || !MessageDigest.isEqual(key.getBytes(StandardCharsets.UTF_8), presented.trim().getBytes(StandardCharsets.UTF_8))) {
             throw new SecurityException("Wrong service key");
         }
@@ -94,7 +94,7 @@ public class CommerceFacade {
         String description = b.description() == null ? null : b.description().length() > 200 ? b.description().substring(0, 200) : b.description();
         CheckoutSession s;
         try {
-            // Store payments are test mode (sandbox) until PayPort switches them to live with the owner's approval.
+            // Store payments are test mode (sandbox) until Payport switches them to live with the owner's approval.
             s = checkouts.createSession(m, null, new CheckoutSessionService.CreateSessionRequest(ref, b.amountMinor(), b.currency(), description,
                     null, null, b.successUrl(), b.cancelUrl(), meta), methods.commerceLive());
             String pick = methods.preferred(m.getId(), b.method());
@@ -239,7 +239,7 @@ public class CommerceFacade {
         return Map.of("queued", true);
     }
 
-    /** For PayPort Commerce's sign-in: who the merchant user behind a merchant portal token is. */
+    /** For Payport Commerce's sign-in: who the merchant user behind a merchant portal token is. */
     public Map<String, Object> identity(Merchant m, zw.co.payport.gateway.entity.MerchantUser u) {
         Map<String, Object> v = merchantInfo(m.getId());
         v.put("userId", u == null ? null : u.getId());

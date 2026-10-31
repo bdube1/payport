@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * The store for PayPort's other channels (owner, 31 Oct 2026: "all the 4 channels must be identical"): the mobile app,
+ * The store for Payport's other channels (owner, 31 Oct 2026: "all the 4 channels must be identical"): the mobile app,
  * WhatsApp and USSD reach the same stores, items, delivery choices, discount codes, bookings and pay-on-delivery as
- * the website, through PayPort Payments (server to server, the shared service key). Orders are placed here exactly
+ * the website, through Payport Payments (server to server, the shared service key). Orders are placed here exactly
  * like web orders; paying is then done by the channel on the PSP checkout this returns.
  */
 @RestController

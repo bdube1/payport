@@ -1,6 +1,6 @@
 # Penetration test scope (for the external tester)
 
-_Phase 9. PayPort commissions an independent test before go-live and after any major change. This page is
+_Phase 9. Payport commissions an independent test before go-live and after any major change. This page is
 the scope and the rules of engagement to send to the tester._
 
 ## In scope (staging environment only)
@@ -37,6 +37,6 @@ own systems (sandbox endpoints only, with their permission); physical attacks.
 
 ## Rules of engagement
 
-Test accounts for each role are issued by PayPort for the test window and revoked after. Findings go to
-PayPort's security contact within 24 h for critical issues; the final report rates findings by CVSS 3.1
+Test accounts for each role are issued by Payport for the test window and revoked after. Findings go to
+Payport's security contact within 24 h for critical issues; the final report rates findings by CVSS 3.1
 and is re-tested after fixes.

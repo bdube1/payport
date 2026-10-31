@@ -51,7 +51,7 @@ public class EventReader {
                 pspUp = true;
                 lastRead = System.currentTimeMillis();
             } catch (Psp.Unavailable e) {
-                if (pspUp) log.warn("[COMMERCE] PayPort Payments unavailable: {}", e.getMessage());
+                if (pspUp) log.warn("[COMMERCE] Payport Payments unavailable: {}", e.getMessage());
                 pspUp = false;
                 return;
             } catch (Psp.Refused e) {

@@ -8,7 +8,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Mapping of camt.053.001.08 and pain.002.001.10 to PayPort's model, and conformance of the fixtures to the official schemas. */
+/** Mapping of camt.053.001.08 and pain.002.001.10 to Payport's model, and conformance of the fixtures to the official schemas. */
 class Iso20022MappingTest {
 
     private final Iso20022Schemas schemas = new Iso20022Schemas();

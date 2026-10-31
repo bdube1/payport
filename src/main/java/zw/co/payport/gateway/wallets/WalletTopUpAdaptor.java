@@ -45,7 +45,7 @@ public class WalletTopUpAdaptor implements FulfilmentProviderAdaptor {
             String entry = wallets.creditTopUp(r.getPayportReference(), r.getRecipientIdentifier(), r.getCurrency(), r.getAmountCents(), rail.get(0), "SYSTEM:wallet-topup");
             return FulfilmentResult.builder().success(true).fulfilmentReference(entry)
                     .fulfilmentData("{\"ledgerEntry\":\"" + entry + "\"}")
-                    .message("Wallet credited").customerMessage("Your PayPort wallet has been topped up.").rawResponse(entry).build();
+                    .message("Wallet credited").customerMessage("Your Payport wallet has been topped up.").rawResponse(entry).build();
         } catch (IllegalArgumentException | IllegalStateException | ChannelUnavailableException e) {
             return FulfilmentResult.builder().success(false).errorCode("WALLET_REFUSED").message(e.getMessage())
                     .customerMessage("Your wallet could not be topped up: " + e.getMessage() + " You will be refunded.").rawResponse(e.getMessage()).build();

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The customer sees NetOne's own wording; PayPort's catalogued description is only a
+ * The customer sees NetOne's own wording; Payport's catalogued description is only a
  * fallback when NetOne sends no text (owner decision, Phase 2 review).
  */
 class NetOneAirtimeAdaptorMessageTest {

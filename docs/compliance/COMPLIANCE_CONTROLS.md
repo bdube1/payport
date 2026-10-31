@@ -133,7 +133,7 @@ This is enforced twice:
 ## 4. Suspicious and cash transaction reports (FIU, goAML)
 
 **Templates**
-- FIU Zimbabwe receives reports through goAML (Guideline 01-2025 s3.106). The FIU's own template was not available, so PayPort's templates are built to the goAML report structure: `report`, `rentity_id`, `submission_code`, `report_code`, `reporting_person`, `reason`, `action`, `transaction`, `report_indicators`.
+- FIU Zimbabwe receives reports through goAML (Guideline 01-2025 s3.106). The FIU's own template was not available, so Payport's templates are built to the goAML report structure: `report`, `rentity_id`, `submission_code`, `report_code`, `reporting_person`, `reason`, `action`, `transaction`, `report_indicators`.
 - They also follow FATF and Egmont good practice: who, what, when, where, why it is suspicious, and what was done.
 - Templates (`fiu-templates/payport-str-v1.json`, `payport-ctr-v1.json`) are **versioned data**. A new version is created as DRAFT and activated by a different officer; the previous version is retired.
 
@@ -199,7 +199,7 @@ Communications (acknowledgement, progress, outcome, RBZ notice) are recorded wit
 
 ## 8. Open items for the owner and Compliance
 1. **Confirm the CTR threshold and aggregation period** with the FIU. They are PROVISIONAL.
-2. **Register PayPort on goAML** and set `FIU.REPORTING_ENTITY_ID` through the two-officer parameter change.
+2. **Register Payport on goAML** and set `FIU.REPORTING_ENTITY_ID` through the two-officer parameter change.
 3. **Confirm the card scheme or acquirer chargeback deadline.** It is PROVISIONAL.
 4. **Check the holiday calendar** against the Government Gazette each year.
 5. **Appoint at least two COMPLIANCE users**, and have an administrator request `REPORT_APPROVER` for the officer(s) who will approve reports.

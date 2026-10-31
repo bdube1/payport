@@ -39,4 +39,4 @@ print("%s: batch %s (PARALLEL, %d merchants): %d discrepancies" % (ccy, b.get("b
 ' "$ccy" "$CSV"
 done
 echo "details: $CSV"
-echo "Each discrepancy goes to the Phase 11 report with its cause (fee rule, timing cut-off, refund, legacy error, PayPort error)."
+echo "Each discrepancy goes to the Phase 11 report with its cause (fee rule, timing cut-off, refund, legacy error, Payport error)."

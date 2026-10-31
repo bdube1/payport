@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * EMVCo Merchant-Presented QR (MPM) payloads, harvested from psp-foundation (Phase 8). Pure.
  *
- * Template 26 carries PayPort's merchant account information (GUID "zw.co.payport" + the
+ * Template 26 carries Payport's merchant account information (GUID "zw.co.payport" + the
  * checkout session reference). Country (tag 58) and the ISO 4217 numeric currency (tag 53) come
  * from the market configuration, never from code. If the national switch publishes a QR scheme
  * (template id / GUID), it is added as a second merchant account template so other wallets can pay
@@ -57,7 +57,7 @@ public final class EmvQr {
         Map<String, String> top = tlvs(body.substring(0, body.length() - 4));
         if (!"01".equals(top.get("00"))) throw new IllegalArgumentException("Unsupported payload format");
         Map<String, String> mai = tlvs(top.getOrDefault("26", ""));
-        if (!GUID.equals(mai.get("00"))) throw new IllegalArgumentException("Not a PayPort merchant QR");
+        if (!GUID.equals(mai.get("00"))) throw new IllegalArgumentException("Not a Payport merchant QR");
         String ref = top.containsKey("62") ? tlvs(top.get("62")).get("05") : null;
         String amt = top.get("54");
         Long minor = amt == null ? null : new java.math.BigDecimal(amt).movePointRight(2).longValueExact();

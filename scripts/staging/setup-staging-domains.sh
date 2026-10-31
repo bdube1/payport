@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Puts the PayPort staging portals and gateway on their https addresses through Caddy, the web server already
+# Puts the Payport staging portals and gateway on their https addresses through Caddy, the web server already
 # running on this machine (it also obtains and renews the certificates). Run as root; safe to run again.
 #
 #   sudo bash scripts/staging/setup-staging-domains.sh
@@ -62,7 +62,7 @@ while i < len(lines):
 text = '\n'.join(out).rstrip('\n')
 imp = f'import {site}'
 if imp not in text:
-    text += f'\n\n# PayPort staging (scripts/staging/setup-staging-domains.sh)\n{imp}\n'
+    text += f'\n\n# Payport staging (scripts/staging/setup-staging-domains.sh)\n{imp}\n'
 open(path, 'w').write(text + ('\n' if not text.endswith('\n') else ''))
 print('Replaced earlier blocks for: ' + (', '.join(removed) if removed else 'none'))
 PY

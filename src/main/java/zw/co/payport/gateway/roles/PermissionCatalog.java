@@ -111,7 +111,7 @@ public final class PermissionCatalog {
 
             f("users", "Administration", "Users", List.of("/users"), List.of(A + "users"), ADMIN),
             f("roles", "Administration", "Roles & permissions", List.of("/roles"), List.of(A + "roles"), ADMIN),
-            f("intelligence", "Administration", "PayPort Intelligence", List.of("/intelligence"), List.of(A + "intelligence"), ADMIN));
+            f("intelligence", "Administration", "Payport Intelligence", List.of("/intelligence"), List.of(A + "intelligence"), ADMIN));
 
     /** Paths outside /api/v1/admin that belong to staff tools (checked for configurable roles). */
     public static final List<String> STAFF_PATHS = List.of("/api/v1/admin/", "/api/v1/omari/admin", "/api/v1/econet/admin",

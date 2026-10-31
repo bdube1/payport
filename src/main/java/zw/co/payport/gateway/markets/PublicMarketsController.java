@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Countries and currencies PayPort serves, for the drop-downs in the customer and merchant apps (public, read-only). */
+/** Countries and currencies Payport serves, for the drop-downs in the customer and merchant apps (public, read-only). */
 @RestController
 public class PublicMarketsController {
 

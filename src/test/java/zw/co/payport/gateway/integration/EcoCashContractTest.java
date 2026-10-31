@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * EcoCash Instant Payments contract against spec-shaped fixtures (no EcoCash sandbox access):
- * the charge request PayPort sends, and how each answer is classified (sent / declined / unknown).
+ * the charge request Payport sends, and how each answer is classified (sent / declined / unknown).
  */
 class EcoCashContractTest {
 
@@ -47,7 +47,7 @@ class EcoCashContractTest {
         Map<String, Object> f = Map.of("baseUrl", "http://127.0.0.1:" + server.getAddress().getPort() + "/ecocashGateway/payment/v1",
                 "notifyUrl", "https://api.payport.africa/api/v1/callbacks/ecocash", "merchantCode", "42467", "merchantPin", "1357",
                 "merchantNumber", "771999999", "countryCode", "ZW", "terminalID", "TERM1", "location", "Harare",
-                "superMerchantName", "PayPort", "merchantName", "PayPort");
+                "superMerchantName", "Payport", "merchantName", "Payport");
         f.forEach((k, v) -> ReflectionTestUtils.setField(ecocash, k, v));
         ReflectionTestUtils.setField(ecocash, "username", "payport");
         ReflectionTestUtils.setField(ecocash, "password", "pw");

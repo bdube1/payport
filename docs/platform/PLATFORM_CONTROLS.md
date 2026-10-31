@@ -1,4 +1,4 @@
-# Operating PayPort from the portal (no code changes)
+# Operating Payport from the portal (no code changes)
 
 _2026-10-16. Migrations V50–V52. Ops console: **Markets & Currencies**, **Channels & Product Lines**, **Products & Payment Methods**, **Customer Wallets**, **Agents & Float**, **POS & WhatsApp**, **Provider Settlement Rules**, **Ledger**. Step-by-step switch-on for every product and credential: [`docs/runbooks/SWITCH_ON.md`](../runbooks/SWITCH_ON.md)._
 
@@ -21,7 +21,7 @@ The rule for every switch: **turning money OFF is immediate** (one person, reaso
 
 1. Markets & Currencies → Zambia shows **Before going live**: the blockers (placeholder legal name, placeholder ZMW bank account, required screening list not loaded…).
 2. An administrator requests: status LIVE, the legal entity's registered name, the ZMW settlement account, and ZMW **live**.
-3. A compliance officer approves. In that transaction PayPort enables ZM and ZMW in the reference data (through the database's definer procedures; the application user still cannot write reference data directly), renames the entity, and reloads the market settings on every instance.
+3. A compliance officer approves. In that transaction Payport enables ZM and ZMW in the reference data (through the database's definer procedures; the application user still cannot write reference data directly), renames the entity, and reloads the market settings on every instance.
 4. Zambian mobile numbers (+260, the market's numbering plan) are accepted, merchants can be enabled for live ZMW, payouts use the market's payout format and bank account.
 
 Proven by `PlatformControlsScenarioTest.zambiaGoesLiveFromThePortal_…` — including that the request is refused while blockers remain, that the requester and another ADMIN cannot approve it, and that a suspension is immediate.

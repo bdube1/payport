@@ -97,7 +97,7 @@ public class Storefront {
     /** The header for pages of a merchant without a store record (every key present: templates read them all). */
     static Map<String, Object> defaultStore() {
         Map<String, Object> m = new java.util.HashMap<>();
-        m.put("name", "PayPort");
+        m.put("name", "Payport");
         m.put("slug", null);
         m.put("about", null);
         m.put("color", "#0B6E4F");
@@ -193,7 +193,7 @@ public class Storefront {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Map<String, Object> st : all) counts.merge(String.valueOf(st.get("business_type")), 1, Integer::sum);
 
-        // The search box is PayPort AI's shopping assistant: plain words find matching items and stores.
+        // The search box is Payport AI's shopping assistant: plain words find matching items and stores.
         List<Map<String, Object>> found = new ArrayList<>();
         java.util.Set<String> foundStores = new java.util.LinkedHashSet<>();
         Ai.Query aq = null;
@@ -257,7 +257,7 @@ public class Storefront {
         model.addAttribute("found", found);
         model.addAttribute("answer", aq == null ? null : ai.answer(aq, found, stores.size()));
         model.addAttribute("aiOn", ai.modelOn());
-        model.addAttribute("title", "PayPort Store");
+        model.addAttribute("title", "Payport Store");
         return "home";
     }
 
@@ -339,9 +339,9 @@ public class Storefront {
         model.addAttribute("me", meModel());
         model.addAttribute("store", sm);
         model.addAttribute("products", items);
-        model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on PayPort"));
+        model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on Payport"));
         model.addAttribute("title", st.get("name"));
-        model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with PayPort." : st.get("about"));
+        model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with Payport." : st.get("about"));
         return "store";
     }
 
@@ -713,7 +713,7 @@ public class Storefront {
         model.addAttribute("problem", problem);
         model.addAttribute("share", share("/l/" + l.get("code"), l.get("title") + (amount == null ? "" : " - " + lm.get("price"))));
         model.addAttribute("title", l.get("title") + (st.isEmpty() ? "" : " | " + st.get("name")));
-        model.addAttribute("description", l.get("description") == null ? "Pay securely with PayPort." : l.get("description"));
+        model.addAttribute("description", l.get("description") == null ? "Pay securely with Payport." : l.get("description"));
         model.addAttribute("image", lm.get("image"));
         return "link";
     }

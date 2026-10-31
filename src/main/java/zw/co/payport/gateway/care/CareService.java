@@ -21,7 +21,7 @@ import java.util.Set;
 /**
  * Complaints (owner, 2026-10-30): each complaint gets a reference the customer can quote, a category from the
  * complaint list (which sets its priority and deadline), an owner and a history of notes. Tracing a reference shows
- * what PayPort itself recorded (the transaction and its outcome, wallet lines, possible duplicates) and which
+ * what Payport itself recorded (the transaction and its outcome, wallet lines, possible duplicates) and which
  * reversals are possible - reversals are then requested from the central reversal desk.
  */
 @Service
@@ -48,7 +48,7 @@ public class CareService {
     // ─── trace ───────────────────────────────────────────────────────────────
 
     /**
-     * Everything PayPort recorded for a reference (PayPort reference, provider reference, wallet operation or
+     * Everything Payport recorded for a reference (Payport reference, provider reference, wallet operation or
      * wallet line reference) and the reversals it allows.
      */
     public Map<String, Object> trace(String raw) {
@@ -207,7 +207,7 @@ public class CareService {
         long id = jdbc.queryForObject("SELECT id FROM complaints WHERE complaint_ref = ?", Long.class, ref);
         audit.record(by, "COMPLAINT_OPENED", "complaint:" + ref, cat.code());
         if (triage != null) triage.record(ref, description, cat.code());   // measured against what staff chose
-        if (phone != null) sms.sendText(phone, "PayPort: we have received your complaint. Your reference is " + ref
+        if (phone != null) sms.sendText(phone, "Payport: we have received your complaint. Your reference is " + ref
                 + ". We will update you by SMS. Quote this reference when you contact us.", ref, "COMPLAINT_OPENED");
         return get(id);
     }
@@ -247,7 +247,7 @@ public class CareService {
         addNote(id, "Status " + s + (finishing ? ": " + resolution.trim() : ""), by);
         audit.record(by, "COMPLAINT_" + s, "complaint:" + c.get("complaint_ref"), finishing ? resolution : null);
         if (finishing && c.get("customer_phone") != null) {
-            sms.sendText((String) c.get("customer_phone"), "PayPort: your complaint " + c.get("complaint_ref") + " is "
+            sms.sendText((String) c.get("customer_phone"), "Payport: your complaint " + c.get("complaint_ref") + " is "
                     + s.toLowerCase(Locale.ROOT) + ". " + clip(resolution.trim(), 300), (String) c.get("complaint_ref"), "COMPLAINT_" + s);
         }
         return get(id);

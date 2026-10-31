@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the PayPort gateway in STAGING (Phase 11), next to production and isolated from it.
+# Starts the Payport gateway in STAGING (Phase 11), next to production and isolated from it.
 #
 #   cd /opt/payport/staging && mvn clean package -DskipTests && scripts/staging/start-staging.sh
 #

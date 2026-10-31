@@ -18,7 +18,7 @@
         <NtryDtls><TxDtls>
           <Refs><EndToEndId>{{E2E_PAID}}</EndToEndId></Refs>
           <RltdPties><Cdtr><Pty><Nm>Alpha Store</Nm></Pty></Cdtr></RltdPties>
-          <RmtInf><Ustrd>PayPort settlement</Ustrd></RmtInf>
+          <RmtInf><Ustrd>Payport settlement</Ustrd></RmtInf>
         </TxDtls></NtryDtls>
       </Ntry>
       <Ntry>

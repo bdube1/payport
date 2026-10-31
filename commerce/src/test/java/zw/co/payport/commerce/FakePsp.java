@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** A stand-in for PayPort Payments' Commerce API: checkouts, status, refunds, events, identity; can be switched off. */
+/** A stand-in for Payport Payments' Commerce API: checkouts, status, refunds, events, identity; can be switched off. */
 class FakePsp {
 
     static final String KEY = "fake-psp-commerce-key-0123456789";

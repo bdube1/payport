@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * camt.053.001.08 (Bank to Customer Statement) for one of PayPort's own bank accounts.
+ * camt.053.001.08 (Bank to Customer Statement) for one of Payport's own bank accounts.
  * Canonical mapping per statement (BkToCstmrStmt/Stmt):
  *
  *   Stmt/Id                         -> statement id (with the account, the import key)
@@ -20,7 +20,7 @@ import java.util.List;
  *   Ntry Sts (BOOK, PDNG, INFO)     -> only BOOK entries count towards the balance check and tracing
  *   Ntry BookgDt / ValDt            -> booking and value dates
  *   Ntry AcctSvcrRef (or TxDtls/Refs/AcctSvcrRef, as in HVPS+) -> the bank's reference
- *   TxDtls/Refs/EndToEndId          -> PayPort's payout instruction_ref for outgoing payouts
+ *   TxDtls/Refs/EndToEndId          -> Payport's payout instruction_ref for outgoing payouts
  *   TxDtls/RltdPties Cdtr or Dbtr   -> counterparty name; RmtInf/Ustrd -> remittance text
  */
 public final class Camt053Parser {

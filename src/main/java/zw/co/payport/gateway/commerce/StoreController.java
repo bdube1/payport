@@ -18,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * The PayPort Store in the mobile app (the same stores and orders as the website, WhatsApp and USSD). Browsing is open;
+ * The Payport Store in the mobile app (the same stores and orders as the website, WhatsApp and USSD). Browsing is open;
  * ordering is for a signed-in customer, whose own name and phone number go on the order. The order is then paid with the
  * hosted checkout it returns (mobile money, card) or from the wallet (/api/v1/wallet/pay-checkout).
  */

@@ -1,4 +1,4 @@
-# PayPort Operations Control Centre - Prometheus.
+# Payport Operations Control Centre - Prometheus.
 # The gateway runs on the same host (staging: port 8085). If Prometheus runs on a separate monitoring server, replace
 # 127.0.0.1:8085 with the gateway's private address, or with api-staging.payport.africa and scheme https.
 global:
@@ -25,7 +25,7 @@ scrape_configs:
       - targets: ["127.0.0.1:8085"]
         labels: { service: gateway }
 
-  # PayPort Commerce (the store, port 8086): its own figures, local only.
+  # Payport Commerce (the store, port 8086): its own figures, local only.
   - job_name: payport-commerce
     metrics_path: /internal/metrics
     static_configs:
@@ -58,7 +58,7 @@ scrape_configs:
       - target_label: __address__
         replacement: 127.0.0.1:9115
 
-  # PayPort's own public addresses, as customers reach them.
+  # Payport's own public addresses, as customers reach them.
   - job_name: payport-public
     metrics_path: /probe
     params: { module: [http_2xx] }

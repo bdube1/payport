@@ -80,8 +80,8 @@ public class FiuReportService {
             String def = new String(new ClassPathResource(resource).getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             JsonNode d = validate(def);
             jdbc.update("INSERT INTO fiu_report_templates (code, report_type, version, status, output_format, definition, source, created_by, created_at, approved_by, activated_at) "
-                            + "VALUES (?, ?, 1, 'ACTIVE', ?, ?, ?, 'SEED', ?, 'SEED:PayPort provisional template', ?)", code, d.path("reportType").asText(),
-                    d.path("outputFormat").asText(), def, "PayPort template aligned to goAML report structure and FATF/Egmont guidance; PROVISIONAL until the FIU's requirements are confirmed",
+                            + "VALUES (?, ?, 1, 'ACTIVE', ?, ?, ?, 'SEED', ?, 'SEED:Payport provisional template', ?)", code, d.path("reportType").asText(),
+                    d.path("outputFormat").asText(), def, "Payport template aligned to goAML report structure and FATF/Egmont guidance; PROVISIONAL until the FIU's requirements are confirmed",
                     Timestamp.valueOf(LocalDateTime.now()), Timestamp.valueOf(LocalDateTime.now()));
         } catch (Exception e) {
             log.error("[FIU] could not seed template {}: {}", code, e.getMessage());

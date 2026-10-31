@@ -18,7 +18,7 @@ import zw.co.payport.gateway.platform.Web;
 import java.util.List;
 import java.util.Map;
 
-/** The merchant's accepted payment methods, and (for PayPort staff) live readiness of store payments. */
+/** The merchant's accepted payment methods, and (for Payport staff) live readiness of store payments. */
 @RestController
 public class MerchantPaymentMethodsController {
 

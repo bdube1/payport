@@ -39,7 +39,7 @@ every route they call exists, so they remain valid.
 | Field | Finding |
 |---|---|
 | Component | `org.apache.xmlrpc:xmlrpc-client` / `xmlrpc-common` 3.1.3. Used only by `EconetAirtimeAdaptor` (Econet airtime and data delivery). The Apache project is end-of-life and has no fixed release |
-| Vulnerability 1 | **CVE-2019-17570**, CVSS 3.1 **9.8** (critical, AV:N/AC:L/PR:N/UI:N/C:H/I:H/A:H). `XmlRpcResponseParser` passes a server-supplied `faultCause` to `ObjectInputStream`, so whoever answers the client can run code in PayPort through a gadget chain on the classpath |
+| Vulnerability 1 | **CVE-2019-17570**, CVSS 3.1 **9.8** (critical, AV:N/AC:L/PR:N/UI:N/C:H/I:H/A:H). `XmlRpcResponseParser` passes a server-supplied `faultCause` to `ObjectInputStream`, so whoever answers the client can run code in Payport through a gadget chain on the classpath |
 | Vulnerability 2 | **CVE-2016-5004 / GHSA-r2pg-w96p-pcpj**, CVSS 3.0 **6.5** (moderate, availability only). Decompression denial of service through Content-Encoding |
 | Scanner coverage | OSV reports only CVE-2016-5004. CVE-2019-17570 is filed under the `org.apache.xmlrpc:xmlrpc` artifact, so CI's "1 advisory" understated the exposure (new risk R82). The Phase 9 report wrongly called the GHSA a deserialisation flaw; corrected |
 | Exposure | Every Econet delivery. The endpoint is configuration (`ECONET_HOST`, port and path), and the transport is **plain HTTP** |
@@ -48,7 +48,7 @@ every route they call exists, so they remain valid.
 | Evidence | `Phase10UnitTest`: genuine responses and faults pass; each attack shape is refused; a 64 MiB gzip bomb stops reading near the cap |
 | Residual risk | A parser flaw that the screen does not cover, and denial of service from a hostile endpoint, which is bounded but possible |
 | Conditions for production Econet traffic | (1) TLS or an IPsec/VPN tunnel to Econet with the server identity pinned; (2) replace the library with a minimal XML-RPC client that has no Java serialisation, and retire this risk |
-| Owner / review | Engineering lead. The residual-risk acceptance belongs to the PayPort owner and is **not yet signed**. Review by 2027-01-22, or before Econet go-live if earlier |
+| Owner / review | Engineering lead. The residual-risk acceptance belongs to the Payport owner and is **not yet signed**. Review by 2027-01-22, or before Econet go-live if earlier |
 
 ## 3. Financial integrity: concurrency, idempotency, freeze, rollback, recovery
 
@@ -202,7 +202,7 @@ bank's own entry reference, with the old key used only when the bank gives none.
 
 | Activity | Status | Owner | Acceptance criterion |
 |---|---|---|---|
-| External penetration test (scope in `docs/phase9/PEN_TEST_SCOPE.md`) | **Not started** | PayPort owner commissions; security owner | Report received; no open critical or high findings; retest done |
+| External penetration test (scope in `docs/phase9/PEN_TEST_SCOPE.md`) | **Not started** | Payport owner commissions; security owner | Report received; no open critical or high findings; retest done |
 | Staging load test (`scripts/phase9/k6-staging.js`) | **Not started**: no staging environment yet | Engineering lead | All SLO thresholds met at the target arrival rates on production-like infrastructure |
 | Provider sandbox tests (14 external adapters, §5) | **Not started**: no credentials | Engineering lead with each provider | Evidence recorded per flow (`POST /api/v1/admin/integrations/{code}/verifications`) and register raised to SANDBOX_VERIFIED in a reviewed change |
 | Restore drill on a real backup (`scripts/phase0.5/restore-drill.sh`) | **Not started**: CI drills use test data | Operations / DBA | Restored from a production backup on a non-production server; checks pass; RTO ≤ 60 min, RPO ≤ 5 min |

@@ -12,19 +12,19 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Pure matching of a provider statement against PayPort's payments (no database, no side
+ * Pure matching of a provider statement against Payport's payments (no database, no side
  * effects; unit-tested). Every difference is categorised; nothing is adjusted.
  *
  *  MATCHED              same payment, amount and currency, inside the window
- *  MISSING_IN_PAYPORT   the provider shows a payment PayPort has no record of
- *  STATUS_MISMATCH      the provider shows it paid; PayPort does not (failed, timed out, pending...)
+ *  MISSING_IN_PAYPORT   the provider shows a payment Payport has no record of
+ *  STATUS_MISMATCH      the provider shows it paid; Payport does not (failed, timed out, pending...)
  *  DUPLICATE            the statement shows the same payment more than once
  *  AMOUNT_MISMATCH      same payment, different amount
  *  CURRENCY_MISMATCH    same payment, different currency
  *  TIMING               same payment but on the other side of the statement window, or a paid
  *                       payment from the last part of the window that should appear in the
  *                       next statement
- *  MISSING_IN_STATEMENT PayPort recorded the payment as paid; the provider statement does not show it
+ *  MISSING_IN_STATEMENT Payport recorded the payment as paid; the provider statement does not show it
  */
 public final class ReconEngine {
 
@@ -33,7 +33,7 @@ public final class ReconEngine {
     /** One statement line (transaction lines only; sweeps and fees are filtered out before). */
     public record Line(long lineId, List<String> references, long amountMinor, String currency, LocalDateTime occurredAt) {}
 
-    /** One PayPort payment that could appear in the statement. paid = the provider took the money per PayPort. */
+    /** One Payport payment that could appear in the statement. paid = the provider took the money per Payport. */
     public record Payment(String reference, Set<String> providerSideReferences, long amountMinor, String currency,
                           boolean paid, String status, LocalDateTime paidAt) {}
 
@@ -55,7 +55,7 @@ public final class ReconEngine {
      * Two passes: by reference, then (for lines no reference matched, with a real time of day) by
      * amount + currency + time within AMOUNT_TIME_WINDOW -- only when the pairing is unique both
      * ways, so an ambiguous pair is never guessed. Card switch reports (ZimSwitch) and airtime
-     * reports carry no PayPort reference, which is what the second pass is for.
+     * reports carry no Payport reference, which is what the second pass is for.
      */
     public static List<Finding> match(List<Line> lines, List<Payment> payments, LocalDateTime windowStart, LocalDateTime windowEnd,
                                       Duration timingTolerance) {
@@ -88,22 +88,22 @@ public final class ReconEngine {
             }
             if (!p.paid()) {
                 out.add(new Finding(Result.STATUS_MISMATCH, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), l.currency(),
-                        "Provider shows the payment as paid; PayPort has it as " + p.status()));
+                        "Provider shows the payment as paid; Payport has it as " + p.status()));
                 continue;
             }
             if (l.currency() != null && p.currency() != null && !sameCurrency(l.currency(), p.currency())) {
                 out.add(new Finding(Result.CURRENCY_MISMATCH, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), l.currency(),
-                        "Statement currency " + l.currency() + ", PayPort " + p.currency()));
+                        "Statement currency " + l.currency() + ", Payport " + p.currency()));
                 continue;
             }
             if (l.amountMinor() != p.amountMinor()) {
                 out.add(new Finding(Result.AMOUNT_MISMATCH, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), p.currency(),
-                        "Statement " + l.amountMinor() + ", PayPort " + p.amountMinor()));
+                        "Statement " + l.amountMinor() + ", Payport " + p.amountMinor()));
                 continue;
             }
             if (p.paidAt() != null && (p.paidAt().isBefore(windowStart.minus(timingTolerance)) || p.paidAt().isAfter(windowEnd.plus(timingTolerance)))) {
                 out.add(new Finding(Result.TIMING, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), p.currency(),
-                        "Matched, but PayPort recorded it at " + p.paidAt() + ", outside the statement window"));
+                        "Matched, but Payport recorded it at " + p.paidAt() + ", outside the statement window"));
                 continue;
             }
             out.add(new Finding(Result.MATCHED, l.lineId(), p.reference(), usedRef, p.amountMinor(), l.amountMinor(), p.currency(), null));
@@ -137,7 +137,7 @@ public final class ReconEngine {
             } else {
                 out.add(new Finding(Result.MISSING_IN_PAYPORT, l.lineId(), null, firstRef, null, l.amountMinor(), l.currency(),
                         c.size() > 1 ? "No reference match; " + c.size() + " payments have this amount and time, so none was chosen"
-                                : "Provider statement line has no matching PayPort payment", null));
+                                : "Provider statement line has no matching Payport payment", null));
             }
         }
 
@@ -149,7 +149,7 @@ public final class ReconEngine {
                         "Paid at " + p.paidAt() + ", near the end of the window: expected in the next statement"));
             } else {
                 out.add(new Finding(Result.MISSING_IN_STATEMENT, null, p.reference(), null, p.amountMinor(), null, p.currency(),
-                        "PayPort recorded this payment as paid; the provider statement does not show it"));
+                        "Payport recorded this payment as paid; the provider statement does not show it"));
             }
         }
         return out;

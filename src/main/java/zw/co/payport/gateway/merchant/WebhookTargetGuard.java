@@ -9,7 +9,7 @@ import java.net.InetAddress;
 import java.net.URI;
 
 /**
- * Webhook URLs are chosen by merchants, so PayPort must never be tricked into calling its own
+ * Webhook URLs are chosen by merchants, so Payport must never be tricked into calling its own
  * network (R13, SSRF): HTTPS only, no credentials or fragments in the URL, and every address the
  * host resolves to must be public -- not loopback, private (10/8, 172.16/12, 192.168/16),
  * carrier-grade NAT (100.64/10), link-local (169.254/16, incl. cloud metadata 169.254.169.254),

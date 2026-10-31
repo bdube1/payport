@@ -1,4 +1,4 @@
-# PayPort Phase 0: Discovery and baseline assessment
+# Payport Phase 0: Discovery and baseline assessment
 
 _2026-10-15. Answers the 14 questions in §20 of the engineering prompt._
 
@@ -40,7 +40,7 @@ _2026-10-15. Answers the 14 questions in §20 of the engineering prompt._
   - tested the database-level financial invariants.
 - **Evaluating my own work:** the PSP branch is my earlier work. I have assessed it by the same standard as the gateway, and I correct my earlier claims where needed. Its documents said "Built" where the honest status is "implemented but not verified".
 
-## 1. What PayPort currently does [Observed, User]
+## 1. What Payport currently does [Observed, User]
 
 A Spring Boot 3.2 / Java 21 / MySQL 8 application of about 26k lines that:
 - sells airtime, data and bills (Econet, NetOne, Telecel; ZESA, Bulawayo City Council, ZOL, Nyaradzo, Moonlight through e-Solutions) to consumers;
@@ -157,7 +157,7 @@ From doc 06 §8, in order:
 
 - **Reference data and policy sets.** Countries, currencies, legal entities, calendars and versioned policy sets; country logic only in `CountryPolicy` implementations.
 - **Ledger.** Per entity, minor units from the currency table, FX through clearing accounts with stored rates.
-- **ISO 20022.** A mapping layer onto a PayPort canonical model. Versions are chosen per verified implementation guide; the first likely use is `camt.053` statements and sponsor-bank payouts (ADR-0005).
+- **ISO 20022.** A mapping layer onto a Payport canonical model. Versions are chosen per verified implementation guide; the first likely use is `camt.053` statements and sponsor-bank payouts (ADR-0005).
 
 ## 11. Unified merchant onboarding and cross-border settlement
 
@@ -169,7 +169,7 @@ From doc 06 §8, in order:
 
 Doc 07 compares direct PSP, partner-led, aggregation and hybrid.
 → **Design for hybrid.**
-- **Zimbabwe launch:** partner-led with a sponsor bank, unless PayPort already holds or is close to an RBZ licence. Per SI 17 of 2025, non-bank applicants apply with the support of a locally authorised institution, so a bank relationship is needed either way.
+- **Zimbabwe launch:** partner-led with a sponsor bank, unless Payport already holds or is close to an RBZ licence. Per SI 17 of 2025, non-bank applicants apply with the support of a locally authorised institution, so a bank relationship is needed either way.
 - **Other markets:** partner-led or aggregation first.
 
 ## 13. Roadmap
@@ -192,7 +192,7 @@ The critical path runs through:
 | 4 | Frontend repositories (consumer app, merchant dashboard, admin) | R1/R3 fixes, Phase 4 |
 | 5 | Production schema dump (no data); later an anonymised data copy | Migration safety (D1) |
 | 6 | Deployment description: servers, proxy/WAF, how `.env` is managed, backups | Security and DR baseline |
-| 7 | PayPort's licence/registration status, current trust/settlement bank arrangement, and counsel's view on which model to pursue | Phases 3, 8 |
+| 7 | Payport's licence/registration status, current trust/settlement bank arrangement, and counsel's view on which model to pursue | Phases 3, 8 |
 | 8 | Provider sandbox credentials and specs (EcoCash, OneMoney, O'mari, ZimSwitch, e-Solutions; Telecash/InnBucks if wanted) | Phases 2, 5 |
 | 9 | Sponsor bank payout and statement formats | Phase 3 |
 | 10 | Finance lead to sign off the chart of accounts; tax adviser on IMTT/VAT treatment | Phase 1 |

@@ -48,7 +48,7 @@ public class FinanceOpsController {
 
     // ─── reconciliation ───────────────────────────────────────────────────────
 
-    /** Imports a provider statement (once per file) and reconciles it. format=CSV for PayPort's generic statement CSV. */
+    /** Imports a provider statement (once per file) and reconciles it. format=CSV for Payport's generic statement CSV. */
     @PostMapping("/recon/statements")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importStatement(@RequestParam String provider,
                                                                             @RequestParam(defaultValue = "NATIVE") String format,

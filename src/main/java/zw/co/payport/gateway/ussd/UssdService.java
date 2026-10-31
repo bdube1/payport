@@ -78,15 +78,15 @@ import java.util.function.Supplier;
  * and CardService (/api/v1/wallet/...), saved numbers through the beneficiaries table, registration and PIN changes
  * through AuthService (/auth/register, /account/change-pin), history through the same query as /my-history.
  *
- * Guests: airtime, data, bills, merchant payments, payment status, registration and help. A number with a PayPort
- * account is greeted by name and logs in with its PIN (0 continues as a guest); then the PayPort wallet is the first
+ * Guests: airtime, data, bills, merchant payments, payment status, registration and help. A number with a Payport
+ * account is greeted by name and logs in with its PIN (0 continues as a guest); then the Payport wallet is the first
  * way to pay and the wallet, saved numbers, cards, history and PIN are offered as well.
  *
  * Easy to use (owner, 2026-10-31): the number that pays is always asked (this phone or another number), never
  * assumed; a wrong answer shows why and asks the same question again (an amount below the minimum can be changed,
  * 0 cancels); "00" goes back to the main menu without logging in again. On WhatsApp the PIN is typed in the chat,
  * because a WhatsApp bundle may not include internet for a web page; it is used once, never kept, and shown as dots
- * wherever PayPort shows the conversation (only the customer's own phone shows what they typed).
+ * wherever Payport shows the conversation (only the customer's own phone shows what they typed).
  *
  * The whole input path is the state ("1*2*0771234567*1*5*1*1"): every hop re-reads it, so a gateway retry gets the
  * same answer, and a confirmed step runs once per session (ussd_sessions). PINs are never stored: the stored path
@@ -322,7 +322,7 @@ public class UssdService {
     }
 
     private String menu(String channel, String sessionId, String phoneNumber, String text) {
-        if (!channels.enabled(channel)) return "END PayPort " + ("USSD".equals(channel) ? "USSD" : "on " + capital(channel)) + " is not available at the moment. Please try again later.";
+        if (!channels.enabled(channel)) return "END Payport " + ("USSD".equals(channel) ? "USSD" : "on " + capital(channel)) + " is not available at the moment. Please try again later.";
         Optional<MarketRegistry.Market> market = markets.forMsisdn(phoneNumber);
         if (market.isEmpty()) return "END This number is not supported.";
         String msisdn = phoneNumber.replaceAll("[^0-9]", "");
@@ -335,7 +335,7 @@ public class UssdService {
                 return guest(c, new In(tokens, 0));
             }
             User u = holder.get();
-            if (tokens.length == 0) return "CON Welcome to PayPort, " + firstName(u) + "\nEnter your PayPort PIN\n0. Continue as guest";
+            if (tokens.length == 0) return "CON Welcome to Payport, " + firstName(u) + "\nEnter your Payport PIN\n0. Continue as guest";
             In in = new In(tokens, 1);
             if (GUEST.equals(tokens[0].trim())) {
                 Ctx c = new Ctx(channel, sessionId, msisdn, market.get(), network, null);
@@ -361,7 +361,7 @@ public class UssdService {
     static final List<String> MORE_MENU = List.of("History", "Check a payment", "Saved numbers", "Cards", "Change PIN", "Help");
 
     private String guest(Ctx c, In in) {
-        Step<Integer> k = option(c, in, "PayPort", GUEST_MENU);
+        Step<Integer> k = option(c, in, "Payport", GUEST_MENU);
         if (k.asking()) return k.prompt();
         return switch (k.value()) {
             case 1 -> airtime(c, in);
@@ -455,8 +455,8 @@ public class UssdService {
     // ─── registration (as /api/v1/auth/register) ─────────────────────────────
 
     private String register(Ctx c, In in) {
-        if (users.findByPhone(c.phone()).isPresent()) return "END This number already has a PayPort account. Start again and enter your PIN.";
-        Step<String> pn = ask(in, "Register with PayPort\nEnter your full name:", "Enter your full name:", "END Cancelled. Nothing was saved.", t -> {
+        if (users.findByPhone(c.phone()).isPresent()) return "END This number already has a Payport account. Start again and enter your PIN.";
+        Step<String> pn = ask(in, "Register with Payport\nEnter your full name:", "Enter your full name:", "END Cancelled. Nothing was saved.", t -> {
             String n = t.replaceAll("\\s+", " ").trim();
             if (n.length() < 2 || n.length() > 200 || !n.matches("[\\p{L} .'-]+")) throw new IllegalArgumentException("Use letters only.");
             return n;
@@ -470,7 +470,7 @@ public class UssdService {
         });
         if (pid.asking()) return pid.prompt();
         String id = pid.value();
-        Step<Boolean> ok = confirm(c, in, "By registering you accept the PayPort Terms and Privacy Policy (" + TERMS + ").", "Accept", "Cancel");
+        Step<Boolean> ok = confirm(c, in, "By registering you accept the Payport Terms and Privacy Policy (" + TERMS + ").", "Accept", "Cancel");
         if (ok.asking()) return ok.prompt();
         if (!ok.value()) return "END Cancelled. Nothing was saved.";
         if (!in.has()) return "CON Choose a 4-digit PIN:";
@@ -499,7 +499,7 @@ public class UssdService {
                 r.setPin(pin);
                 r.setIdNumber(id);
                 auth.register(r);
-                return "END Welcome to PayPort, " + clip(name.split(" ")[0], 20) + ". Start again and enter your PIN to open your wallet and use it.";
+                return "END Welcome to Payport, " + clip(name.split(" ")[0], 20) + ". Start again and enter your PIN to open your wallet and use it.";
             } catch (RuntimeException e) {
                 return "END " + clip(e.getMessage() == null ? "Registration failed. Please try again." : e.getMessage(), 150);
             }
@@ -531,7 +531,7 @@ public class UssdService {
 
     /**
      * My number, another number or a saved number: the recipient's digits, or the next prompt. A number on a
-     * network PayPort does not serve, or not valid, is explained and asked again.
+     * network Payport does not serve, or not valid, is explained and asked again.
      */
     private Step<String> recipient(Ctx c, In in, String title, String what) {
         List<String> options = new ArrayList<>(List.of("My number", "Another number"));
@@ -710,7 +710,7 @@ public class UssdService {
         });
     }
 
-    // ─── the PayPort Store (the same stores, items and orders as the website and the app) ─
+    // ─── the Payport Store (the same stores, items and orders as the website and the app) ─
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private zw.co.payport.gateway.commerce.StoreClient store;
@@ -729,7 +729,7 @@ public class UssdService {
         top.add("Search");
         for (var t : types) top.add(t.path("name").asText() + " (" + t.path("stores").asInt() + ")");
         top.add("My orders");
-        Step<Integer> k = option(c, in, "PayPort Store", top);
+        Step<Integer> k = option(c, in, "Payport Store", top);
         if (k.asking()) return k.prompt();
         List<com.fasterxml.jackson.databind.JsonNode> stores;
         if (k.value() == top.size()) return storeOrders(c);
@@ -1015,7 +1015,7 @@ public class UssdService {
     private String balances(Ctx c) {
         wallets.requireOn();
         List<WalletService.Wallet> mine = held(c);
-        if (mine.isEmpty()) return "END You have no PayPort wallet yet. Choose My wallet > Open a wallet.";
+        if (mine.isEmpty()) return "END You have no Payport wallet yet. Choose My wallet > Open a wallet.";
         StringBuilder sb = new StringBuilder("END ");
         for (WalletService.Wallet w : mine) sb.append(w.currency()).append(" ").append(major(wallets.balance(w))).append(" (").append(w.ref()).append(")\n");
         return fit(c, sb.toString().trim());
@@ -1045,7 +1045,7 @@ public class UssdService {
         Step<Long> pa = amount(in, w.currency(), a -> limits("WALLET_TOPUP", w.currency(), a));
         if (pa.asking()) return pa.prompt();
         long amount = pa.value();
-        return pay(c, in, "WALLET_TOPUP", w.ref(), amount, w.currency(), "Top up your " + w.currency() + " wallet with " + w.currency() + " " + major(amount), "PayPort wallet top-up", false);
+        return pay(c, in, "WALLET_TOPUP", w.ref(), amount, w.currency(), "Top up your " + w.currency() + " wallet with " + w.currency() + " " + major(amount), "Payport wallet top-up", false);
     }
 
     /** As /api/v1/wallet/fx/quotes and /conversions: the rate shown is the rate used (the quote is kept for the session). */
@@ -1150,7 +1150,7 @@ public class UssdService {
     private List<WalletService.Wallet> mine(Ctx c) {
         wallets.requireOn();
         List<WalletService.Wallet> mine = held(c);
-        if (mine.isEmpty()) throw new IllegalArgumentException("You have no PayPort wallet yet. Choose My wallet > Open a wallet.");
+        if (mine.isEmpty()) throw new IllegalArgumentException("You have no Payport wallet yet. Choose My wallet > Open a wallet.");
         return mine;
     }
 
@@ -1434,7 +1434,7 @@ public class UssdService {
     private String cardLink(Ctx c, String ref, String ccy, long amount, String payer) {
         String link = consumerBase + "/pay/zimswitch/" + ref;
         if (c.ussd()) {
-            sms.sendText(c.phone(), "PayPort: pay " + ccy + " " + major(amount) + " by card here: " + link + " Ref: " + ref, ref, "CARD_LINK");
+            sms.sendText(c.phone(), "Payport: pay " + ccy + " " + major(amount) + " by card here: " + link + " Ref: " + ref, ref, "CARD_LINK");
             return "END We have sent you an SMS with a link to pay " + ccy + " " + major(amount) + " by card. Ref " + ref;
         }
         return "END Pay " + ccy + " " + major(amount) + " by card here:\n" + link + "\nRef " + ref;
@@ -1526,9 +1526,9 @@ public class UssdService {
         });
     }
 
-    /** "EcoCash 0772 123 456", "PayPort wallet", "card": how the confirmation names what pays. */
+    /** "EcoCash 0772 123 456", "Payport wallet", "card": how the confirmation names what pays. */
     private String payingWith(Ctx c, String method, String payer) {
-        if (WalletService.RAIL.equals(method)) return "your PayPort wallet";
+        if (WalletService.RAIL.equals(method)) return "your Payport wallet";
         if (CARD.contains(method)) return methodName(method) + " card";
         return methodName(method) + " " + shortPhone(payer);
     }
@@ -1674,7 +1674,7 @@ public class UssdService {
     }
 
     private String methodName(String code) {
-        if (WalletService.RAIL.equals(code)) return "PayPort wallet";
+        if (WalletService.RAIL.equals(code)) return "Payport wallet";
         List<String> n = jdbc.queryForList("SELECT name FROM payment_methods WHERE code = ?", String.class, code);
         return n.isEmpty() ? code : n.get(0);
     }

@@ -84,7 +84,7 @@ public class CheckoutSessionService {
         return createSession(merchant, apiKeyId, req, null);
     }
 
-    /** As above; livemodeOverride (when not null) decides test or live instead of the API key (PayPort Commerce). */
+    /** As above; livemodeOverride (when not null) decides test or live instead of the API key (Payport Commerce). */
     public CheckoutSession createSession(Merchant merchant, Long apiKeyId, CreateSessionRequest req, Boolean livemodeOverride) {
         if (req.reference() != null) {
             checkoutSessionRepository.findByMerchantIdAndReference(merchant.getId(), req.reference())
@@ -128,7 +128,7 @@ public class CheckoutSessionService {
         return session;
     }
 
-    /** Thrown when a merchant tries to take live money in a currency PayPort has not enabled for it. */
+    /** Thrown when a merchant tries to take live money in a currency Payport has not enabled for it. */
     public static class CurrencyNotEnabledException extends RuntimeException {
         public CurrencyNotEnabledException(String currency) {
             super("Live payments in " + currency + " are not enabled for this account");

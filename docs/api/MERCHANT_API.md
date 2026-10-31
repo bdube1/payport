@@ -1,4 +1,4 @@
-# PayPort Merchant API
+# Payport Merchant API
 
 Base URL: `https://api.payport.africa` (sandbox and live share the URL. The **key** decides which one you use.)
 All bodies are JSON. Every response looks like this:
@@ -12,12 +12,12 @@ Amounts are always integers in **minor units** (cents). Currencies are `USD` and
 
 ## 1. Getting started
 
-1. **Sign up.** Call `POST /api/v1/merchant-portal/signup` (or use the dashboard). PayPort reviews the application (KYB). Two different PayPort staff members must agree before an account is approved.
+1. **Sign up.** Call `POST /api/v1/merchant-portal/signup` (or use the dashboard). Payport reviews the application (KYB). Two different Payport staff members must agree before an account is approved.
 2. **Get keys.** Once approved, log in to the dashboard and create keys under *Developers → API keys*. A `TEST` key works immediately.
 3. **Build against the sandbox** with the test key (section 6).
 4. **Go live.** Live keys can be created once you have:
-   - added a settlement destination (dashboard → *Settlement*), which PayPort staff then verify;
-   - had PayPort enable the currencies you will sell in.
+   - added a settlement destination (dashboard → *Settlement*), which Payport staff then verify;
+   - had Payport enable the currencies you will sell in.
 
    `GET /api/v1/merchant/readiness` lists anything still missing.
 
@@ -69,13 +69,13 @@ Redirect the customer to `checkoutUrl`. The hosted page collects the payment met
 
 To check a session, call `GET /api/v1/merchant/checkout-sessions/{id}` or `GET /api/v1/merchant/checkout-sessions/by-reference/{reference}`. Don't rely on polling to fulfil orders: use webhooks.
 
-A live key can only create sessions in currencies PayPort has enabled for you. Anything else returns 400.
+A live key can only create sessions in currencies Payport has enabled for you. Anything else returns 400.
 
 ## 4. Money: balances, statement, payouts
 
 | Call | Returns |
 |---|---|
-| `GET /api/v1/merchant/balances` | Per currency, net of PayPort fees and refunds (see the buckets below). |
+| `GET /api/v1/merchant/balances` | Per currency, net of Payport fees and refunds (see the buckets below). |
 | `GET /api/v1/merchant/statement?currency=USD&from=2026-10-01&to=2026-10-31` | Payments, refunds and payouts with a running net. Ranges can be up to 366 days. |
 | `GET /api/v1/merchant/payouts` | Each payout: `payoutId`, `amountMinor`, `status` (`SCHEDULED`, `INSTRUCTED`, `PAID`, `RETURNED`, `FAILED`), `bankReference`, `paidAt`. |
 
@@ -117,15 +117,15 @@ Endpoint rules:
 The data fields are also repeated at the top level for older integrations.
 
 **Verify every delivery.** Each delivery carries these headers:
-- `PayPort-Signature: t=<unix seconds>,v1=<hex>`
-- `PayPort-Event-Id: evt_...`
+- `Payport-Signature: t=<unix seconds>,v1=<hex>`
+- `Payport-Event-Id: evt_...`
 
 To check them:
-1. Split the `PayPort-Signature` header on `,` and `=`.
+1. Split the `Payport-Signature` header on `,` and `=`.
 2. Compute `HMAC_SHA256(secret, t + "." + rawBody)` as lowercase hex.
 3. Compare it to `v1` in constant time.
 4. Reject the delivery if `t` is more than 5 minutes away from your own clock.
-5. Use `PayPort-Event-Id` to ignore duplicates. Retries and replays keep the same id.
+5. Use `Payport-Event-Id` to ignore duplicates. Retries and replays keep the same id.
 
 ```js
 const [t, v1] = header.split(',').map(p => p.split('=')[1]);
@@ -135,7 +135,7 @@ const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1)) && Mat
 
 Webhooks registered before v2 still receive `X-Payport-Signature: sha256=<hex of HMAC(body)>`. The header is still sent alongside v2.
 
-**Delivery and retries.** Return any 2xx within 10 seconds to acknowledge a delivery. If you don't, PayPort retries after 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours. After that the delivery is marked `FAILED`.
+**Delivery and retries.** Return any 2xx within 10 seconds to acknowledge a delivery. If you don't, Payport retries after 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours. After that the delivery is marked `FAILED`.
 
 **Webhook console (dashboard)**
 

@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Standard API response envelope used for ALL PayPort Gateway responses.
+ * Standard API response envelope used for ALL Payport Gateway responses.
  *
  * Success: { "success": true, "data": {...}, "meta": {...} }
  * Error:   { "success": false, "error": {...}, "meta": {...} }

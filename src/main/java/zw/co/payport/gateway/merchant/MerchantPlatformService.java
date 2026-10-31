@@ -18,7 +18,7 @@ import java.util.Map;
  *
  *  - KYB cases: a merchant is approved only after one staff member RECOMMENDS (checklist complete)
  *    and a DIFFERENT staff member DECIDES (database CHECK as well). Rejection takes the same two steps.
- *  - Settlement destinations: added by the merchant, used for payouts only once PayPort staff
+ *  - Settlement destinations: added by the merchant, used for payouts only once Payport staff
  *    have VERIFIED them; a change starts unverified again.
  *  - Market enablements: which currencies a merchant may take live payments in.
  *  - Live readiness: live API keys need an ACTIVE merchant, an enablement and a verified destination.

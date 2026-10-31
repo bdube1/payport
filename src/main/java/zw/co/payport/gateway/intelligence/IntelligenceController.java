@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * PayPort Intelligence for staff: the switches and how each model is doing (administrators), complaint type
+ * Payport Intelligence for staff: the switches and how each model is doing (administrators), complaint type
  * suggestions and the investigation helper for whoever works complaints. Everything is read-only advice.
  */
 @RestController

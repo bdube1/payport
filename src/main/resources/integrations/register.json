@@ -54,7 +54,7 @@
       "callbackAuth": "SYNCHRONOUS_OTP",
       "endpointProperty": "payport.omari.base-url",
       "verification": "SPEC_ONLY",
-      "notes": "Base URL points at UAT. Confirmation is the customer's OTP through PayPort, not a callback."
+      "notes": "Base URL points at UAT. Confirmation is the customer's OTP through Payport, not a callback."
     },
     {
       "code": "INNBUCKS",
@@ -285,7 +285,7 @@
     },
     {
       "code": "WALLET",
-      "name": "PayPort Wallet (internal)",
+      "name": "Payport Wallet (internal)",
       "kind": "PAYMENT",
       "currencies": [
         "USD",

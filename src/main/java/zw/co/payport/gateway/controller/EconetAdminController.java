@@ -10,7 +10,7 @@ import zw.co.payport.gateway.service.adaptor.econet.EconetAirtimeAdaptor;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Staff-only -- exposes PayPort's own Econet wallet balance and float status. */
+/** Staff-only -- exposes Payport's own Econet wallet balance and float status. */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/econet/admin")

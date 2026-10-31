@@ -39,7 +39,7 @@ import java.util.Map;
  *    started twice).
  *  - Keys are kept for 24 hours.
  *
- * Idempotency is not reconciliation: it stops PayPort acting twice on a retried request,
+ * Idempotency is not reconciliation: it stops Payport acting twice on a retried request,
  * not a provider acting twice. Provider-side duplicates are handled by attempt references
  * and statement reconciliation.
  */

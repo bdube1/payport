@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reconciliation exceptions (recon_exceptions): every difference between what PayPort
+ * Reconciliation exceptions (recon_exceptions): every difference between what Payport
  * recorded and what a provider says, from statements (source STATEMENT) or from the live
  * payment lifecycle (source LIFECYCLE, e.g. a payment confirmed after the customer was told
  * it timed out). Raising is idempotent (dedupe key); nothing here changes a payment or a

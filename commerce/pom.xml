@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- PayPort Commerce: its own service, database and deployment, so it stays up when PayPort Payments is down. -->
+    <!-- Payport Commerce: its own service, database and deployment, so it stays up when Payport Payments is down. -->
     <groupId>zw.co.payport</groupId>
     <artifactId>payport-commerce</artifactId>
     <version>1.0.0</version>

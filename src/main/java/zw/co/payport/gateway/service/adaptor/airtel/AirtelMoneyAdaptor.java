@@ -82,7 +82,7 @@ public class AirtelMoneyAdaptor implements PaymentProviderAdaptor {
             String digits = r.getCustomerPhone() == null ? "" : r.getCustomerPhone().replaceAll("[^0-9]", "");
             String national = digits.startsWith(m.phoneCountryCode()) ? digits.substring(m.phoneCountryCode().length()) : digits;
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("reference", clip(r.getDescription() == null ? "PayPort" : r.getDescription(), 64));
+            body.put("reference", clip(r.getDescription() == null ? "Payport" : r.getDescription(), 64));
             body.put("subscriber", Map.of("country", m.country(), "currency", r.getCurrency(), "msisdn", national));
             body.put("transaction", Map.of("amount", BigDecimal.valueOf(r.getAmountCents(), 2), "country", m.country(), "currency", r.getCurrency(),
                     "id", r.getPayportReference()));

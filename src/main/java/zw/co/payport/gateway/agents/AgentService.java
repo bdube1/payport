@@ -41,7 +41,7 @@ import java.util.Set;
  * an agent by default. Agents log in to their own portal (AgentAuthService).
  *
  *  - Becoming an agent: ops onboards it (live at once), or it applies and compliance approves.
- *  - Float: the agent deposits cash at PayPort's bank; the deposit is recorded by one person and
+ *  - Float: the agent deposits cash at Payport's bank; the deposit is recorded by one person and
  *    approved by another (database CHECK maker ≠ checker, bank reference unique), then posted
  *    Dr BANK_CASH[market account] · Cr AGENT_FLOAT[agent].
  *  - Cash-in: customer gives cash, agent sends e-value: Dr AGENT_FLOAT · Cr CUSTOMER_WALLET.
@@ -204,7 +204,7 @@ public class AgentService {
         Timestamp now = now();
         try {
             jdbc.update("INSERT INTO agents (agent_code, name, contact_person, phone, email, id_number, location, country, status, status_reason, commission_bps, "
-                            + "applied_by, applied_at, decided_by, decided_at) VALUES (?,?,?,?,?,?,?,?, 'ACTIVE', 'Onboarded by PayPort', ?,?,?,?,?)",
+                            + "applied_by, applied_at, decided_by, decided_at) VALUES (?,?,?,?,?,?,?,?, 'ACTIVE', 'Onboarded by Payport', ?,?,?,?,?)",
                     code, f.name, f.contact, f.phone, f.email, f.idNumber, f.location, f.country, commissionBps, by, now, by, now);
         } catch (org.springframework.dao.DuplicateKeyException e) {
             throw new IllegalStateException("An agent with this phone number already exists");
@@ -288,7 +288,7 @@ public class AgentService {
         Map<String, Object> a = activeAgent(agentId);
         String ccy = currency(currency, (String) a.get("country"));
         WalletService.Wallet w = wallets.forPhone(customer, ccy).or(() -> wallets.byRef(customer))
-                .orElseThrow(() -> new IllegalArgumentException("No PayPort " + ccy + " wallet for " + customer));
+                .orElseThrow(() -> new IllegalArgumentException("No Payport " + ccy + " wallet for " + customer));
         String name = jdbc.queryForList("SELECT full_name FROM users WHERE id = ?", String.class, w.userId()).stream().findFirst().orElse("");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("wallet", w.ref());
@@ -360,7 +360,7 @@ public class AgentService {
             }
             MarketRegistry.Market m = markets.requireForCurrency(ccy);
             MarketRegistry.BankAccount bank = markets.bankAccount(ccy);
-            if (bank == null || bank.ledgerOwner() == null) throw new IllegalStateException("No PayPort bank account is configured for " + ccy);
+            if (bank == null || bank.ledgerOwner() == null) throw new IllegalStateException("No Payport bank account is configured for " + ccy);
             JournalRequest j = JournalRequest.builder("AGENT_FLOAT:" + depositId).entity(m.legalEntity()).book(Book.LIVE).template("AGENT_FLOAT_DEPOSIT", 1)
                     .effectiveDate(java.time.LocalDate.now()).description("Agent float " + a.get("agent_code") + " bank ref " + d.get("bank_reference"))
                     .source("agent_float_deposit", depositId).postedBy(by)
@@ -395,7 +395,7 @@ public class AgentService {
         if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
         String ccy = currency(currency, (String) a.get("country"));
         WalletService.Wallet w = wallets.forPhone(customer, ccy).or(() -> wallets.byRef(customer))
-                .orElseThrow(() -> new IllegalArgumentException("No PayPort " + ccy + " wallet for " + customer));
+                .orElseThrow(() -> new IllegalArgumentException("No Payport " + ccy + " wallet for " + customer));
         String code = (String) a.get("agent_code");
         String opRef = "CASHIN:" + code + ":" + (clientRef == null || clientRef.isBlank() ? token() : clientRef.trim());
         boolean replay = isDone(opRef);

@@ -1,4 +1,4 @@
-# PayPort Commerce: its own build and tests (Testcontainers MySQL and a stand-in PSP). Runs only when Commerce changes.
+# Payport Commerce: its own build and tests (Testcontainers MySQL and a stand-in PSP). Runs only when Commerce changes.
 name: commerce
 
 on:

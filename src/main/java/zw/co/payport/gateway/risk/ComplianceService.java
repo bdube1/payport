@@ -47,7 +47,7 @@ public class ComplianceService {
     private final String reportingEntity;
 
     public ComplianceService(JdbcTemplate jdbc, ScreeningService screening, ComplianceAudit audit, ComplianceParameters parameters, FiuReportService reports,
-                             @Value("${payport.compliance.reporting-entity:PayPort (Private) Limited}") String reportingEntity) {
+                             @Value("${payport.compliance.reporting-entity:Payport (Private) Limited}") String reportingEntity) {
         this.jdbc = jdbc;
         this.screening = screening;
         this.audit = audit;

@@ -37,8 +37,8 @@ import java.util.UUID;
  *  - SSRF-safe targets (WebhookTargetGuard), checked at registration and before every attempt;
  *    redirects are never followed.
  *  - Signing secrets encrypted at rest (SecretBox).
- *  - v2 signature: header PayPort-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "t.body">, so
- *    receivers can reject replays older than 5 minutes; PayPort-Event-Id is stable across retries
+ *  - v2 signature: header Payport-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "t.body">, so
+ *    receivers can reject replays older than 5 minutes; Payport-Event-Id is stable across retries
  *    and replays. v1 webhooks keep receiving X-Payport-Signature (base64 HMAC of the body) as
  *    before; both headers are sent to v2 webhooks.
  *  - Events beyond checkout sessions (payout.paid, payout.returned, payout.failed).
@@ -209,7 +209,7 @@ public class WebhookService {
                 .webhookId(webhook.getId())
                 .eventId(eventId)
                 .eventType("ping")
-                .payload(buildPayload(eventId, "ping", Map.of("message", "PayPort test event"), false))
+                .payload(buildPayload(eventId, "ping", Map.of("message", "Payport test event"), false))
                 .status("PENDING")
                 .build();
         webhookDeliveryRepository.save(d);
@@ -237,8 +237,8 @@ public class WebhookService {
                     .POST(HttpRequest.BodyPublishers.ofString(delivery.getPayload()));
             if ("v2".equals(webhook.getApiVersion())) {
                 long t = Instant.now().getEpochSecond();
-                request.header("PayPort-Signature", "t=" + t + ",v1=" + signV2(t, delivery.getPayload(), secret));
-                if (delivery.getEventId() != null) request.header("PayPort-Event-Id", delivery.getEventId());
+                request.header("Payport-Signature", "t=" + t + ",v1=" + signV2(t, delivery.getPayload(), secret));
+                if (delivery.getEventId() != null) request.header("Payport-Event-Id", delivery.getEventId());
             }
 
             HttpResponse<String> response = httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());

@@ -103,7 +103,7 @@ public class MerchantApi {
         try {
             who = psp.identity(String.valueOf(t));
         } catch (Psp.Unavailable e) {
-            return error(503, "PSP_UNAVAILABLE", "Signing in to the store needs PayPort Payments, which cannot be reached just now. Please try again in a few minutes.");
+            return error(503, "PSP_UNAVAILABLE", "Signing in to the store needs Payport Payments, which cannot be reached just now. Please try again in a few minutes.");
         } catch (Psp.Refused e) {
             return error(401, "SIGN_IN", "Please sign in to the merchant portal again");
         }
@@ -231,7 +231,7 @@ public class MerchantApi {
 
     // ─── payment options, reviews, delivery areas, hours and bookings ─────────
 
-    /** After the merchant changed its payment methods in the portal: ask PayPort Payments again. */
+    /** After the merchant changed its payment methods in the portal: ask Payport Payments again. */
     @PostMapping("/api/commerce/methods/refresh")
     public Map<String, Object> refreshMethods(HttpServletRequest req) {
         long m = me(req).merchantId();
@@ -268,7 +268,7 @@ public class MerchantApi {
     @GetMapping("/api/commerce/bookings")
     public Map<String, Object> bookings(HttpServletRequest req) { return ok(growth.merchantBookings(me(req).merchantId())); }
 
-    /** PayPort AI writes a product description for the merchant to edit (nothing is saved until the product is). */
+    /** Payport AI writes a product description for the merchant to edit (nothing is saved until the product is). */
     @PostMapping("/api/commerce/ai/describe")
     public Map<String, Object> describe(@RequestBody Map<String, Object> b, HttpServletRequest req) {
         long m = manager(req).merchantId();

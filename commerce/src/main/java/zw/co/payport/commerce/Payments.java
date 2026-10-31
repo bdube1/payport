@@ -391,7 +391,7 @@ public class Payments {
                 // a refund made outside Commerce (merchant portal or API): listed here too
                 try {
                     jdbc.update("INSERT INTO refunds (order_id, merchant_id, amount_minor, reason, status, psp_refund_id, requested_by, created_at, completed_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                            orderId, merchantId, r.path("amountMinor").asLong(), "Refund", done ? "COMPLETED" : "REQUESTED", pspId, "PayPort", Shop.now(), done ? Shop.now() : null);
+                            orderId, merchantId, r.path("amountMinor").asLong(), "Refund", done ? "COMPLETED" : "REQUESTED", pspId, "Payport", Shop.now(), done ? Shop.now() : null);
                 } catch (DuplicateKeyException ignored) {
                     // recorded by another reader at the same moment
                 }
@@ -426,7 +426,7 @@ public class Payments {
         try {
             r = psp.refund(Map.of("merchantId", m.merchantId(), "reference", paidRef, "amountMinor", amount, "reason", reason, "merchantUserId", m.userId()));
         } catch (Psp.Unavailable e) {
-            throw new IllegalStateException("Refunds need PayPort Payments, which cannot be reached just now. Please try again in a few minutes.");
+            throw new IllegalStateException("Refunds need Payport Payments, which cannot be reached just now. Please try again in a few minutes.");
         } catch (Psp.Refused e) {
             throw new IllegalStateException(e.getMessage());
         }

@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * PayPort's interim payout instruction CSV (until the sponsor bank's format is known):
+ * Payport's interim payout instruction CSV (until the sponsor bank's format is known):
  *
  *   instruction_ref,merchant_id,currency,amount,destination,narrative
  *
@@ -37,7 +37,7 @@ public class GenericCsvPayoutAdapter implements PayoutFileAdapter {
               .append(currency).append(',')
               .append(BigDecimal.valueOf(net, 2).toPlainString()).append(',')
               .append(csv((String) i.get("destination"))).append(',')
-              .append(csv("PayPort settlement " + batchRef)).append('\n');
+              .append(csv("Payport settlement " + batchRef)).append('\n');
         }
         return sb.toString();
     }

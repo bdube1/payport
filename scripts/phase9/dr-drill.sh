@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 9 disaster-recovery drill (CI and staging): back up a live PayPort database exactly as the
+# Phase 9 disaster-recovery drill (CI and staging): back up a live Payport database exactly as the
 # backup job does (mysqldump with routines and triggers, consistent snapshot), restore it into an
 # empty database, and prove the copy is whole:
 #   - every table has the same exact row count,
@@ -30,7 +30,7 @@ done
 
 fail=0
 {
-  echo "PayPort disaster-recovery drill"
+  echo "Payport disaster-recovery drill"
   echo "date (UTC):     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "source:         $SRC on $HOST:$PORT"
   echo "backup:         $(du -h "$DUMP" | cut -f1), sha256 $(sha256sum "$DUMP" | cut -d' ' -f1), $((t1 - t0)) s"

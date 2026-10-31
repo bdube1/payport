@@ -12,10 +12,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * PayPort Intelligence: the switches for each feature and the record of what each model said (ai_predictions), so
+ * Payport Intelligence: the switches for each feature and the record of what each model said (ai_predictions), so
  * every model is measured on real outcomes before anyone relies on it. Rules: every feature is off until an
  * administrator switches it on; models suggest and explain, people decide (none of them can request or approve a
- * reversal, block a payment or contact a customer); nothing leaves PayPort's servers.
+ * reversal, block a payment or contact a customer); nothing leaves Payport's servers.
  */
 @Service
 public class Intelligence {
@@ -36,7 +36,7 @@ public class Intelligence {
     }
 
     public void require(String feature) {
-        if (!on(feature)) throw new IllegalStateException("This PayPort Intelligence feature is switched off");
+        if (!on(feature)) throw new IllegalStateException("This Payport Intelligence feature is switched off");
     }
 
     public List<Map<String, Object>> features() {

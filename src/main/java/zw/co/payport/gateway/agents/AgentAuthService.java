@@ -22,7 +22,7 @@ import java.util.Map;
 
 /**
  * Agent portal logins (agent_users). Their own token type ("agent_user"), never accepted on merchant,
- * customer or staff routes. Logins are created by PayPort (onboarding, or approval of an application)
+ * customer or staff routes. Logins are created by Payport (onboarding, or approval of an application)
  * with a temporary password that must be changed at first login; forgotten passwords are reset with an
  * emailed link (only the link's hash is stored); ops can reset a password to a new temporary one.
  */
@@ -69,9 +69,9 @@ public class AgentAuthService {
         jdbc.update("INSERT INTO agent_users (agent_id, full_name, email, password_hash, must_change_password, created_by, created_at) VALUES (?,?,?,?,TRUE,?,?)",
                 agentId, fullName == null || fullName.isBlank() ? e : fullName.trim(), e, encoder.encode(temp), by, now());
         audit.record(by, "AGENT_LOGIN_CREATED", "agent:" + agentCode, e);
-        boolean sent = email.sendPortalMail(e, "Your PayPort agent account",
-                "Welcome to PayPort.\n\nYour agent code is " + agentCode + ".\n\nSign in at " + portalUrl + "/agent/login\nEmail: " + e
-                        + "\nTemporary password: " + temp + "\n\nYou will be asked to choose your own password when you first sign in.\n\n-- PayPort");
+        boolean sent = email.sendPortalMail(e, "Your Payport agent account",
+                "Welcome to Payport.\n\nYour agent code is " + agentCode + ".\n\nSign in at " + portalUrl + "/agent/login\nEmail: " + e
+                        + "\nTemporary password: " + temp + "\n\nYou will be asked to choose your own password when you first sign in.\n\n-- Payport");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("email", e);
         out.put("temporaryPassword", temp);
@@ -91,9 +91,9 @@ public class AgentAuthService {
         jdbc.update("UPDATE agent_users SET password_hash = ?, must_change_password = TRUE, account_locked = FALSE, failed_login_attempts = 0, "
                 + "reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id = ?", encoder.encode(temp), userId);
         audit.record(by, "AGENT_PASSWORD_RESET", "agent_user:" + userId, (String) u.get("email"));
-        boolean sent = email.sendPortalMail((String) u.get("email"), "Your PayPort agent password was reset",
-                "Your PayPort agent portal password was reset by PayPort.\n\nTemporary password: " + temp
-                        + "\nSign in at " + portalUrl + "/agent/login and choose a new password.\n\n-- PayPort");
+        boolean sent = email.sendPortalMail((String) u.get("email"), "Your Payport agent password was reset",
+                "Your Payport agent portal password was reset by Payport.\n\nTemporary password: " + temp
+                        + "\nSign in at " + portalUrl + "/agent/login and choose a new password.\n\n-- Payport");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("email", u.get("email"));
         out.put("temporaryPassword", temp);
@@ -108,13 +108,13 @@ public class AgentAuthService {
         if (rows.isEmpty()) throw new SecurityException("Invalid email or password");
         Map<String, Object> u = rows.get(0);
         long id = ((Number) u.get("id")).longValue();
-        if (!"ACTIVE".equals(u.get("status"))) throw new SecurityException("This login has been disabled. Contact PayPort.");
-        if (truthy(u.get("account_locked"))) throw new SecurityException("This login is locked after too many wrong passwords. Use Forgot password or contact PayPort.");
+        if (!"ACTIVE".equals(u.get("status"))) throw new SecurityException("This login has been disabled. Contact Payport.");
+        if (truthy(u.get("account_locked"))) throw new SecurityException("This login is locked after too many wrong passwords. Use Forgot password or contact Payport.");
         if ("REJECTED".equals(u.get("agent_status"))) throw new SecurityException("This agent account is not active.");
         if (password == null || !encoder.matches(password, (String) u.get("password_hash"))) {
             int n = ((Number) u.get("failed_login_attempts")).intValue() + 1;
             jdbc.update("UPDATE agent_users SET failed_login_attempts = ?, account_locked = ? WHERE id = ?", n, n >= MAX_FAILED, id);
-            throw new SecurityException(n >= MAX_FAILED ? "This login is now locked after too many wrong passwords. Use Forgot password or contact PayPort."
+            throw new SecurityException(n >= MAX_FAILED ? "This login is now locked after too many wrong passwords. Use Forgot password or contact Payport."
                     : "Invalid email or password");
         }
         jdbc.update("UPDATE agent_users SET failed_login_attempts = 0, last_login_at = ? WHERE id = ?", now(), id);
@@ -149,9 +149,9 @@ public class AgentAuthService {
         String token = PortalCredentials.resetToken();
         jdbc.update("UPDATE agent_users SET reset_token_hash = ?, reset_token_expires_at = ? WHERE id = ?",
                 PortalCredentials.sha256(token), Timestamp.valueOf(LocalDateTime.now().plusHours(1)), rows.get(0).get("id"));
-        email.sendPortalMail(e, "Reset your PayPort agent password",
-                "A password reset was requested for your PayPort agent portal login.\n\nChoose a new password here (the link works for 1 hour):\n"
-                        + portalUrl + "/agent/reset-password?token=" + token + "\n\nIf you did not ask for this, ignore this email.\n\n-- PayPort");
+        email.sendPortalMail(e, "Reset your Payport agent password",
+                "A password reset was requested for your Payport agent portal login.\n\nChoose a new password here (the link works for 1 hour):\n"
+                        + portalUrl + "/agent/reset-password?token=" + token + "\n\nIf you did not ask for this, ignore this email.\n\n-- Payport");
     }
 
     public void resetPassword(String token, String next) {

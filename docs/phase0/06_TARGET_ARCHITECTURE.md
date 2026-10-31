@@ -81,7 +81,7 @@ These replace the single `TransactionStatus`.
 - **Reference data:**
   - `countries` (ISO 3166);
   - `currencies` (ISO 4217, minor units);
-  - `legal_entities`: the PayPort entity, or partner, licensed in a country;
+  - `legal_entities`: the Payport entity, or partner, licensed in a country;
   - `country_products`: payment methods allowed per country;
   - `calendars` (business days, cut-offs, time zone).
 - **Policy sets.** Versioned, approved bundles per (country, entity): limits, KYB requirements, settlement cycles, reserves, tax/levy rules, retention, data-hosting constraints. Every payment and posting records the policy-set version it used.
@@ -99,7 +99,7 @@ These replace the single `TransactionStatus`.
 
 ## 6. ISO 20022 approach (ADR-0005)
 
-- **The canonical internal model comes first.** It is designed from the ISO 20022 business components the supported flows need: parties, agents, accounts, amounts, dates, remittance, purpose, status reasons and identifiers. It is still PayPort's own model, so mobile-money and biller flows that have no ISO counterpart are first-class.
+- **The canonical internal model comes first.** It is designed from the ISO 20022 business components the supported flows need: parties, agents, accounts, amounts, dates, remittance, purpose, status reasons and identifiers. It is still Payport's own model, so mobile-money and biller flows that have no ISO counterpart are first-class.
 - **Mapping layer.** One module translates the canonical model to and from specific message versions (e.g. `pain.001`, `pacs.008`, `pacs.002`, `pacs.004`, `camt.053`/`camt.054`). Each mapping comes from a verified implementation guide (ZIPSS, a sponsor bank, PAPSS, a partner). Transport (files, MQ, API, SWIFT) is a separate concern.
 - **Message store.** Original messages are kept (hashed, access-controlled) with full correlation:
   instruction → canonical payment → message id → provider reference → journal entries → settlement → outcome.
@@ -107,7 +107,7 @@ These replace the single `TransactionStatus`.
 
 ## 7. Unified merchant experience across markets
 
-1. **One merchant account.** It has one or more market enablements. Each enablement is tied to the legal entity (PayPort's or a partner's) that contracts in that market.
+1. **One merchant account.** It has one or more market enablements. Each enablement is tied to the legal entity (Payport's or a partner's) that contracts in that market.
 2. **One integration.** The same API, keys and hosted checkout everywhere. Payment-method availability is computed per request from: merchant enablement × customer country × currency × provider availability.
 3. **Consolidated view.** The dashboard aggregates across enablements. Every figure stays tagged with entity, currency and country, and totals are never summed across currencies without an explicit FX view.
 4. **Settlement.** Per (enablement, currency), to a verified destination in a permitted country, on that market's cycle.

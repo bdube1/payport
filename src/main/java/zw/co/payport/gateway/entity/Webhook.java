@@ -29,7 +29,7 @@ public class Webhook {
     @Column(nullable = false, length = 500)
     private String secret;
 
-    /** v1 = X-Payport-Signature only; v2 adds PayPort-Signature (timestamped) and PayPort-Event-Id. */
+    /** v1 = X-Payport-Signature only; v2 adds Payport-Signature (timestamped) and Payport-Event-Id. */
     @Column(nullable = false)
     @Builder.Default
     private String apiVersion = "v1";

@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * PayPort Commerce Phase 1 acceptance (real MySQL, a stand-in PSP that can be switched off):
+ * Payport Commerce Phase 1 acceptance (real MySQL, a stand-in PSP that can be switched off):
  * paid only when the PSP confirms; uncertain shows "being confirmed"; repeated clicks make one checkout; expired,
  * disabled and used links refuse payment; open amounts respect their limits; events replayed change nothing; a
  * refund stays requested until the PSP pays it out; merchants cannot reach each other's things; and with the PSP
@@ -470,14 +470,14 @@ class CommerceScenarioTest {
         assertTrue(only.contains("Mazoe orange") && !only.contains("Sadza and beef"), only);
         assertTrue(page(chef.data().path("url").asText().replace("https://store.test", "")).body().contains("Book"));
 
-        // The PayPort directory lists stores by what they sell.
+        // The Payport directory lists stores by what they sell.
         assertTrue(page("/").body().contains("Bravo Foods"));
         assertTrue(page("/?t=FOOD").body().contains("Bravo Foods"));
         assertFalse(page("/?t=CLOTHING").body().contains("Bravo Foods"));
         assertTrue(page("/?q=Mazoe").body().contains("Bravo Foods"));
-        // The search box is PayPort AI's assistant: plain words find the item, with a short answer.
+        // The search box is Payport AI's assistant: plain words find the item, with a short answer.
         Res asked = page("/?q=" + URLEncoder.encode("cheap orange please", StandardCharsets.UTF_8));
-        assertTrue(asked.body().contains("PayPort AI") && asked.body().contains("Mazoe orange") && asked.body().contains("lowest price"), asked.body());
+        assertTrue(asked.body().contains("Payport AI") && asked.body().contains("Mazoe orange") && asked.body().contains("lowest price"), asked.body());
         Res written = api("POST", "/api/commerce/ai/describe", bravo, Map.of("name", "Mazoe orange", "category", "Drinks", "notes", "ice cold, 2 litres"));
         assertEquals(200, written.status(), written.body());
         assertTrue(written.data().path("description").asText().contains("Mazoe orange"), written.body());

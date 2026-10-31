@@ -10,10 +10,10 @@ import java.util.HexFormat;
 /**
  * eSolutions vendor references (max 20 characters, letters and digits).
  *
- *  - Delivery references are derived from the PayPort reference and the delivery attempt, and are
+ *  - Delivery references are derived from the Payport reference and the delivery attempt, and are
  *    recorded on the payment BEFORE the request is sent. A resend/lookup after an unknown outcome
  *    therefore always names the reference eSolutions actually received (Phase 5 fix: the lookup
- *    used to send the PayPort reference, which eSolutions never saw, so an issued token could be
+ *    used to send the Payport reference, which eSolutions never saw, so an issued token could be
  *    recorded as not delivered).
  *  - Lookup/resend references only need to be unique: prefix + time + random digits. (They were
  *    prefix + time to the second, so two requests in the same second collided.)

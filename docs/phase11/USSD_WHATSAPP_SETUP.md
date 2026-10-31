@@ -4,7 +4,7 @@ Everything below is set in the ops console under **USSD & WhatsApp**. Nothing ne
 
 ## USSD (Econet, NetOne, Telecel)
 
-Each network calls PayPort directly in its own format. The menus, payments and wallet login are the same for all three.
+Each network calls Payport directly in its own format. The menus, payments and wallet login are the same for all three.
 
 | Network | Address to give the network | Format |
 |---|---|---|
@@ -15,15 +15,15 @@ Each network calls PayPort directly in its own format. The menus, payments and w
 For each network:
 
 1. Switch the **USSD** channel on (top of the page) and the network on.
-2. **Settings**: enter the short code the network gave you (PayPort: `*699#`) and, if the network sends from fixed IP addresses, those addresses.
+2. **Settings**: enter the short code the network gave you (Payport: `*699#`) and, if the network sends from fixed IP addresses, those addresses.
 3. **Create access key** (administrators): the full address with the key is shown once. Give it to the network. A request is accepted when it carries the key **or** comes from an allowed IP address; with neither configured, every request is refused.
 
 What a customer sees when they dial:
 
-- A number with a PayPort account: "Welcome to PayPort, <name>. Enter your wallet PIN, 0. Continue as guest". The PIN is checked once and never stored.
+- A number with a Payport account: "Welcome to Payport, <name>. Enter your wallet PIN, 0. Continue as guest". The PIN is checked once and never stored.
   - Logged in: Buy airtime, Buy data, Pay a bill, Pay a merchant, Send money, Top up my wallet, Cash out at an agent, Balance and statement, Check a payment. The wallet is also offered as a way to pay.
 - Any other number (guest): Buy airtime, Buy data, Pay a bill, Pay a merchant, Check a payment.
-- Payment methods: EcoCash, OneMoney, O'mari, InnBucks (the PayPort wallet as well once logged in).
+- Payment methods: EcoCash, OneMoney, O'mari, InnBucks (the Payport wallet as well once logged in).
   - EcoCash from a non-Econet number and OneMoney from a non-NetOne number ask for the wallet number.
   - O'mari asks for the code O'mari texts the payer, in the same session.
   - InnBucks shows the payment code to approve in the InnBucks app.

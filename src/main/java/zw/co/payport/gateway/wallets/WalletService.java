@@ -95,7 +95,7 @@ public class WalletService {
     }
 
     public void requireOn() {
-        lines.require(LINE, "PayPort wallets");
+        lines.require(LINE, "Payport wallets");
     }
 
     /** Limits, charges and tax set in ops (optional so focused tests can build the service without it). */
@@ -243,7 +243,7 @@ public class WalletService {
                 Wallet w = locked.get(l.walletId());
                 if ("CLOSED".equals(w.status())) throw new IllegalStateException("Wallet " + w.ref() + " is closed");
                 if ("FROZEN".equals(w.status()) && !"REFUND".equals(l.kind())) {
-                    throw new IllegalStateException("Wallet " + w.ref() + " is frozen. Please contact PayPort support.");
+                    throw new IllegalStateException("Wallet " + w.ref() + " is frozen. Please contact Payport support.");
                 }
                 if (!"REFUND".equals(l.kind())) {
                     long[] lim = limits(w.tier(), w.currency());
@@ -315,7 +315,7 @@ public class WalletService {
         if (recipient == null || recipient.isBlank()) throw new IllegalArgumentException("Wallet number or phone is required");
         String r = recipient.trim();
         Optional<Wallet> w = r.toUpperCase(Locale.ROOT).startsWith("W") ? byRef(r) : forPhone(r, currency);
-        Wallet found = w.orElseThrow(() -> new IllegalArgumentException("No PayPort " + upper(currency) + " wallet for " + r));
+        Wallet found = w.orElseThrow(() -> new IllegalArgumentException("No Payport " + upper(currency) + " wallet for " + r));
         if (!found.currency().equals(upper(currency))) throw new IllegalArgumentException("Wallet " + found.ref() + " holds " + found.currency());
         return found;
     }
