@@ -15,7 +15,7 @@ import java.util.UUID;
  * Request Logging Interceptor
  *
  * Logs every incoming request and outgoing response.
- * Masks sensitive headers: Authorization, merchantPin, x-access-password.
+ * Masks sensitive headers: Authorization, PINs, passwords, secrets, keys, tokens, cookies and signatures.
  *
  * Also injects X-Request-ID on every request so we can trace requests
  * through the system.
@@ -66,6 +66,9 @@ public class RequestLoggingInterceptor implements HandlerInterceptor {
         if (lower.contains("password"))            return "****";
         if (lower.contains("secret"))              return "****";
         if (lower.contains("apikey") || lower.contains("api-key")) return "****";
+        // Service keys (X-PayPort-Commerce-Key and the like), tokens, cookies, signatures and PINs never reach the log.
+        if (lower.contains("key") && !lower.equals("idempotency-key")) return "****";
+        if (lower.contains("token") || lower.contains("cookie") || lower.contains("signature") || lower.contains("pin")) return "****";
         return value;
     }
 }
