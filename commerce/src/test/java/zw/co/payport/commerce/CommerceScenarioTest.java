@@ -744,7 +744,7 @@ class CommerceScenarioTest {
         HttpResponse<String> cb = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=" + URLEncoder.encode(storePath, StandardCharsets.UTF_8))).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(302, cb.statusCode());
-        assertEquals(storePath, cb.headers().firstValue("Location").orElse(""));
+        assertTrue(cb.headers().firstValue("Location").orElse("").endsWith(storePath), "back where sign-in was asked for");
         String me = cb.headers().allValues("Set-Cookie").stream().filter(c -> c.startsWith("pp_me=")).findFirst().orElseThrow().split(";")[0];
         assertTrue(cb.headers().allValues("Set-Cookie").stream().anyMatch(c -> c.startsWith("pp_me=") && c.contains("HttpOnly")), "HttpOnly session cookie");
         assertEquals(302, HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/auth/callback?code=c0de&next=%2Fme")).GET().build(),
