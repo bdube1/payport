@@ -442,18 +442,17 @@ class OperationalReadinessScenarioTest {
     void commerceFacade_keyRequired_oneCheckoutPerOrder_paidOnlyWhenConfirmed_eventsOncePerChange_merchantRefundsFromItsBalance() throws Exception {
         MerchantLogin a = merchant("Shop"), b = merchant("Other");
 
-        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until Payport switches them to live; the merchant
-        // chooses the methods it accepts and the customer's choice in the store comes first.
+        // Owner, 31 Oct 2026: store payments are sandbox (test mode) until Payport switches them to live. Payment methods
+        // are managed only in the ops portal: merchants accept every method switched on there and cannot change them.
         assertEquals("false", jdbc.queryForObject("SELECT setting_value FROM platform_settings WHERE setting_key = 'commerce_livemode'", String.class));
         Res methods = call("GET", "/api/v1/merchant/payment-methods", a.token(), null);
         assertEquals(200, methods.status(), "merchant reads its methods: " + methods.raw());
         assertTrue(methods.raw().contains("ECOCASH") && methods.raw().contains("ZIMSWITCH"), methods.raw());
         Res off = call("PUT", "/api/v1/merchant/payment-methods", a.token(), Map.of("ZIMSWITCH", false));
-        assertEquals(200, off.status(), "owner switches card off: " + off.raw());
-        Map<String, Object> allOff = new java.util.LinkedHashMap<>();
-        for (String code : java.util.List.of("ECOCASH", "ONEMONEY", "OMARI", "INNBUCKS", "ZIMSWITCH")) allOff.put(code, false);
-        Res none = call("PUT", "/api/v1/merchant/payment-methods", a.token(), allOff);
-        assertTrue(none.status() == 400 && none.raw().contains("at least one"), none.raw());
+        assertEquals(403, off.status(), "merchants cannot change methods: " + off.raw());
+        Boolean cardWasOn = jdbc.queryForObject("SELECT is_active FROM payment_methods WHERE code = 'ZIMSWITCH'", Boolean.class);
+        jdbc.update("UPDATE payment_methods SET is_active = FALSE WHERE code = 'ZIMSWITCH'");   // switched off in the ops portal
+        assertFalse(call("GET", "/api/v1/merchant/payment-methods", a.token(), null).raw().contains("ZIMSWITCH"), "off in ops: gone for the merchant");
         String sandboxRef = "CO-" + SEQ.incrementAndGet() + "SBOX-1";
         Res sandbox = commerce("POST", "/api/v1/commerce/checkouts", COMMERCE_KEY, Map.of("merchantId", a.id(), "reference", sandboxRef, "amountMinor", 300, "currency", "USD",
                 "description", "Tea x1", "successUrl", "https://store.payport.africa/o/y", "cancelUrl", "https://store.payport.africa/o/y", "orderRef", sandboxRef, "method", "ONEMONEY"));
@@ -462,10 +461,11 @@ class OperationalReadinessScenarioTest {
         long sbId = sandbox.data().path("checkoutSessionId").asLong();
         Res pub = call("GET", "/api/v1/checkout/" + sbId, null, null);
         assertEquals("ONEMONEY", pub.data().path("preferredMethod").asText(), pub.raw());
-        assertFalse(pub.data().path("methods").toString().contains("ZIMSWITCH"), "only what the merchant accepts: " + pub.raw());
+        assertFalse(pub.data().path("methods").toString().contains("ZIMSWITCH"), "only what ops switched on: " + pub.raw());
         Res refused = call("POST", "/api/v1/checkout/" + sbId + "/pay", null, Map.of("customerPhone", "+263771234567", "paymentMethodCode", "ZIMSWITCH"));
-        assertTrue(refused.status() == 400 && refused.raw().contains("does not accept"), refused.raw());
+        assertTrue(refused.status() >= 400 && refused.status() < 500, "a method switched off in ops is refused: " + refused.raw());
         assertEquals("CREATED", jdbc.queryForObject("SELECT status FROM checkout_sessions WHERE id = ?", String.class, sbId), "nothing sent to a provider");
+        jdbc.update("UPDATE payment_methods SET is_active = ? WHERE code = 'ZIMSWITCH'", Boolean.TRUE.equals(cardWasOn));
         assertEquals(403, call("POST", "/api/v1/admin/payments/store-live", staff("OPS"), Map.of("live", true, "reason", "owner approved")).status(), "admins only");
         Res ready = call("GET", "/api/v1/admin/payments/live-readiness", staff("OPS"), null);
         assertEquals(200, ready.status(), "ops reads live readiness: " + ready.raw());

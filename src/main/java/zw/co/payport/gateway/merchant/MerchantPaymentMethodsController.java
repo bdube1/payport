@@ -10,15 +10,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.payport.gateway.config.MerchantAuthResolver;
-import zw.co.payport.gateway.entity.Merchant;
-import zw.co.payport.gateway.entity.MerchantUser;
 import zw.co.payport.gateway.model.response.ApiResponse;
 import zw.co.payport.gateway.platform.Web;
 
 import java.util.List;
 import java.util.Map;
 
-/** The merchant's accepted payment methods, and (for Payport staff) live readiness of store payments. */
+/** The payment methods merchants accept (read only; set in the ops portal), and (for Payport staff) live readiness of store payments. */
 @RestController
 public class MerchantPaymentMethodsController {
 
@@ -34,14 +32,11 @@ public class MerchantPaymentMethodsController {
         return Web.run(() -> methods.forMerchant(MerchantAuthResolver.currentMerchant().getId()), req);
     }
 
-    /** Body: {"ECOCASH": true, "ZIMSWITCH": false, ...} (only the methods being changed). */
+    /** Payment methods are managed only in the ops portal. */
     @PutMapping("/api/v1/merchant/payment-methods")
-    @PreAuthorize("hasRole('MERCHANT_OWNER')")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> set(@RequestBody Map<String, Object> b, HttpServletRequest req) {
-        Merchant m = MerchantAuthResolver.currentMerchant();
-        MerchantUser u = MerchantAuthResolver.currentMerchantUserOrNull();
-        String by = u != null ? "merchant-user:" + u.getId() : "merchant:" + m.getId();
-        return Web.run(() -> methods.set(m.getId(), b, by), req);
+    @PreAuthorize("hasRole('MERCHANT')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> set(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req) {
+        return Web.run(() -> { throw new SecurityException("Payment methods are set by Payport"); }, req);
     }
 
     @GetMapping("/api/v1/admin/payments/live-readiness")

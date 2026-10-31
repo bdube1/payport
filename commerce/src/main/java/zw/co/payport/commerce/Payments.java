@@ -224,8 +224,8 @@ public class Payments {
             return new Start(null, e.getMessage(), false);
         }
         String url = c.path("checkoutUrl").asText("");
-        if (!url.startsWith(settings.checkoutOrigin + "/")) {
-            log.warn("[COMMERCE] checkout URL for {} is not on {}: refused", ref, settings.checkoutOrigin);
+        if (!settings.checkoutAllowed(url)) {
+            log.warn("[COMMERCE] checkout URL for {} is not on {}: refused (set COMMERCE_CHECKOUT_ORIGIN to the PSP's checkout address)", ref, settings.checkoutOrigins);
             return new Start(null, "Payments are briefly unavailable. Please try again in a few minutes.", true);
         }
         Timestamp now = Shop.now();
