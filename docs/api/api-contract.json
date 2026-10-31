@@ -119,7 +119,15 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/complaints/assist"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/complaints/catalog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/complaints/explain"
   },
   {
    "method": "GET",
@@ -128,6 +136,10 @@
   {
    "method": "GET",
    "path": "/api/v1/admin/complaints/trace"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/complaints/triage"
   },
   {
    "method": "GET",
@@ -528,6 +540,18 @@
   {
    "method": "POST",
    "path": "/api/v1/admin/integrations/{code}/verifications"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/intelligence"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/features/{feature}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/intelligence/triage/retrain"
   },
   {
    "method": "GET",

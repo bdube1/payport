@@ -856,6 +856,55 @@ class Phase8CompletionScenarioTest {
         assertTrue(failed.data().path("error").asText().contains("no longer holds"), failed.body().toString());
     }
 
+    @org.springframework.beans.factory.annotation.Autowired zw.co.payport.gateway.intelligence.FraudShadow fraudShadow;
+
+    /** Owner, 2026-10-31: PayPort Intelligence starts read-only, behind switches that only administrators turn on. */
+    @Test
+    void intelligence_offUntilSwitchedOn_triageSuggests_helperExplains_fraudScoresInShadow() throws Exception {
+        String ops = staff("Ai Ops", "OPS"), admin = staff("Ai Admin", "ADMIN");
+        jdbc.update("UPDATE ai_features SET enabled = FALSE");
+        assertEquals(409, call("POST", "/api/v1/admin/complaints/triage", ops, Map.of("text", "I was charged twice for one purchase")).status(), "off by default");
+        assertFalse(call("GET", "/api/v1/admin/complaints/assist", ops, null).data().path("triage").asBoolean());
+        assertEquals(403, call("POST", "/api/v1/admin/intelligence/features/COMPLAINT_TRIAGE", ops, Map.of("enabled", true)).status(), "administrators only");
+        for (String f : List.of("COMPLAINT_TRIAGE", "INVESTIGATION_HELPER", "FRAUD_SHADOW")) {
+            assertEquals(200, call("POST", "/api/v1/admin/intelligence/features/" + f, admin, Map.of("enabled", true)).status());
+        }
+
+        Res s = call("POST", "/api/v1/admin/complaints/triage", ops, Map.of("text", "The customer was charged twice for one purchase at the shop"));
+        assertEquals(200, s.status(), s.body().toString());
+        assertEquals(3, s.data().path("suggestions").size());
+        assertTrue(s.data().path("suggestions").toString().contains("M_CHARGED_TWICE"), s.body().toString());
+
+        // A complaint opened while triage is on: the suggestion is kept next to the type staff chose.
+        Customer c = customer("Tino Triage");
+        Res cmp = call("POST", "/api/v1/admin/complaints", ops, Map.of("category", "M_CHARGED_TWICE", "channel", "PHONE", "customerPhone", c.phone(),
+                "description", "Charged twice for one purchase at the supermarket"));
+        assertEquals(200, cmp.status(), cmp.body().toString());
+        assertEquals("M_CHARGED_TWICE", jdbc.queryForObject("SELECT outcome FROM ai_predictions WHERE feature = 'COMPLAINT_TRIAGE' AND subject_ref = ?",
+                String.class, cmp.data().path("complaint_ref").asText()));
+
+        // The helper explains a payment in plain words, with a draft reply, and cannot change anything.
+        ensureOn("WALLETS", null);
+        jdbc.update("UPDATE product_types SET is_active = TRUE WHERE code = 'WALLET_TOPUP'");
+        String w = openWallet(c, "USD");
+        topUp(w, 2_000);
+        String paid = jdbc.queryForObject("SELECT reference FROM transactions WHERE recipient_identifier = ? ORDER BY id DESC LIMIT 1", String.class, w);
+        Res ex = call("GET", "/api/v1/admin/complaints/explain?ref=" + paid, ops, null);
+        assertEquals(200, ex.status(), ex.body().toString());
+        assertTrue(ex.data().path("findings").size() > 0 && ex.data().path("draftReply").asText().contains(paid), ex.body().toString());
+        assertTrue(call("GET", "/api/v1/admin/complaints/explain?ref=NOPE-1234", ops, null).data().path("draftReply").asText().contains("could not find"));
+
+        // Shadow fraud scoring: completed payments get a score that does nothing but get measured.
+        int scored = fraudShadow.run();
+        assertTrue(scored > 0, "completed payments are scored");
+        Res ov = call("GET", "/api/v1/admin/intelligence", admin, null);
+        assertEquals(200, ov.status(), ov.body().toString());
+        assertTrue(ov.data().path("fraud").path("scored30d").size() > 0);
+        assertEquals(403, call("GET", "/api/v1/admin/intelligence", ops, null).status());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM ai_predictions WHERE detail LIKE ?", Integer.class, "%771234567%"), "no phone numbers kept");
+        jdbc.update("UPDATE ai_features SET enabled = FALSE");
+    }
+
     /**
      * Owner, 2026-10-31: a WhatsApp bundle may have no internet for a web page, so the PIN is typed in the chat. It is
      * checked once and never kept: the session keeps "#", and PayPort records only its own replies.
@@ -893,6 +942,8 @@ class Phase8CompletionScenarioTest {
         whatsapp(wa, p + 9, "menu", true);
         whatsapp(wa, p + 10, "1111", true);
         assertTrue(reply(p + 10).contains("Wrong PIN"), reply(p + 10));
+        // Leave the channel as it ships (off) for the other tests.
+        call("POST", "/api/v1/admin/channels/WHATSAPP", staff("Wa Reset", "OPS"), Map.of("enabled", false, "reason", "test finished"));
     }
 
     // ─── provider settlements on the bank statement ─────────────────────────

@@ -157,7 +157,7 @@ public class CommerceFacade {
         if (b.reason() == null || b.reason().trim().length() < 3) throw new IllegalArgumentException("Give the reason for the refund");
         Refund r;
         try {
-            r = refunds.createRefund(s, new RefundService.RefundRequest(b.amountMinor(), b.reason().trim()), "COMMERCE", b.merchantUserId());
+            r = refunds.createRefund(s, new RefundService.RefundRequest(b.amountMinor(), b.reason().trim()), "COMMERCE", b.merchantUserId() == null ? 0L : b.merchantUserId());
         } catch (IllegalStateException | IllegalArgumentException e) {
             throw e;
         } catch (RuntimeException e) {
