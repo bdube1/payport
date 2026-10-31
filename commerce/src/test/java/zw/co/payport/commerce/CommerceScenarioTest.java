@@ -437,7 +437,7 @@ class CommerceScenarioTest {
         Res st = api("PUT", "/api/commerce/store", bravo, Map.of("businessType", "FOOD", "announcement", "Free chips on Fridays", "codEnabled", true,
                 "pickupEnabled", true, "deliveryEnabled", true, "deliveryFeeMinor", 200, "listed", true));
         assertEquals(200, st.status(), st.body());
-        assertTrue(api("GET", "/api/commerce/business-types", null, null).body().contains("Food"));
+        assertTrue(api("GET", "/api/commerce/business-types", bravo, null).body().contains("Food"));
 
         // Collections are the merchant's own groups.
         Res breakfast = api("POST", "/api/commerce/collections", bravo, Map.of("name", "Breakfast"));
