@@ -62,7 +62,7 @@ public class Options {
         return out;
     }
 
-    /** Asks Payport Payments again (after the merchant changed its methods). */
+    /** Asks Payport Payments again (methods are switched on and off in the ops portal; read every 2 minutes). */
     public List<String> refresh(long merchantId) {
         try {
             remember(merchantId, psp.merchant(merchantId).path("methods"));
@@ -72,7 +72,7 @@ public class Options {
         return accepted(merchantId);
     }
 
-    @Scheduled(fixedDelayString = "${commerce.methods-ms:600000}", initialDelay = 30_000)
+    @Scheduled(fixedDelayString = "${commerce.methods-ms:120000}", initialDelay = 30_000)
     public void refreshAll() {
         for (Long id : jdbc.queryForList("SELECT merchant_id FROM merchants WHERE psp_status = 'ACTIVE'", Long.class)) refresh(id);
     }

@@ -6,8 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import zw.co.payport.gateway.risk.ComplianceAudit;
 
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,9 +13,9 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Payment methods a merchant accepts (owner, 31 Oct 2026). Payport switches a method on for the platform; the merchant
- * then chooses which of those it takes. Hosted checkout, payment links and the store show only those, and a payment
- * with any other method is refused before anything is sent to a provider.
+ * Payment methods merchants accept (owner, 31 Oct 2026). They are managed only in the ops portal: every method Payport
+ * has switched on is accepted by every merchant, and merchants cannot change them. Hosted checkout, payment links and
+ * the store show only those, and a payment with any other method is refused before anything is sent to a provider.
  *
  * Store payments stay in sandbox (test mode) until Payport switches them to live ("commerce_livemode"), which needs the
  * owner's approval; the readiness view shows which providers have their credentials in place, never the credentials.
@@ -45,11 +43,8 @@ public class MerchantPaymentMethods {
         this.env = env;
     }
 
-    /** Every method Payport has switched on, with whether this merchant accepts it. */
+    /** Every method Payport has switched on (all of them are accepted by every merchant). */
     public List<Map<String, Object>> forMerchant(long merchantId) {
-        Map<String, Boolean> mine = new LinkedHashMap<>();
-        jdbc.query("SELECT method_code, enabled FROM merchant_payment_methods WHERE merchant_id = ?",
-                rs -> { mine.put(rs.getString(1), rs.getBoolean(2)); }, merchantId);
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> r : platform()) {
             String code = (String) r.get("code");
@@ -57,7 +52,7 @@ public class MerchantPaymentMethods {
             v.put("code", code);
             v.put("name", label(code, (String) r.get("name")));
             v.put("type", "ZIMSWITCH".equals(code) ? "CARD" : "MOBILE_MONEY");
-            v.put("enabled", mine.getOrDefault(code, true));
+            v.put("enabled", true);
             out.add(v);
         }
         return out;
@@ -65,31 +60,10 @@ public class MerchantPaymentMethods {
 
     /** The codes this merchant accepts now. */
     public List<String> accepted(long merchantId) {
-        return forMerchant(merchantId).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled"))).map(m -> (String) m.get("code")).toList();
+        return forMerchant(merchantId).stream().map(m -> (String) m.get("code")).toList();
     }
 
-    @Transactional
-    public List<Map<String, Object>> set(long merchantId, Map<String, ?> changes, String by) {
-        if (changes == null || changes.isEmpty()) throw new IllegalArgumentException("Choose the payment methods you accept");
-        List<String> platform = platform().stream().map(r -> (String) r.get("code")).toList();
-        Map<String, Boolean> want = new LinkedHashMap<>();
-        for (Map.Entry<String, ?> e : changes.entrySet()) {
-            String code = e.getKey() == null ? "" : e.getKey().toUpperCase(Locale.ROOT);
-            if (!platform.contains(code)) throw new IllegalArgumentException("Unknown payment method " + e.getKey());
-            want.put(code, Boolean.TRUE.equals(e.getValue()) || "true".equals(String.valueOf(e.getValue())));
-        }
-        long on = forMerchant(merchantId).stream().filter(m -> want.getOrDefault((String) m.get("code"), Boolean.TRUE.equals(m.get("enabled")))).count();
-        if (on == 0) throw new IllegalArgumentException("Keep at least one payment method on");
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
-        for (Map.Entry<String, Boolean> e : want.entrySet()) {
-            jdbc.update("INSERT INTO merchant_payment_methods (merchant_id, method_code, enabled, updated_by, updated_at) VALUES (?,?,?,?,?) "
-                    + "ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_by = VALUES(updated_by), updated_at = VALUES(updated_at)", merchantId, e.getKey(), e.getValue(), by, now);
-        }
-        audit.record(by, "MERCHANT_PAYMENT_METHODS", "merchant:" + merchantId, want.toString());
-        return forMerchant(merchantId);
-    }
-
-    /** Refuses a method this merchant does not take (or Payport has switched off), before anything reaches a provider. */
+    /** Refuses a method Payport has switched off, before anything reaches a provider. */
     public void require(long merchantId, String code) {
         String c = code == null ? "" : code.toUpperCase(Locale.ROOT);
         if (!CHECKOUT.contains(c)) return;   // the Payport wallet and other rails have their own switches
