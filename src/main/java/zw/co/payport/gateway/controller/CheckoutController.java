@@ -34,6 +34,7 @@ public class CheckoutController {
     private final zw.co.payport.gateway.repository.TransactionRepository transactionRepository;
     private final zw.co.payport.gateway.merchant.MerchantPaymentMethods acceptedMethods;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final zw.co.payport.gateway.service.impl.TransactionOrchestratorService orchestratorService;
 
     public record PayBody(String customerPhone, String customerEmail, String paymentMethodCode) {}
 
@@ -63,6 +64,28 @@ public class CheckoutController {
         }
     }
 
+    public record OtpBody(String otp) {}
+
+    /** O'mari's second step on a checkout: the code O'mari texted the payer. Three tries, then the payment fails. */
+    @PostMapping("/{id}/omari-otp")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> omariOtp(@PathVariable Long id, @RequestBody OtpBody body, HttpServletRequest req) {
+        try {
+            var session = checkoutSessionService.getPublic(id);
+            String ref = session.getTransactionReference();
+            if (ref == null) throw new IllegalStateException("There is no O'mari payment to confirm");
+            var tx = orchestratorService.confirmOmariOtp(ref, body == null ? null : body.otp());
+            var now = checkoutSessionService.getPublic(id);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("id", now.getId());
+            out.put("status", now.getStatus());
+            out.put("paymentStatus", tx.getStatus() == null ? null : tx.getStatus().name());
+            if (tx.getFailureReason() != null) out.put("message", tx.getFailureReason());
+            return ResponseEntity.ok(ApiResponse.success(out, requestId(req)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("OTP_FAILED", e.getMessage(), requestId(req)));
+        }
+    }
+
     @PostMapping("/{id}/pay")
     public ResponseEntity<ApiResponse<Map<String, Object>>> pay(
             @PathVariable Long id, @RequestBody PayBody body, HttpServletRequest req) {
@@ -85,6 +108,11 @@ public class CheckoutController {
             if (result.widgetJsUrl() != null) {
                 resultBody.put("widgetJsUrl", result.widgetJsUrl());
                 resultBody.put("paymentCorrelator", result.paymentCorrelator());
+            }
+            // O'mari: the customer types the code O'mari texts them (no prompt on the phone).
+            if ("OMARI".equalsIgnoreCase(body.paymentMethodCode()) && Boolean.TRUE.equals(result.session().getLivemode())
+                    && "PENDING".equals(result.session().getStatus())) {
+                resultBody.put("requiresOtpEntry", true);
             }
             // InnBucks: the code the customer approves in the InnBucks app (returned to the payer only).
             if ("INNBUCKS".equalsIgnoreCase(body.paymentMethodCode()) && result.session().getTransactionReference() != null) {

@@ -71,7 +71,6 @@ public class OmariPaymentAdaptor implements PaymentProviderAdaptor {
             log.info("║ Payport Ref:   {}", request.getPayportReference());
             log.info("║ Omari UUID:    {}", omariUuid);
             log.info("║ Channel:       WEB");
-            log.info("║ API Key:       {}", apiKey.substring(0, Math.min(apiKey.length(), 20)) + "...");
             log.info("╚══════════════════════════════════════════════════════════════════╝");
 
             OmariAuthResponse authResponse = callAuth(authRequest);
@@ -157,7 +156,6 @@ public class OmariPaymentAdaptor implements PaymentProviderAdaptor {
         log.info("╠══════════════════════════════════════════════════════════════════╣");
         log.info("║ MSISDN:        {}", request.getMsisdn());
         log.info("║ Omari UUID:    {}", request.getReference());
-        log.info("║ OTP:           {}", request.getOtp());
         log.info("╚══════════════════════════════════════════════════════════════════╝");
 
         ResponseEntity<String> response = restTemplate.exchange(
