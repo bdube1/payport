@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title th:text="${q != null} ? ${q} + ' | Payport Store' : (${type != null} ? ${type} + ' | Payport Store' : 'Payport Store')">Payport Store</title>
   <meta name="description" content="Find it local. Pay it instantly. Food, drinks, clothing, beauty and services from Payport merchants.">
-  <link rel="preload" href="/assets/fonts/plus-jakarta-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/dir.css">
+  <link rel="preload" th:href="@{/assets/fonts/plus-jakarta-sans-latin-700-normal.woff2}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" th:href="@{/assets/dir.css}">
 </head>
 <body class="dir2">
 <div th:if="${announcement != null}" class="d-announce" th:text="${announcement}">Free delivery this weekend at selected stores</div>

@@ -30,7 +30,7 @@
       </div>
     </section>
 
-    <section class="info">
+    <section class="pd-info">
       <h1 class="title" th:text="${product.name}">Shoes</h1>
       <p class="price-big"><span th:text="${product.price}">USD 20.00</span><s th:if="${product.was != null}" th:text="${product.was}"></s></p>
       <p th:if="${product.description != null}" class="lead" th:text="${product.description}">Step Step</p>
