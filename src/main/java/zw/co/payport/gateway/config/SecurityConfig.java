@@ -97,6 +97,7 @@ public class SecurityConfig {
                         // permitted.
                         .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/checkout/*/pay").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/checkout/*/omari-otp").permitAll()
                         // Phase 8: QR for an open session, QR resolution, USSD aggregator (HMAC-signed), FX quotes
                         .requestMatchers(HttpMethod.GET, "/api/v1/checkout/*/qr").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/qr/resolve").permitAll()
