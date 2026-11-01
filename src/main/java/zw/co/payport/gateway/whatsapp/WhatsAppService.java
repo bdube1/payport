@@ -111,10 +111,30 @@ public class WhatsAppService {
         return out;
     }
 
+    /** Payport Assistant answers questions typed in the chat instead of a menu choice. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.service.assistant.AssistantService assistant;
+
+    /** A typed question (words, not a menu number or a keyword) at the main menu. */
+    static boolean isQuestion(String input) {
+        String t = input == null ? "" : input.trim();
+        if (t.isEmpty() || !t.matches("(?s).*[A-Za-z].*") || RESTART.contains(t.toLowerCase(Locale.ROOT))) return false;
+        return t.endsWith("?") || t.split("\\s+").length >= 3;
+    }
+
     /** One step of the conversation for this WhatsApp number. */
     String converse(String waId, String text) {
         String input = text == null ? "" : text.replace("*", "").replace("#", "").trim();
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT session_id, path FROM whatsapp_sessions WHERE wa_id = ?", waId);
+        boolean atMenu = rows.isEmpty() || String.valueOf(rows.get(0).get("path")).isEmpty();
+        if (assistant != null && atMenu && isQuestion(text)) {
+            try {
+                String answer = assistant.handleMessage("wa-" + waId, text.trim()).reply();
+                return answer + "\n\nAsk another question, or send MENU for the menu.";
+            } catch (RuntimeException e) {
+                log.warn("[WHATSAPP] assistant answer failed: {}", e.getMessage());
+            }
+        }
         boolean restart = rows.isEmpty() || RESTART.contains(input.toLowerCase(Locale.ROOT));
         if (restart && !rows.isEmpty()) engine.forget((String) rows.get(0).get("session_id"));
         String session = restart ? "wa:" + waId + ":" + token() : (String) rows.get(0).get("session_id");

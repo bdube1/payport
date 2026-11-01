@@ -1027,7 +1027,7 @@ public class TransactionOrchestratorService {
      * Retried automatically only when the provider's code is temporary per its specification
      * (DeliveryOutcomeRules.RETRYABLE) or the provider says it never received the request,
      * with back-off and at most MAX_DELIVERY_ATTEMPTS deliveries. The customer sees the
-     * provider's own message; no SMS is sent for failures (owner decision).
+     * provider's own message; when no automatic retry is left the customer gets one SMS saying it failed and will be refunded (owner, 2026-11-01).
      */
     private LocalDateTime handleFulfilmentFailure(Transaction tx, String providerMessage, String rawResponse, String code, boolean retryable) {
         String reference = tx.getReference();
@@ -1049,6 +1049,7 @@ public class TransactionOrchestratorService {
         }
 
         transactionRepository.save(tx);
+        smsNotificationService.sendDeliveryFailed(tx);
         log.error("[ORCHESTRATOR] Fulfilment failed for {} (attempt {}, code {}); no automatic retry. Reason: {}. Ops: retry or refund.",
                 reference, tx.getRetryCount(), code, providerMessage);
         return null;

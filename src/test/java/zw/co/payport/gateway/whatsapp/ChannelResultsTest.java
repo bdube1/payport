@@ -9,22 +9,38 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Owner, 2026-10-31: WhatsApp gives the payment's answer like the app does, with the same reasons. */
+/** Owner, 2026-11-01: real-time payments; the chat says successful or failed, never "being delivered". */
 class ChannelResultsTest {
 
-    static final Map<String, Object> TX = Map.of("product_name", "Econet Airtime", "amount_cents", 500L, "charge_cents", 0L, "currency", "USD");
+    static final Map<String, Object> TX = Map.of("product_name", "Econet Airtime", "amount_cents", 50L, "charge_cents", 0L, "currency", "USD",
+            "recipient_identifier", "0772699555", "payment_provider_code", "ECOCASH");
 
     @Test
     void declinedShowsTheProvidersReason_andThatNoMoneyWasTaken() {
         String m = ChannelResults.message(new Result("PP-WA-1", Outcome.FAILED, "Insufficient funds", TransactionStatus.PAYMENT_FAILED, 1), TX);
-        assertTrue(m.contains("Econet Airtime USD 5.00") && m.contains("Insufficient funds") && m.contains("No money was taken") && m.contains("PP-WA-1"), m);
+        assertTrue(m.startsWith("Payment failed: Econet Airtime USD 0.50 for 0772699555") && m.contains("Insufficient funds") && m.contains("No money was taken") && m.contains("PP-WA-1"), m);
     }
 
     @Test
-    void notApprovedInTime_noAnswer_andDelivering() {
-        assertTrue(ChannelResults.message(new Result("R", Outcome.TIMED_OUT, null, TransactionStatus.PAYMENT_TIMEOUT, 1), TX).contains("not approved in time"));
-        assertTrue(ChannelResults.message(new Result("R", Outcome.NO_RESPONSE, null, TransactionStatus.PAYMENT_PENDING, 1), TX).contains("Do not pay again"));
-        assertTrue(ChannelResults.message(new Result("R", Outcome.PROCESSING, null, TransactionStatus.PAYMENT_CONFIRMED, 1), TX).contains("Payment received"));
+    void purchaseFailedAfterPayment_saysFailedAndRefunded_notNoMoneyTaken() {
+        String m = ChannelResults.message(new Result("R", Outcome.FAILED, "Invalid subscriber", TransactionStatus.FULFILMENT_FAILED, 1), TX);
+        assertTrue(m.startsWith("Failed: Econet Airtime") && m.contains("Invalid subscriber") && m.contains("Your EcoCash payment will be refunded"), m);
+        assertFalse(m.contains("No money was taken"), m);
+    }
+
+    @Test
+    void notApprovedInTime_orNoAnswer_isAFailure() {
+        assertTrue(ChannelResults.message(new Result("R", Outcome.TIMED_OUT, null, TransactionStatus.PAYMENT_TIMEOUT, 1), TX).startsWith("Payment failed"));
+        assertTrue(ChannelResults.message(new Result("R", Outcome.NO_RESPONSE, null, TransactionStatus.PAYMENT_TIMEOUT, 1), TX).startsWith("Payment failed"));
+    }
+
+    @Test
+    void neverSaysBeingDelivered() {
+        for (TransactionStatus s : ChannelResults.DELIVERING) {
+            String m = ChannelResults.message(new Result("R", Outcome.NO_RESPONSE, null, s, 1), TX);
+            assertFalse(m.toLowerCase().contains("being delivered") || m.toLowerCase().contains("payment received"), m);
+            assertTrue(m.contains("Do not pay again"), m);
+        }
     }
 
     @Test
