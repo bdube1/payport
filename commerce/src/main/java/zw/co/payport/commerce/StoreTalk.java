@@ -29,6 +29,7 @@ public class StoreTalk {
     private final Shoppers shoppers;
     private final Storefront storefront;
     @org.springframework.beans.factory.annotation.Autowired Growth growth;
+    @org.springframework.beans.factory.annotation.Autowired ChatFiles files;
 
     public StoreTalk(Shop shop, Chats chats, Shoppers shoppers, Storefront storefront) {
         this.shop = shop;
@@ -60,8 +61,13 @@ public class StoreTalk {
                        @CookieValue(name = Shoppers.COOKIE, required = false) String me, @CookieValue(name = Chats.COOKIE, required = false) String token,
                        Model model, HttpServletResponse res) {
         // Contact seller (owner, 1 Nov 2026): conversations belong to the customer's account, kept on their Messages page.
-        if (shoppers.current(me).isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode("/s/" + slug + "/chat", StandardCharsets.UTF_8);
-        return page(slug, productId, me, token, null, model, res);
+        Optional<Shoppers.Shopper> who = shoppers.current(me);
+        if (who.isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode("/s/" + slug + "/chat", StandardCharsets.UTF_8);
+        Optional<Map<String, Object>> st = shop.publicStore(slug);
+        if (st.isEmpty()) return storefront.missing(model, res, "This store does not exist");
+        Optional<Map<String, Object>> c = chats.find(((Number) st.get().get("id")).longValue(), who(me, token));
+        if (c.isPresent()) return "redirect:/messages?c=" + c.get().get("id");
+        return inbox(who.get(), null, st.get(), productId, null, model, res);
     }
 
     String page(String slug, Long productId, String me, String token, String problem, Model model, HttpServletResponse res) {
@@ -105,9 +111,10 @@ public class StoreTalk {
                     .stream().findFirst().orElse(null);
             chats.customerSays(s.get(), w, text, pid);
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return page(slug, productId, me, t, e.getMessage(), model, res);
+            return inbox(shoppers.current(me).get(), null, s.get(), productId, e.getMessage(), model, res);
         }
-        return "redirect:/s/" + s.get().get("slug") + "/chat#end";
+        return chats.find(((Number) s.get().get("id")).longValue(), w).map(c -> "redirect:/messages?c=" + c.get("id"))
+                .orElse("redirect:/s/" + s.get().get("slug") + "/chat");
     }
 
     /** New messages for the open chat page (it asks every few seconds). */
@@ -128,14 +135,172 @@ public class StoreTalk {
     // ─── the customer's messages (every conversation, for the record) ────────
 
     @GetMapping("/messages")
-    public String messages(@CookieValue(name = Shoppers.COOKIE, required = false) String me, Model model, HttpServletResponse res) {
+    public String messages(@RequestParam(name = "c", required = false) Long chatId, @CookieValue(name = Shoppers.COOKIE, required = false) String me,
+                           Model model, HttpServletResponse res) {
         Optional<Shoppers.Shopper> s = shoppers.current(me);
         if (s.isEmpty()) return "redirect:/signin?next=/messages";
+        return inbox(s.get(), chatId, null, null, null, model, res);
+    }
+
+    /** The WhatsApp-style page: conversations on the left, the open one on the right (or a new one with a store). */
+    String inbox(Shoppers.Shopper who, Long chatId, Map<String, Object> newStore, Long productId, String problem, Model model, HttpServletResponse res) {
+        List<Map<String, Object>> list = chats.forShopper(who.id());
+        Map<String, Object> open = null;
+        if (chatId != null) {
+            Optional<Map<String, Object>> c = chats.ofShopper(chatId, who.id());
+            if (c.isPresent()) {
+                long id = ((Number) c.get().get("id")).longValue();
+                chats.customerRead(id);
+                open = list.stream().filter(x -> ((Number) x.get("id")).longValue() == id).findFirst().map(LinkedHashMap::new).orElse(null);
+                if (open != null) {
+                    List<Map<String, Object>> msgs = chats.messages(id, 0);
+                    open.put("messages", msgs);
+                    open.put("lastId", msgs.isEmpty() ? 0 : msgs.get(msgs.size() - 1).get("id"));
+                    open.put("unread", 0);
+                    for (Map<String, Object> x : list) if (((Number) x.get("id")).longValue() == id) x.put("unread", 0);
+                }
+            }
+        }
+        if (open == null && newStore != null) {
+            open = new LinkedHashMap<>();
+            open.put("id", 0);
+            open.put("store", newStore.get("name"));
+            open.put("slug", newStore.get("slug"));
+            open.put("avatar", files.avatar("MERCHANT", ((Number) newStore.get("merchant_id")).longValue()));
+            open.put("messages", List.of());
+            open.put("lastId", 0);
+            if (productId != null) open.put("about", shop.jdbc().queryForList("SELECT name FROM products WHERE id = ? AND store_id = ? AND status = 'ACTIVE'",
+                    String.class, productId, newStore.get("id")).stream().findFirst().orElse(null));
+            open.put("productId", productId);
+        }
         model.addAttribute("me", storefront.meModel());
-        model.addAttribute("chats", chats.forShopper(s.get().id()));
+        model.addAttribute("myAvatar", files.avatar("SHOPPER", who.id()));
+        model.addAttribute("myInitial", who.name() == null || who.name().isBlank() ? "Me" : who.name().trim().substring(0, 1).toUpperCase(java.util.Locale.ROOT));
+        model.addAttribute("chats", list);
+        model.addAttribute("open", open);
+        model.addAttribute("problem", problem);
+        model.addAttribute("emojis", EMOJIS);
         model.addAttribute("title", "Messages | Payport Store");
         res.setHeader("Cache-Control", "no-store");
         return "messages";
+    }
+
+    static final List<String> EMOJIS = List.of("😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😋", "😛", "😜",
+            "🤗", "🤔", "🤨", "😐", "😏", "😒", "🙄", "😬", "😌", "😔", "😴", "😷", "🤒", "😎", "🤓", "😕", "😟", "😮", "😲", "😳", "🥺", "😢", "😭",
+            "😱", "😤", "😡", "👍", "👎", "👌", "✌️", "🤞", "👏", "🙌", "🙏", "💪", "👋", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "💯", "✅",
+            "❌", "⭐", "🔥", "🎉", "🎁", "📦", "🚚", "🛒", "💰", "💵", "💳", "📱", "📍", "⏰", "📅", "☀️", "🌧️", "🍔", "🍕", "🍗", "🥤", "☕",
+            "👗", "👟", "👜", "💄", "🏠", "🚗", "⚽", "🎵");
+
+    private Optional<Long> myChat(String me, long chatId) {
+        return shoppers.current(me).flatMap(s -> chats.ofShopper(chatId, s.id())).map(c -> ((Number) c.get("id")).longValue());
+    }
+
+    private static ResponseEntity<Map<String, Object>> problem(int status, String message) {
+        return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(Map.of("message", message));
+    }
+
+    /** The open conversation's new messages, and the list (unread counts), every few seconds. */
+    @GetMapping("/messages/{id}/poll")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> inboxPoll(@PathVariable long id, @RequestParam(name = "after", defaultValue = "0") long after,
+                                                         @CookieValue(name = Shoppers.COOKIE, required = false) String me) {
+        Optional<Shoppers.Shopper> s = shoppers.current(me);
+        if (s.isEmpty()) return problem(401, "Sign in again");
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (id > 0 && chats.ofShopper(id, s.get().id()).isPresent()) {
+            out.put("messages", chats.messages(id, after));
+            chats.customerRead(id);
+        } else out.put("messages", List.of());
+        out.put("chats", chats.forShopper(s.get().id()));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(out);
+    }
+
+    @PostMapping("/messages/{id}/text")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> inboxText(@PathVariable long id, @RequestParam(name = "text", required = false) String text,
+                                                         @CookieValue(name = Shoppers.COOKIE, required = false) String me) {
+        Optional<Long> c = myChat(me, id);
+        if (c.isEmpty()) return problem(404, "No such conversation");
+        try {
+            chats.customerSaysIn(c.get(), text);
+            return ResponseEntity.ok(Map.of("ok", true));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return problem(400, e.getMessage());
+        }
+    }
+
+    @PostMapping("/messages/{id}/files")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> inboxFile(@PathVariable long id, @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+                                                         @RequestParam(name = "caption", required = false) String caption,
+                                                         @RequestParam(name = "voice", required = false) String voice,
+                                                         @CookieValue(name = Shoppers.COOKIE, required = false) String me) throws java.io.IOException {
+        Optional<Long> c = myChat(me, id);
+        if (c.isEmpty()) return problem(404, "No such conversation");
+        try {
+            ChatFiles.Stored f = files.accept(c.get(), file.getBytes(), file.getOriginalFilename(), "1".equals(voice), 0);
+            String text = caption == null || caption.isBlank() ? f.name() : Chats.body(caption);
+            chats.customerSendsExtra(c.get(), f.kind(), f.id(), text);
+            return ResponseEntity.ok(Map.of("ok", true));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return problem(400, e.getMessage());
+        }
+    }
+
+    @PostMapping("/messages/{id}/contact")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> inboxContact(@PathVariable long id, @RequestParam(name = "name", required = false) String name,
+                                                            @RequestParam(name = "phone", required = false) String phone,
+                                                            @CookieValue(name = Shoppers.COOKIE, required = false) String me) {
+        Optional<Long> c = myChat(me, id);
+        if (c.isEmpty()) return problem(404, "No such conversation");
+        try {
+            chats.customerSendsExtra(c.get(), "CONTACT", null, contactText(name, phone));
+            return ResponseEntity.ok(Map.of("ok", true));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return problem(400, e.getMessage());
+        }
+    }
+
+    /** A shared contact: a name and a phone number. */
+    static String contactText(String name, String phone) {
+        String n = name == null ? "" : name.replaceAll("\\p{Cntrl}", " ").trim();
+        String p = phone == null ? "" : phone.replaceAll("[^0-9+ ]", "").trim();
+        if (n.isEmpty() || n.length() > 60) throw new IllegalArgumentException("Enter the contact's name");
+        if (p.replaceAll("\\D", "").length() < 7 || p.length() > 20) throw new IllegalArgumentException("Enter the contact's phone number");
+        return n + "\n" + p;
+    }
+
+    @PostMapping("/me/avatar")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> avatar(@RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+                                                      @CookieValue(name = Shoppers.COOKIE, required = false) String me) throws java.io.IOException {
+        Optional<Shoppers.Shopper> s = shoppers.current(me);
+        if (s.isEmpty()) return problem(401, "Sign in again");
+        try {
+            files.setAvatar("SHOPPER", s.get().id(), files.acceptAvatar(file.getBytes()));
+            return ResponseEntity.ok(Map.of("avatar", files.avatar("SHOPPER", s.get().id())));
+        } catch (IllegalArgumentException e) {
+            return problem(400, e.getMessage());
+        }
+    }
+
+    /** A chat file or profile picture, through its signed link (valid for an hour). */
+    @GetMapping("/chat-files/{id}")
+    public ResponseEntity<org.springframework.core.io.Resource> chatFile(@PathVariable long id, @RequestParam(name = "e", defaultValue = "0") long e,
+                                                                         @RequestParam(name = "s", required = false) String sig) {
+        if (!files.linkValid(id, e, sig)) return ResponseEntity.status(403).build();
+        Optional<ChatFiles.File> f = files.read(id);
+        if (f.isEmpty()) return ResponseEntity.notFound().build();
+        boolean inline = !"DOCUMENT".equals(f.get().kind());
+        String name = f.get().name() == null ? "file" : f.get().name();
+        return ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType(f.get().contentType()))
+                .header("Content-Disposition", org.springframework.http.ContentDisposition.builder(inline ? "inline" : "attachment")
+                        .filename(name, StandardCharsets.UTF_8).build().toString())
+                .header("Content-Security-Policy", "default-src 'none'; img-src 'self'; media-src 'self'; sandbox")
+                .cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePrivate())
+                .body(new org.springframework.core.io.ByteArrayResource(f.get().bytes()));
     }
 
     // ─── rating a store, reviewing an item ───────────────────────────────────

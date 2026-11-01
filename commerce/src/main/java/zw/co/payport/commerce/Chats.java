@@ -55,6 +55,9 @@ public class Chats {
         return t;
     });
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    ChatFiles files;
+
     public Chats(JdbcTemplate jdbc, Sealed sealed, Ai ai, Psp psp) {
         this.jdbc = jdbc;
         this.sealed = sealed;
@@ -136,6 +139,69 @@ public class Chats {
         return id;
     }
 
+    /** The customer's conversation by id (only their own). */
+    public Optional<Map<String, Object>> ofShopper(long chatId, long shopperId) {
+        return jdbc.queryForList("SELECT * FROM chats WHERE id = ? AND shopper_id = ?", chatId, shopperId).stream().findFirst();
+    }
+
+    /** A customer sends a file or a contact in an existing conversation. */
+    @Transactional
+    public void customerSendsExtra(long chatId, String kind, Long fileId, String text) {
+        Map<String, Object> c = jdbc.queryForMap("SELECT * FROM chats WHERE id = ?", chatId);
+        if (Shop.bool(c.get("blocked"))) throw new IllegalStateException("This store is not taking messages from you.");
+        Integer lastMinute = jdbc.queryForObject("SELECT COUNT(*) FROM chat_messages WHERE chat_id = ? AND sender = 'CUSTOMER' AND created_at >= ?", Integer.class, chatId,
+                Timestamp.valueOf(LocalDateTime.now().minusMinutes(1)));
+        if (lastMinute != null && lastMinute >= 10) throw new IllegalStateException("Please wait a moment before sending more messages.");
+        Timestamp now = Shop.now();
+        jdbc.update("INSERT INTO chat_messages (chat_id, sender, body_enc, topic, flag, kind, file_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                chatId, "CUSTOMER", sealed.seal(text), null, null, kind, fileId, now);
+        jdbc.update("UPDATE chats SET unread_merchant = unread_merchant + 1, last_at = ? WHERE id = ?", now, chatId);
+        Map<String, Object> store = jdbc.queryForMap("SELECT * FROM stores WHERE id = ?", c.get("store_id"));
+        alertSeller(chatId, ((Number) c.get("merchant_id")).longValue(), store);
+    }
+
+    /** A customer's text in an existing conversation (the Messages page). */
+    public void customerSaysIn(long chatId, String text) {
+        Map<String, Object> c = jdbc.queryForMap("SELECT * FROM chats WHERE id = ?", chatId);
+        Map<String, Object> store = jdbc.queryForMap("SELECT * FROM stores WHERE id = ?", c.get("store_id"));
+        Long shopper = c.get("shopper_id") == null ? null : ((Number) c.get("shopper_id")).longValue();
+        customerSays(store, new Who(shopper, null, null, null, "WEB"), text, null);
+    }
+
+    /** The seller sends a file or a contact. */
+    @Transactional
+    public Map<String, Object> sellerSendsExtra(long merchantId, long chatId, String kind, Long fileId, String text) {
+        Map<String, Object> c = mine(merchantId, chatId);
+        Timestamp now = Shop.now();
+        jdbc.update("INSERT INTO chat_messages (chat_id, sender, body_enc, topic, flag, kind, file_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                chatId, "SELLER", sealed.seal(text), null, null, kind, fileId, now);
+        jdbc.update("UPDATE chats SET unread_customer = unread_customer + 1, unread_merchant = 0, last_at = ? WHERE id = ?", now, chatId);
+        forwardToPhone(c, merchantId, chatId, PREVIEW.getOrDefault(kind, "") + ("CONTACT".equals(kind) ? ": " + text.replace("\n", " ") : " (open Messages in the Payport app or store to see it)"));
+        return thread(merchantId, chatId);
+    }
+
+    /** WhatsApp and USSD customers get the seller's messages where they asked. */
+    private void forwardToPhone(Map<String, Object> c, long merchantId, long chatId, String b) {
+        String channel = (String) c.get("channel");
+        String phone = sealed.open((String) c.get("phone_enc"));
+        if (phone == null || !("WHATSAPP".equals(channel) || "USSD".equals(channel))) return;
+        String store = jdbc.queryForList("SELECT name FROM stores WHERE id = ?", String.class, c.get("store_id")).stream().findFirst().orElse("The store");
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("merchantId", merchantId);
+        m.put("to", "CHAT_CUSTOMER");
+        m.put("channel", channel);
+        m.put("phone", phone);
+        m.put("text", Shop.clip(store + ": " + b, 300));
+        m.put("reference", "CHAT-" + chatId);
+        texts.submit(() -> {
+            try {
+                psp.message(m);
+            } catch (RuntimeException e) {
+                log.info("[COMMERCE] chat message {} not delivered: {}", chatId, e.getMessage());
+            }
+        });
+    }
+
     /** Tells the seller by text that a customer is waiting (at most once an hour per conversation). */
     private void alertSeller(long chatId, long merchantId, Map<String, Object> store) {
         int n = jdbc.update("UPDATE chats SET notified_at = ? WHERE id = ? AND (notified_at IS NULL OR notified_at < ?)", Shop.now(), chatId,
@@ -158,11 +224,19 @@ public class Chats {
     /** The messages of a conversation, oldest first, after the given message id. */
     public List<Map<String, Object>> messages(long chatId, long after) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> r : jdbc.queryForList("SELECT id, sender, body_enc, topic, flag, created_at FROM chat_messages WHERE chat_id = ? AND id > ? ORDER BY id LIMIT 300", chatId, after)) {
+        for (Map<String, Object> r : jdbc.queryForList("SELECT id, sender, body_enc, topic, flag, kind, file_id, created_at FROM chat_messages WHERE chat_id = ? AND id > ? ORDER BY id LIMIT 300", chatId, after)) {
             Map<String, Object> v = new LinkedHashMap<>();
             v.put("id", ((Number) r.get("id")).longValue());
             v.put("from", "SELLER".equals(r.get("sender")) ? "seller" : "customer");
             String t = sealed.open((String) r.get("body_enc"));
+            String kind = r.get("kind") == null ? "TEXT" : (String) r.get("kind");
+            v.put("kind", kind);
+            if ("CONTACT".equals(kind) && t != null) {
+                String[] nc = t.split("\n", 2);
+                v.put("contact", Map.of("name", nc[0], "phone", nc.length > 1 ? nc[1] : ""));
+                t = nc[0];
+            }
+            if (r.get("file_id") != null && files != null) files.describe(((Number) r.get("file_id")).longValue()).ifPresent(f -> v.put("file", f));
             v.put("text", t == null ? "(this message cannot be shown)" : t);
             v.put("time", Shop.time(r.get("created_at")).toString().replace('T', ' ').substring(0, 16));
             v.put("topic", r.get("topic"));
@@ -186,13 +260,15 @@ public class Chats {
                 + "WHERE c.shopper_id = ? ORDER BY c.last_at DESC LIMIT 200", shopperId)) {
             Map<String, Object> v = new LinkedHashMap<>();
             long id = ((Number) c.get("id")).longValue();
+            v.put("id", id);
             v.put("store", c.get("store_name"));
-            v.put("url", "/s/" + c.get("store_slug") + "/chat");
+            v.put("slug", c.get("store_slug"));
+            v.put("url", "/messages?c=" + id);
             v.put("unread", ((Number) c.get("unread_customer")).intValue());
             v.put("time", Shop.time(c.get("last_at")).toString().replace('T', ' ').substring(0, 16));
-            List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", id);
-            String t = last.isEmpty() ? "" : sealed.open((String) last.get(0).get("body_enc"));
-            v.put("preview", t == null ? "" : ("SELLER".equals(last.get(0).get("sender")) ? "" : "You: ") + Shop.clip(t, 90));
+            v.put("avatar", files == null ? null : files.avatar("MERCHANT", ((Number) c.get("merchant_id")).longValue()));
+            v.put("blocked", Shop.bool(c.get("blocked")));
+            v.put("preview", preview(id));
             out.add(v);
         }
         return out;
@@ -209,9 +285,7 @@ public class Chats {
             v.put("slug", c.get("store_slug"));
             v.put("unread", ((Number) c.get("unread_customer")).intValue());
             v.put("time", Shop.time(c.get("last_at")).toString().replace('T', ' ').substring(0, 16));
-            List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", id);
-            String t = last.isEmpty() ? "" : sealed.open((String) last.get(0).get("body_enc"));
-            v.put("preview", t == null ? "" : ("SELLER".equals(last.get(0).get("sender")) ? "" : "You: ") + Shop.clip(t, 90));
+            v.put("preview", preview(id));
             out.add(v);
         }
         return out;
@@ -228,6 +302,17 @@ public class Chats {
     private Map<String, Object> mine(long merchantId, long chatId) {
         return jdbc.queryForList("SELECT * FROM chats WHERE id = ? AND merchant_id = ?", chatId, merchantId).stream().findFirst()
                 .orElseThrow(() -> new Shop.NotFound("No such conversation"));
+    }
+
+    static final Map<String, String> PREVIEW = Map.of("IMAGE", "📷 Photo", "VIDEO", "🎥 Video", "AUDIO", "🎤 Audio", "DOCUMENT", "📄 Document", "CONTACT", "👤 Contact");
+
+    /** The last message, for the conversation list. */
+    String preview(long chatId) {
+        List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc, kind FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", chatId);
+        if (last.isEmpty()) return "";
+        String kind = last.get(0).get("kind") == null ? "TEXT" : (String) last.get(0).get("kind");
+        String t = PREVIEW.containsKey(kind) ? PREVIEW.get(kind) : sealed.open((String) last.get(0).get("body_enc"));
+        return t == null ? "" : Shop.clip(t, 90);
     }
 
     static String mask(String phone) {
@@ -251,9 +336,8 @@ public class Chats {
         v.put("lastAt", c.get("last_at"));
         v.put("product", c.get("product_id") == null ? null
                 : jdbc.queryForList("SELECT name FROM products WHERE id = ?", String.class, c.get("product_id")).stream().findFirst().orElse(null));
-        List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc, flag FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", id);
-        String preview = last.isEmpty() ? "" : sealed.open((String) last.get(0).get("body_enc"));
-        v.put("preview", preview == null ? "" : Shop.clip(preview, 90));
+        v.put("preview", preview(id));
+        v.put("avatar", files == null || c.get("shopper_id") == null ? null : files.avatar("SHOPPER", ((Number) c.get("shopper_id")).longValue()));
         Integer flagged = jdbc.queryForObject("SELECT COUNT(*) FROM chat_messages WHERE chat_id = ? AND flag IS NOT NULL", Integer.class, id);
         v.put("flagged", flagged != null && flagged > 0);
         return v;
@@ -282,25 +366,7 @@ public class Chats {
         jdbc.update("INSERT INTO chat_messages (chat_id, sender, body_enc, topic, flag, created_at) VALUES (?,?,?,?,?,?)",
                 chatId, "SELLER", sealed.seal(b), null, ai.flag(b), now);
         jdbc.update("UPDATE chats SET unread_customer = unread_customer + 1, unread_merchant = 0, last_at = ? WHERE id = ?", now, chatId);
-        String channel = (String) c.get("channel");
-        String phone = sealed.open((String) c.get("phone_enc"));
-        if (phone != null && ("WHATSAPP".equals(channel) || "USSD".equals(channel))) {
-            String store = jdbc.queryForList("SELECT name FROM stores WHERE id = ?", String.class, c.get("store_id")).stream().findFirst().orElse("The store");
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("merchantId", merchantId);
-            m.put("to", "CHAT_CUSTOMER");
-            m.put("channel", channel);
-            m.put("phone", phone);
-            m.put("text", Shop.clip(store + ": " + b, 300));
-            m.put("reference", "CHAT-" + chatId);
-            texts.submit(() -> {
-                try {
-                    psp.message(m);
-                } catch (RuntimeException e) {
-                    log.info("[COMMERCE] chat reply {} not delivered: {}", chatId, e.getMessage());
-                }
-            });
-        }
+        forwardToPhone(c, merchantId, chatId, b);
         return thread(merchantId, chatId);
     }
 

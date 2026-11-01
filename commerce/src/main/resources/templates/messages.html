@@ -6,28 +6,114 @@
   <meta name="robots" content="noindex">
   <title th:text="${title}">Messages</title>
   <link rel="stylesheet" th:href="@{/assets/store.css}">
-  <script th:src="@{/assets/store.js}" defer></script>
+  <link rel="stylesheet" th:href="@{/assets/chat.css}">
+  <script th:src="@{/assets/chat.js}" defer></script>
 </head>
-<body>
-<header class="top">
-  <div class="top-in">
-    <a class="brand" href="/"><span class="brand-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 8.5h17"/></svg></span><span class="brand-name">Payport Store</span></a>
-    <nav class="top-right"><a href="/me" class="top-link" th:text="'Hi, ' + ${me.first}">Hi</a></nav>
-  </div>
-</header>
-<main class="wrap narrow">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Stores</a><span class="sep">/</span><b>Messages</b></nav>
-  <h1>Messages</h1>
-  <p th:if="${#lists.isEmpty(chats)}" class="muted">No messages yet. Use Contact seller on a store to ask a question.</p>
-  <ul class="threads">
-    <li th:each="c : ${chats}">
-      <a th:href="${c.url}" class="thread">
-        <span class="thread-main"><strong th:text="${c.store}">Store</strong><span class="muted small" th:text="${c.preview}"></span></span>
-        <span class="thread-side"><span class="muted small" th:text="${c.time}"></span><span th:if="${c.unread > 0}" class="cart-n" th:text="${c.unread}">1</span></span>
+<body class="wa-body">
+<div class="wa" th:classappend="${open != null} ? 'has-open'"
+     th:attr="data-chat-id=${open != null ? open.id : 0},data-after=${open != null ? open.lastId : 0}">
+
+  <!-- left: my conversations -->
+  <aside class="wa-side">
+    <header class="wa-side-head">
+      <label class="wa-me" title="Change your profile picture">
+        <img th:if="${myAvatar != null}" th:src="${myAvatar}" alt="" class="wa-av" data-my-avatar>
+        <span th:if="${myAvatar == null}" class="wa-av wa-av-letter" data-my-avatar th:text="${myInitial}">A</span>
+        <input type="file" accept="image/jpeg,image/png" hidden data-avatar-input>
+      </label>
+      <strong>Chats</strong>
+      <a href="/" class="wa-icon" aria-label="Stores" title="Stores">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/></svg>
       </a>
-    </li>
-  </ul>
-</main>
-<footer th:replace="~{fragments :: foot}"></footer>
+    </header>
+    <div class="wa-search"><input type="search" placeholder="Search" aria-label="Search chats" data-search></div>
+    <ul class="wa-list" data-list>
+      <li th:if="${#lists.isEmpty(chats) and open == null}" class="wa-none">No messages yet. Use Contact seller on a store to ask a question.</li>
+      <li th:each="c : ${chats}" th:attr="data-name=${#strings.toLowerCase(c.store)}">
+        <a th:href="${c.url}" class="wa-item" th:classappend="${open != null and open.id == c.id} ? 'on'">
+          <img th:if="${c.avatar != null}" th:src="${c.avatar}" alt="" class="wa-av">
+          <span th:if="${c.avatar == null}" class="wa-av wa-av-letter" th:text="${#strings.substring(c.store,0,1)}">S</span>
+          <span class="wa-item-main">
+            <span class="wa-item-top"><strong th:text="${c.store}">Store</strong><small th:text="${c.time}"></small></span>
+            <span class="wa-item-bottom"><span class="wa-prev" th:text="${c.preview}"></span><b th:if="${c.unread > 0}" class="wa-badge" th:text="${c.unread}">1</b></span>
+          </span>
+        </a>
+      </li>
+    </ul>
+  </aside>
+
+  <!-- right: the open conversation -->
+  <main class="wa-main" data-drop>
+    <div th:if="${open == null}" class="wa-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6A8 8 0 1 1 21 12z"/></svg>
+      <h2>Payport Messages</h2>
+      <p>Chat with sellers before you buy. Messages are encrypted and kept for your record.</p>
+    </div>
+
+    <th:block th:if="${open != null}">
+      <header class="wa-head">
+        <a href="/messages" class="wa-back" aria-label="Back to chats">‹</a>
+        <img th:if="${open.avatar != null}" th:src="${open.avatar}" alt="" class="wa-av">
+        <span th:if="${open.avatar == null}" class="wa-av wa-av-letter" th:text="${#strings.substring(open.store,0,1)}">S</span>
+        <a th:href="@{/s/{s}(s=${open.slug})}" class="wa-head-name"><strong th:text="${open.store}">Store</strong><small>Tap to visit the store</small></a>
+        <a th:href="@{/s/{s}/report(s=${open.slug})}" class="wa-icon" title="Report this store" aria-label="Report this store">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V4h12l-2 4 2 4H4"/></svg>
+        </a>
+      </header>
+
+      <div class="wa-log" data-log>
+        <p class="wa-note">🔒 Messages are encrypted. Pay only through Payport.</p>
+        <p th:if="${open.about != null}" class="wa-note" th:text="'About: ' + ${open.about}"></p>
+        <div th:each="m : ${open.messages}" class="wa-msg" th:classappend="${m.from == 'customer'} ? 'out' : 'in'" th:attr="data-id=${m.id}">
+          <th:block th:switch="${m.kind}">
+            <img th:case="'IMAGE'" th:src="${m.file.url}" alt="Photo" class="wa-media" loading="lazy">
+            <video th:case="'VIDEO'" th:src="${m.file.url}" controls preload="metadata" class="wa-media"></video>
+            <audio th:case="'AUDIO'" th:src="${m.file.url}" controls preload="metadata"></audio>
+            <a th:case="'DOCUMENT'" th:href="${m.file.url}" class="wa-doc"><span class="wa-doc-ico">📄</span><span th:text="${m.file.name}">file.pdf</span></a>
+            <span th:case="'CONTACT'" class="wa-contact"><span class="wa-doc-ico">👤</span><span><b th:text="${m.contact.name}"></b><br><a th:href="'tel:' + ${m.contact.phone}" th:text="${m.contact.phone}"></a></span></span>
+          </th:block>
+          <span th:if="${m.kind == 'TEXT' or (m.kind != 'CONTACT' and m.file != null and m.text != m.file.name)}" class="wa-text" th:text="${m.text}"></span>
+          <small th:text="${#strings.substring(m.time, 11)}">10:00</small>
+        </div>
+      </div>
+
+      <p th:if="${problem != null}" class="wa-problem" role="alert" th:text="${problem}"></p>
+      <p class="wa-problem" role="alert" data-problem hidden></p>
+
+      <!-- a new conversation is started with a plain form; then everything works in place -->
+      <form th:if="${open.id == 0}" method="post" th:action="@{/s/{s}/chat(s=${open.slug})}" class="wa-compose">
+        <input th:if="${open.productId != null}" type="hidden" name="p" th:value="${open.productId}">
+        <textarea name="text" maxlength="1000" rows="1" required placeholder="Type a message" aria-label="Message"></textarea>
+        <button type="submit" class="wa-send" aria-label="Send">➤</button>
+      </form>
+
+      <form th:if="${open.id != 0}" class="wa-compose" data-compose>
+        <div class="wa-emoji-pop" data-emoji-pop hidden>
+          <button type="button" th:each="e : ${emojis}" th:text="${e}" data-emoji>😀</button>
+        </div>
+        <div class="wa-attach-pop" data-attach-pop hidden>
+          <button type="button" data-pick="image/jpeg,image/png,video/mp4,video/quicktime,video/webm">🖼️ Photos &amp; videos</button>
+          <button type="button" data-pick=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv">📄 Document</button>
+          <button type="button" data-pick="audio/*">🎵 Audio</button>
+          <button type="button" data-contact>👤 Contact</button>
+        </div>
+        <div class="wa-contact-form" data-contact-form hidden>
+          <input name="cname" maxlength="60" placeholder="Contact name" aria-label="Contact name">
+          <input name="cphone" maxlength="20" inputmode="tel" placeholder="Phone number" aria-label="Contact phone">
+          <button type="button" class="wa-pill" data-contact-send>Send contact</button>
+        </div>
+        <input type="file" hidden data-file>
+        <button type="button" class="wa-icon" aria-label="Emoji" data-emoji-toggle>😊</button>
+        <button type="button" class="wa-icon" aria-label="Attach" data-attach-toggle>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5 12.6 21a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6L15.5 8"/></svg>
+        </button>
+        <textarea name="text" maxlength="1000" rows="1" placeholder="Type a message" aria-label="Message" data-text></textarea>
+        <button type="button" class="wa-send" aria-label="Record a voice message" data-voice>🎤</button>
+        <button type="submit" class="wa-send" aria-label="Send" data-send hidden>➤</button>
+      </form>
+      <div class="wa-dropzone" data-dropzone hidden>Drop files to send</div>
+    </th:block>
+  </main>
+</div>
 </body>
 </html>
