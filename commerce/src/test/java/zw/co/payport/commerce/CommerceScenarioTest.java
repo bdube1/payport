@@ -917,7 +917,12 @@ class CommerceScenarioTest {
         String chatCookie = storeUser("Rudo Chari", "0778000555");
         Res sent = form(storePath + "/chat", Map.of("text", "Do you deliver to Avondale?", "p", String.valueOf(p.data().path("id").asLong())), chatCookie);
         assertEquals(302, sent.status(), sent.body());
-        assertTrue(page(storePath + "/chat", chatCookie).body().contains("Do you deliver to Avondale?"));
+        assertTrue(sent.location().contains("/messages?c="), "the conversation opens on the Messages page: " + sent.location());
+        String inbox = sent.location().replaceAll("^https?://[^/]+", "");
+        long myChat = Long.parseLong(inbox.substring(inbox.indexOf("c=") + 2));
+        Res opened = page(inbox, chatCookie);
+        assertTrue(opened.body().contains("Do you deliver to Avondale?") && opened.body().contains("wa-side") && opened.body().contains("data-compose"), opened.body());
+        assertEquals(302, page(storePath + "/chat", chatCookie).status(), "Contact seller goes to the existing conversation");
         Map<String, Object> row = jdbc.queryForMap("SELECT m.body_enc, m.topic FROM chat_messages m JOIN chats c ON c.id = m.chat_id WHERE c.merchant_id = ? ORDER BY m.id DESC LIMIT 1", merchant);
         assertTrue(String.valueOf(row.get("body_enc")).startsWith("v1:") && !String.valueOf(row.get("body_enc")).contains("Avondale"), "encrypted");
         assertEquals("DELIVERY", row.get("topic"));
@@ -931,8 +936,16 @@ class CommerceScenarioTest {
         assertEquals(404, api("GET", "/api/commerce/chats/" + chatId, bravo, null).status(), "another merchant's chat");
         Res replied = api("POST", "/api/commerce/chats/" + chatId + "/reply", alpha, Map.of("text", "Yes, USD 2 to Avondale"));
         assertEquals(200, replied.status(), replied.body());
-        assertTrue(page(storePath + "/chat/messages?after=0", chatCookie).body().contains("Yes, USD 2 to Avondale"));
-        assertFalse(page(storePath + "/chat/messages?after=0").body().contains("Avondale"), "nobody else sees it");
+        assertTrue(page("/messages/" + myChat + "/poll?after=0", chatCookie).body().contains("Yes, USD 2 to Avondale"));
+        assertFalse(page("/messages/" + myChat + "/poll?after=0").body().contains("Avondale"), "nobody else sees it");
+        String other = storeUser("Tafadzwa Moyo", "0778000666");
+        assertFalse(page("/messages/" + myChat + "/poll?after=0", other).body().contains("Avondale"), "another customer does not see it");
+
+        // A contact card from the seller; a file link only works with its signature.
+        Res card = api("POST", "/api/commerce/chats/" + chatId + "/contact", alpha, Map.of("name", "Delivery desk", "phone", "+263 77 123 4567"));
+        assertEquals(200, card.status(), card.body());
+        assertTrue(page("/messages/" + myChat + "/poll?after=0", chatCookie).body().contains("Delivery desk"));
+        assertEquals(403, page("/chat-files/1?e=9999999999&s=forged").status(), "unsigned file links are refused");
 
         // Asking to be paid outside Payport is flagged; what customers ask is counted.
         form(storePath + "/chat", Map.of("text", "Can I pay to my number instead?"), chatCookie);
@@ -957,7 +970,7 @@ class CommerceScenarioTest {
 
         // The customer's Messages page keeps every conversation (messages are never deleted); the bell counts unread answers.
         Res msgs = page("/messages", chatCookie);
-        assertTrue(msgs.body().contains("Alpha Crafts") && msgs.body().contains("/chat"), msgs.body());
+        assertTrue(msgs.body().contains("Alpha Crafts") && msgs.body().contains("/messages?c="), msgs.body());
         assertEquals(302, page("/messages").status(), "signed in only");
     }
 

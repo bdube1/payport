@@ -71,7 +71,8 @@ public class WebConfig implements WebMvcConfigurer {
             res.setHeader("X-Content-Type-Options", "nosniff");
             res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
             res.setHeader("X-Frame-Options", "DENY");
-            res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+            // Voice messages on the Messages page need the microphone (asked by the browser, only there).
+            res.setHeader("Permissions-Policy", req.getRequestURI().startsWith("/messages") ? "camera=(), microphone=(self), geolocation=()" : "camera=(), microphone=(), geolocation=()");
             if (!req.getRequestURI().startsWith("/api/")) {
                 res.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
                         + "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.payport.africa " + String.join(" ", settings.checkoutOrigins));

@@ -308,6 +308,41 @@ public class MerchantApi {
         return ok(v);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired ChatFiles chatFiles;
+
+    /** The seller sends a photo, video, voice message or audio, or a document (checked like every upload). */
+    @PostMapping("/api/commerce/chats/{id}/files")
+    public Map<String, Object> chatFile(@PathVariable long id, @RequestParam("file") MultipartFile file, @RequestParam(name = "caption", required = false) String caption,
+                                        @RequestParam(name = "voice", required = false) String voice, HttpServletRequest req) throws java.io.IOException {
+        Tokens.Merchant m = me(req);
+        chats.thread(m.merchantId(), id);   // only the merchant's own conversations
+        ChatFiles.Stored f = chatFiles.accept(id, file.getBytes(), file.getOriginalFilename(), "1".equals(voice), m.merchantId());
+        String text = caption == null || caption.isBlank() ? f.name() : Chats.body(caption);
+        return ok(chats.sellerSendsExtra(m.merchantId(), id, f.kind(), f.id(), text));
+    }
+
+    @PostMapping("/api/commerce/chats/{id}/contact")
+    public Map<String, Object> chatContact(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
+        Tokens.Merchant m = me(req);
+        String text = StoreTalk.contactText(b == null ? null : (String) b.get("name"), b == null ? null : (String) b.get("phone"));
+        return ok(chats.sellerSendsExtra(m.merchantId(), id, "CONTACT", null, text));
+    }
+
+    /** The seller's profile picture in chats (the store logo until one is set). */
+    @GetMapping("/api/commerce/chat-avatar")
+    public Map<String, Object> chatAvatar(HttpServletRequest req) {
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("avatar", chatFiles.avatar("MERCHANT", me(req).merchantId()));
+        return ok(v);
+    }
+
+    @PostMapping("/api/commerce/chat-avatar")
+    public Map<String, Object> setChatAvatar(@RequestParam("file") MultipartFile file, HttpServletRequest req) throws java.io.IOException {
+        Tokens.Merchant m = manager(req);
+        chatFiles.setAvatar("MERCHANT", m.merchantId(), chatFiles.acceptAvatar(file.getBytes()));
+        return chatAvatar(req);
+    }
+
     @GetMapping("/api/commerce/chats/reasons")
     public Map<String, Object> chatReasons() { return ok(Chats.REASON_NAMES); }
 
