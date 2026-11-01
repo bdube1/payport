@@ -43,8 +43,8 @@ Scanning Vendor (ASV) and an independent penetration test.
 ## Still to do (outside the code), in order
 
 1. **Two-step sign-in (MFA) for staff, merchants and agents** (PCI DSS 8.4). Not built yet: the next item to build.
-2. **External penetration test** of the pilot environment by an independent firm (scope written in
-   docs/security), and **ASV external scan**; repeat quarterly and after major changes.
+2. **External penetration test** of the pilot environment by an independent firm (scope in
+   docs/phase9/PEN_TEST_SCOPE.md), and **ASV external scan**; repeat quarterly and after major changes.
 3. **Servers**: SSH keys only, no root login, unattended security updates, DigitalOcean firewalls as in
    SCALING_DIGITALOCEAN.md, database not public, backups encrypted, restore drill monthly.
 4. **Secrets**: move `.env` secrets (database, JWT, provider keys, data keys) to a secret store or at least
