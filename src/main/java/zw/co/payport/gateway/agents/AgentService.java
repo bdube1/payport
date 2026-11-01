@@ -264,10 +264,41 @@ public class AgentService {
         return out;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.intelligence.ForecastService forecasts;
+
+    /** One agent's float forecast per currency (empty when forecasting is not available). */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> floatForecast(Map<String, Object> agentView) {
+        if (forecasts == null) return List.of();
+        return forecasts.agent(((Number) agentView.get("id")).longValue(), (Map<String, Long>) agentView.get("float"));
+    }
+
+    /** Every active agent's float forecast, the soonest to run out first (finance and operations). */
+    public List<Map<String, Object>> floatForecasts() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> a : jdbc.queryForList("SELECT * FROM agents WHERE status = 'ACTIVE' ORDER BY id LIMIT 1000")) {
+            Map<String, Object> v = view(a);
+            for (Map<String, Object> f : floatForecast(v)) {
+                Map<String, Object> row = new LinkedHashMap<>(f);
+                row.put("agentId", a.get("id"));
+                row.put("agentCode", a.get("agent_code"));
+                row.put("name", a.get("name"));
+                row.put("location", a.get("location"));
+                out.add(row);
+            }
+        }
+        out.sort(java.util.Comparator.comparing((Map<String, Object> m) -> m.get("runsOutInDays") == null ? 99 : ((Number) m.get("runsOutInDays")).intValue())
+                .thenComparing(m -> -((Number) m.get("topUpMinor")).longValue()));
+        return out;
+    }
+
     /** The agent's own dashboard: float, today's and the last 30 days' operations, commission this month, recent operations. */
     public Map<String, Object> agentDashboard(long agentId) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("agent", view(get(agentId)));
+        Map<String, Object> me = view(get(agentId));
+        out.put("agent", me);
+        out.put("forecast", floatForecast(me));
         Timestamp today = Timestamp.valueOf(LocalDate.now().atStartOfDay());
         Timestamp month = Timestamp.valueOf(LocalDate.now().minusDays(30).atStartOfDay());
         Timestamp monthStart = Timestamp.valueOf(LocalDate.now().withDayOfMonth(1).atStartOfDay());

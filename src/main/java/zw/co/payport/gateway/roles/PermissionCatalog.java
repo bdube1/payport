@@ -75,6 +75,7 @@ public final class PermissionCatalog {
 
             f("settlements", "Finance & settlement", "Settlements", List.of("/settlements"), List.of(A + "settlements"), ADMIN, OPS),
             f("settlement_batches", "Finance & settlement", "Settlement batches", List.of("/settlement-batches"), List.of(A + "finance/settlement"), ADMIN, FINANCE),
+            f("forecasts", "Finance & settlement", "Forecasts: settlement and agent float", List.of("/forecasts"), List.of(A + "forecasts"), ADMIN, OPS, FINANCE),
             f("destinations", "Finance & settlement", "Settlement destinations", List.of("/destinations"),
                     List.of(A + "platform/settlement-destinations"), ADMIN, OPS, FINANCE),
             f("reconciliation", "Finance & settlement", "Reconciliation", List.of("/reconciliation", "/statement-reconciliation"),
