@@ -2092,6 +2092,11 @@
    "access": null
   },
   {
+   "method": "POST",
+   "path": "/api/v1/merchant/tap-charges",
+   "access": null
+  },
+  {
    "method": "GET",
    "path": "/api/v1/merchant/team",
    "access": null
@@ -2469,6 +2474,16 @@
   {
    "method": "POST",
    "path": "/api/v1/wallet/pay-merchant",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/tap",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/tap/status",
    "access": null
   },
   {

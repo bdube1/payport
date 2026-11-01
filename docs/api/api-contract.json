@@ -1674,6 +1674,10 @@
    "path": "/api/v1/merchant/statement"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/merchant/tap-charges"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/merchant/team"
   },
@@ -1976,6 +1980,14 @@
   {
    "method": "POST",
    "path": "/api/v1/wallet/pay-merchant"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/wallet/tap"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/wallet/tap/status"
   },
   {
    "method": "POST",
