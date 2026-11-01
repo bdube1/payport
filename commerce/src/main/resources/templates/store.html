@@ -42,6 +42,19 @@
     <a th:href="@{/s/{s}(s=${store.slug})}" th:classappend="${category == null} ? 'on'">All</a>
     <a th:each="c : ${categories}" th:href="@{/s/{s}(s=${store.slug},c=${c})}" th:text="${c}" th:classappend="${c == category} ? 'on'">Category</a>
   </nav>
+  <section th:if="${!#lists.isEmpty(forYou)}" class="featured">
+    <h2>Recommended for you</h2>
+    <ul class="grid">
+      <li th:each="p : ${forYou}" class="card">
+      <a th:href="${p.url}">
+        <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy" class="pic">
+        <div th:if="${p.image == null}" class="pic blank"></div>
+        <span class="name" th:text="${p.name}">Product</span>
+        <span class="price"><span th:text="${p.price}">USD 1.00</span> <s th:if="${p.was != null}" class="was" th:text="${p.was}"></s></span>
+      </a>
+      </li>
+    </ul>
+  </section>
   <section th:if="${!#lists.isEmpty(featured)}" class="featured">
     <h2>Featured</h2>
     <ul class="grid">

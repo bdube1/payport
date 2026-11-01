@@ -70,6 +70,20 @@
       </ul>
     </section>
 
+    <section th:if="${!#lists.isEmpty(picked)}" class="d-section">
+      <div class="d-section-head"><h2>Picked for you</h2><span class="d-link">From what you and shoppers like you buy</span></div>
+      <ul class="d-found">
+        <li th:each="p : ${picked}">
+          <a th:href="${p.url}" class="d-item">
+            <img th:if="${p.image != null}" th:src="${p.image}" alt="" loading="lazy">
+            <span th:if="${p.image == null}" class="d-item-blank"></span>
+            <span class="d-item-text"><strong th:text="${p.name}">Item</strong><span th:text="${p.store}">Store</span>
+              <span class="d-item-price"><b th:text="${p.price}">USD 1.00</b> <s th:if="${p.was != null}" th:text="${p.was}"></s></span></span>
+          </a>
+        </li>
+      </ul>
+    </section>
+
     <section th:if="${!#lists.isEmpty(featured)}" class="d-section">
       <div class="d-section-head"><h2>Featured stores</h2><span class="d-link">Hand-picked today</span></div>
       <ul class="d-grid d-grid-3">
