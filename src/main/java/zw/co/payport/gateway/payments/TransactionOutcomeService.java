@@ -32,7 +32,8 @@ public class TransactionOutcomeService {
 
     public record Result(String reference, Outcome outcome, String message, TransactionStatus status, int attempts) {}
 
-    static final String DELIVERING = "Payment received. Your purchase is being delivered; you will get an SMS when it is complete.";
+    static final String DELIVERING = "Payment approved. Completing your purchase now.";
+    static final String NOT_ANSWERED = "Payment approved. The provider has not answered yet about your purchase. Do not pay again; the result will be sent to you by SMS.";
 
     private final TransactionRepository transactions;
     private final FulfilmentQueueService jobs;
@@ -90,7 +91,7 @@ public class TransactionOutcomeService {
             case PAYMENT_CONFIRMED, FULFILMENT_RETRY -> {
                 if (age(tx.getPaymentConfirmedAt()) > windowSeconds(tx) + GRACE_SECONDS) {
                     o = Outcome.NO_RESPONSE;
-                    msg = "Payment received. Delivery is taking longer than usual; you will get an SMS when it is complete.";
+                    msg = NOT_ANSWERED;
                 } else { o = Outcome.PROCESSING; msg = DELIVERING; }
             }
             case PAYMENT_TIMEOUT -> {
@@ -103,7 +104,7 @@ public class TransactionOutcomeService {
                 if (job == FulfilmentQueueService.JobStatus.UNKNOWN || job == FulfilmentQueueService.JobStatus.MANUAL
                         || age(tx.getPaymentConfirmedAt()) > windowSeconds(tx) + GRACE_SECONDS) {
                     o = Outcome.NO_RESPONSE;
-                    msg = "No response from the service provider. We are confirming whether it was delivered.";
+                    msg = NOT_ANSWERED;
                 } else {
                     o = Outcome.PROCESSING;
                     msg = DELIVERING;

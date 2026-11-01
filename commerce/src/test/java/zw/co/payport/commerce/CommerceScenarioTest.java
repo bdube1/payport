@@ -179,7 +179,7 @@ class CommerceScenarioTest {
         assertEquals("CONFIRMING", payment(ref));
         String token = payments.viewToken(k);
         Res waiting = page("/o/" + ref + "?t=" + token);
-        assertTrue(waiting.body().contains("being confirmed") && !waiting.body().contains(">Paid<"), "never shown as paid");
+        assertTrue(waiting.body().contains("Waiting for the payment result") && !waiting.body().contains(">Paid<"), "never shown as paid");
         assertEquals(404, page("/o/" + ref + "?t=wrong").status(), "an order page needs its key");
 
         // Confirmed: paid. A repeated event, a replay of the whole stream and a late failure change nothing.

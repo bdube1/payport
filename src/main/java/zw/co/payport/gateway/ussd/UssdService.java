@@ -149,7 +149,8 @@ public class UssdService {
     private zw.co.payport.gateway.whatsapp.ChannelResults results;
 
     private void watch(Ctx c, String ref, String method) {
-        if (!c.ussd() && results != null && ref != null && !"OMARI".equals(method)) results.watch(c.msisdn(), ref);
+        if (results == null || ref == null || "OMARI".equals(method)) return;
+        if (c.ussd()) results.watchBySms(c.phone(), ref); else results.watch(c.msisdn(), ref);
     }
 
     public UssdService(JdbcTemplate jdbc, ChannelService channels, MarketRegistry markets, BillerRegistry billers, BillerController billerLookups,
@@ -1514,8 +1515,8 @@ public class UssdService {
         try {
             TransactionResponse r = orchestrator.confirmOmariOtp(ref, otp);
             if (r.getStatus() == TransactionStatus.PAYMENT_FAILED) return "END " + clip(r.getFailureReason() == null ? "O'mari declined the payment." : r.getFailureReason(), 130) + " Ref " + ref;
-            if (!c.ussd() && results != null) results.watch(c.msisdn(), ref);
-            return "END Payment confirmed." + (c.ussd() ? " You will get an SMS when it is done." : " I will reply here when it is done.") + " Ref " + ref;
+            if (results != null) { if (c.ussd()) results.watchBySms(c.phone(), ref); else results.watch(c.msisdn(), ref); }
+            return "END Payment approved." + (c.ussd() ? " You will get the result by SMS." : " I will reply here with the result.") + " Ref " + ref;
         } catch (IllegalStateException e) {
             String msg = e.getMessage() == null ? "" : e.getMessage();
             if (msg.contains("attempt")) return "CON " + clip(msg, 120) + "\nEnter the code:";

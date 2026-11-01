@@ -166,7 +166,7 @@ public class Account {
         return switch (String.valueOf(o.get("payment_status"))) {
             case "PAID" -> "Paid";
             case "ON_DELIVERY" -> "Pay on delivery";
-            case "PENDING", "CONFIRMING" -> "Payment being confirmed";
+            case "PENDING", "CONFIRMING" -> "Waiting for payment";
             case "FAILED", "EXPIRED" -> "Not paid";
             default -> "Awaiting payment";
         };

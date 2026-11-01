@@ -79,7 +79,7 @@ public class SmsNotificationService {
             message = formatZesaTokenMessage(tx);
         } else {
             message = String.format(
-                    "Payport: %s of %s sent to %s. Ref: %s. Thank you!",
+                    "Payport: Successful. %s of %s sent to %s. Ref: %s",
                     productName,
                     tx.getAmountFormatted(),
                     maskRecipient(tx.getRecipientIdentifier()),
@@ -292,6 +292,17 @@ public class SmsNotificationService {
         );
     }
 
+    /** The purchase failed for good after the payment was taken (no automatic retry left): the customer is told plainly. */
+    @Async
+    public void sendDeliveryFailed(Transaction tx) {
+        String productName = tx.getProductType() != null ? tx.getProductType().getName() : "Your purchase";
+        String reason = tx.getFailureReason() == null || tx.getFailureReason().isBlank() ? "The provider could not complete it." : tx.getFailureReason().trim();
+        String message = String.format("Payport: Failed. %s of %s for %s. %s%s Your payment will be refunded. Ref: %s",
+                productName, tx.getAmountFormatted(), maskRecipient(tx.getRecipientIdentifier()), reason,
+                reason.endsWith(".") ? "" : ".", tx.getReference());
+        notify(tx, message, "DELIVERY_FAILED");
+    }
+
     @Async
     public void sendFulfilmentDelayed(Transaction tx) {
         String message = String.format(
@@ -335,6 +346,9 @@ public class SmsNotificationService {
         if (tx.getChannel() != zw.co.payport.gateway.enums.TransactionChannel.WHATSAPP || whatsApp == null) return;
         // Pending, confirmed and failed are answered in the chat by ChannelResults (it waits for the answer, like the app).
         if (java.util.Set.of("PAYMENT_PENDING", "PAYMENT_CONFIRMED", "PAYMENT_FAILED").contains(messageType)) return;
+        // A failed purchase is answered in the chat by ChannelResults too, unless it already gave the chat its answer.
+        if ("DELIVERY_FAILED".equals(messageType) && (jdbc == null || jdbc.queryForObject(
+                "SELECT COUNT(*) FROM whatsapp_outbox WHERE reference = ? AND kind = 'PAYMENT_RESULT'", Integer.class, tx.getReference()) == 0)) return;
         try {
             var sender = whatsApp.getIfAvailable();
             if (sender == null) return;

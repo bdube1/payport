@@ -194,7 +194,7 @@ public class Payments {
         Map<String, Object> o = orderForCustomer(ref, token).orElseThrow(() -> new Shop.NotFound("No such order"));
         String ps = String.valueOf(o.get("payment_status"));
         if ("PAID".equals(ps)) return new Start(null, "This order is already paid.", false);
-        if ("PENDING".equals(ps) || "CONFIRMING".equals(ps)) return new Start(null, "Your payment is being confirmed.", false);
+        if ("PENDING".equals(ps) || "CONFIRMING".equals(ps)) return new Start(null, "The payment is in progress. The result shows here; do not pay again.", false);
         if ("ON_DELIVERY".equals(ps)) return new Start(null, "You pay for this order on delivery or collection.", false);
         if ("CANCELLED".equals(o.get("order_status"))) return new Start(null, "This order was cancelled.", false);
         long orderId = ((Number) o.get("id")).longValue(), merchantId = ((Number) o.get("merchant_id")).longValue();
@@ -421,7 +421,7 @@ public class Payments {
         long already = jdbc.queryForObject("SELECT COALESCE(SUM(amount_minor), 0) FROM refunds WHERE order_id = ? AND status IN ('REQUESTED','COMPLETED')", Long.class, orderId);
         if (amount > ((Number) o.get("amount_minor")).longValue() - already) throw new IllegalArgumentException("That is more than is left to refund");
         String paidRef = jdbc.queryForList("SELECT psp_reference FROM order_attempts WHERE order_id = ? AND status = 'PAID' ORDER BY id LIMIT 1", String.class, orderId)
-                .stream().findFirst().orElseThrow(() -> new IllegalStateException("The payment is still being confirmed"));
+                .stream().findFirst().orElseThrow(() -> new IllegalStateException("The payment has no result yet"));
         JsonNode r;
         try {
             r = psp.refund(Map.of("merchantId", m.merchantId(), "reference", paidRef, "amountMinor", amount, "reason", reason, "merchantUserId", m.userId()));
