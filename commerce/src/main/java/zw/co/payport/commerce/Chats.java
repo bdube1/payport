@@ -234,6 +234,8 @@ public class Chats {
             String t = sealed.open((String) r.get("body_enc"));
             String kind = r.get("kind") == null ? "TEXT" : (String) r.get("kind");
             v.put("kind", kind);
+            v.put("file", null);      // every key present: pages read them directly
+            v.put("contact", null);
             if ("CONTACT".equals(kind) && t != null) {
                 String[] nc = t.split("\n", 2);
                 v.put("contact", Map.of("name", nc[0], "phone", nc.length > 1 ? nc[1] : ""));

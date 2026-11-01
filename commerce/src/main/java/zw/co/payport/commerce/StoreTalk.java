@@ -153,6 +153,8 @@ public class StoreTalk {
                 chats.customerRead(id);
                 open = list.stream().filter(x -> ((Number) x.get("id")).longValue() == id).findFirst().map(LinkedHashMap::new).orElse(null);
                 if (open != null) {
+                    open.put("about", null);
+                    open.put("productId", null);
                     List<Map<String, Object>> msgs = chats.messages(id, 0);
                     open.put("messages", msgs);
                     open.put("lastId", msgs.isEmpty() ? 0 : msgs.get(msgs.size() - 1).get("id"));
@@ -169,6 +171,7 @@ public class StoreTalk {
             open.put("avatar", files.avatar("MERCHANT", ((Number) newStore.get("merchant_id")).longValue()));
             open.put("messages", List.of());
             open.put("lastId", 0);
+            open.put("about", null);
             if (productId != null) open.put("about", shop.jdbc().queryForList("SELECT name FROM products WHERE id = ? AND store_id = ? AND status = 'ACTIVE'",
                     String.class, productId, newStore.get("id")).stream().findFirst().orElse(null));
             open.put("productId", productId);
