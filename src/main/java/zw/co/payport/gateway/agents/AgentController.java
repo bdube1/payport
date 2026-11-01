@@ -161,6 +161,22 @@ public class AgentController {
         return Web.run(agents::list, req);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private zw.co.payport.gateway.intelligence.ForecastService forecasts;
+
+    /** Forecasts for finance: settlement funding per currency and every agent's float (soonest to run out first). */
+    @GetMapping("/api/v1/admin/forecasts")
+    @PreAuthorize("hasAnyRole('ADMIN','OPS','FINANCE')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> forecasts(HttpServletRequest req) {
+        return Web.run(() -> {
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("settlement", forecasts.settlement());
+            out.put("agents", agents.floatForecasts());
+            out.put("method", "Last 8 weeks, recent days weigh more, day-of-week pattern; busy case = 90th percentile");
+            return out;
+        }, req);
+    }
+
     @GetMapping("/api/v1/admin/agents/dashboard")
     @PreAuthorize("hasAnyRole('ADMIN','OPS','FINANCE','COMPLIANCE')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> dashboard(HttpServletRequest req) {

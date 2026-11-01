@@ -608,6 +608,11 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/forecasts",
+   "access": null
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/fx/rates",
    "access": null
   },
