@@ -11,9 +11,9 @@
   <meta property="og:url" th:if="${url != null}" th:content="${url}">
   <meta property="og:image" th:if="${image != null}" th:content="${publicUrl + image}">
   <meta name="twitter:card" th:content="${image != null} ? 'summary_large_image' : 'summary'">
-  <link rel="preload" href="/assets/fonts/plus-jakarta-sans-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/store.css">
-  <script src="/assets/store.js" defer></script>
+  <link rel="preload" th:href="@{/assets/fonts/plus-jakarta-sans-latin-800-normal.woff2}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" th:href="@{/assets/store.css}">
+  <script th:src="@{/assets/store.js}" defer></script>
 </head>
 <body>
 

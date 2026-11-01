@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex">
   <meta th:if="${refresh}" http-equiv="refresh" content="5">
   <title th:text="${title}">Order</title>
-  <link rel="stylesheet" href="/assets/store.css">
+  <link rel="stylesheet" th:href="@{/assets/store.css}">
 </head>
 <body>
 <header th:replace="~{fragments :: top(${store})}"></header>
