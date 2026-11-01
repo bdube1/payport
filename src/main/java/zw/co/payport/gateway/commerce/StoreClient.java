@@ -128,4 +128,26 @@ public class StoreClient {
     public JsonNode reportReasons() {
         return call("GET", "/api/channel/report/reasons", null);
     }
+
+    // ─── Payport staff: stores ───
+
+    public JsonNode adminStores(String q) {
+        return call("GET", "/api/channel/admin/stores?q=" + enc(q), null);
+    }
+
+    public JsonNode disable(long storeId, String reason, String by) {
+        Map<String, Object> b = new java.util.LinkedHashMap<>();
+        b.put("reason", reason);
+        b.put("by", by);
+        return call("POST", "/api/channel/admin/stores/" + storeId + "/disable", b);
+    }
+
+    public JsonNode enable(long storeId) {
+        return call("POST", "/api/channel/admin/stores/" + storeId + "/enable", Map.of());
+    }
+
+    /** Every conversation of an app customer (by phone), newest first. */
+    public JsonNode chats(String phone) {
+        return call("GET", "/api/channel/chats?phone=" + enc(phone), null);
+    }
 }

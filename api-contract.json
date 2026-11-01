@@ -1268,6 +1268,21 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/store-admin/stores",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/store-admin/stores/{id}/disable",
+   "access": null
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/store-admin/stores/{id}/enable",
+   "access": null
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/transactions-export/csv",
    "access": null
   },
@@ -2249,6 +2264,11 @@
   {
    "method": "GET",
    "path": "/api/v1/session-timeouts",
+   "access": null
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/chats",
    "access": null
   },
   {

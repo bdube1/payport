@@ -642,7 +642,7 @@ class CommerceScenarioTest {
         assertTrue(form("/o/" + ref3 + "/review", Map.of("t", payments.viewToken(k3), "product", String.valueOf(cutId), "rating", "1")).body().contains("once your order is paid"));
         assertEquals(404, form("/o/" + ref + "/review", Map.of("t", "wrong-token", "product", String.valueOf(cutId), "rating", "1")).status());
         Res product = page(cutUrl);
-        assertTrue(product.body().contains("Great cut") && product.body().contains("★ 5.0 (1)"), product.body());
+        assertTrue(product.body().contains("Great cut") && product.body().contains("★★★★★"), product.body());
         long reviewId = api("GET", "/api/commerce/reviews", charlie, null).data().get(0).path("id").asLong();
         assertEquals(404, api("POST", "/api/commerce/reviews/" + reviewId, alpha, Map.of("hidden", true)).status());
         assertEquals(200, api("POST", "/api/commerce/reviews/" + reviewId, charlie, Map.of("reply", "Thank you, see you soon")).status());
@@ -903,17 +903,20 @@ class CommerceScenarioTest {
         String storePath = url.substring(0, url.lastIndexOf('/'));
         Res product = page(url);
         assertTrue(product.body().contains("/img/pic0000000000000000000000000002") && product.body().contains("data-gallery"), product.body());
-        assertTrue(product.body().contains("Buy now") && product.body().contains("Chat with seller") && product.body().contains("Report this store"));
+        assertTrue(product.body().contains("Buy now") && product.body().contains("Report this store"));
+        assertTrue(page(storePath).body().contains("Contact seller"), "customers contact the seller from the store");
 
         Res stay = form(url + "/buy", Map.of("qty", "1", "go", "stay"));
         assertEquals(302, stay.status());
         assertTrue(stay.location().contains("added=1"), "add to cart stays on the product: " + stay.location());
 
-        // A customer asks before buying; the message is stored encrypted, with its topic.
-        Res sent = form(storePath + "/chat", Map.of("text", "Do you deliver to Avondale?", "name", "Rudo", "p", String.valueOf(p.data().path("id").asLong())));
+        // A customer asks before buying (signed in: the conversation is kept on their Messages page), stored encrypted, with its topic.
+        Res guest = page(storePath + "/chat");
+        assertEquals(302, guest.status());
+        assertTrue(guest.location().contains("/signin"), "sign in to contact a seller");
+        String chatCookie = storeUser("Rudo Chari", "0778000555");
+        Res sent = form(storePath + "/chat", Map.of("text", "Do you deliver to Avondale?", "p", String.valueOf(p.data().path("id").asLong())), chatCookie);
         assertEquals(302, sent.status(), sent.body());
-        String chatCookie = sent.cookie();
-        assertTrue(chatCookie != null && chatCookie.startsWith("pp_chat="), "a chat cookie");
         assertTrue(page(storePath + "/chat", chatCookie).body().contains("Do you deliver to Avondale?"));
         Map<String, Object> row = jdbc.queryForMap("SELECT m.body_enc, m.topic FROM chat_messages m JOIN chats c ON c.id = m.chat_id WHERE c.merchant_id = ? ORDER BY m.id DESC LIMIT 1", merchant);
         assertTrue(String.valueOf(row.get("body_enc")).startsWith("v1:") && !String.valueOf(row.get("body_enc")).contains("Avondale"), "encrypted");
@@ -924,7 +927,7 @@ class CommerceScenarioTest {
         Res list = api("GET", "/api/commerce/chats", alpha, null);
         assertEquals(1, list.data().path("unread").asInt(), list.body());
         long chatId = list.data().path("chats").get(0).path("id").asLong();
-        assertEquals("Rudo", list.data().path("chats").get(0).path("customer").asText());
+        assertEquals("Rudo Chari", list.data().path("chats").get(0).path("customer").asText());
         assertEquals(404, api("GET", "/api/commerce/chats/" + chatId, bravo, null).status(), "another merchant's chat");
         Res replied = api("POST", "/api/commerce/chats/" + chatId + "/reply", alpha, Map.of("text", "Yes, USD 2 to Avondale"));
         assertEquals(200, replied.status(), replied.body());
@@ -951,5 +954,61 @@ class CommerceScenarioTest {
         Res sellerRep = api("POST", "/api/commerce/chats/" + chatId + "/report", alpha, Map.of("reason", "SPAM"));
         assertEquals("CMP-TEST-1", sellerRep.data().path("complaintRef").asText(), sellerRep.body());
         assertTrue(PSP.messages.contains("REPORT|SELLER|Rude or abusive") && PSP.messages.contains("REPORT|CUSTOMER|Spam"), PSP.messages.toString());
+
+        // The customer's Messages page keeps every conversation (messages are never deleted); the bell counts unread answers.
+        Res msgs = page("/messages", chatCookie);
+        assertTrue(msgs.body().contains("Alpha Crafts") && msgs.body().contains("/chat"), msgs.body());
+        assertEquals(302, page("/messages").status(), "signed in only");
+    }
+
+    /** Owner, 1 Nov 2026: rating a store (gold stars), offensive reviews refused, prohibited content disables the store, Payport disables a store by hand. */
+    @Test
+    void storeRatings_offensiveReviewsRefused_prohibitedContentDisablesStore_disableByHand() throws Exception {
+        PSP.down = false;
+        String charlie = signIn("portal-token-C");
+        assertEquals(200, api("PUT", "/api/commerce/store", charlie, Map.of("pickupEnabled", true, "listed", true)).status());
+        Res p = api("POST", "/api/commerce/products", charlie, Map.of("name", "Garden chair", "priceMinor", 3_000, "currency", "USD"));
+        String url = p.data().path("url").asText().replace("https://store.test", "");
+        String storePath = url.substring(0, url.lastIndexOf('/'));
+        long storeId = jdbc.queryForObject("SELECT id FROM stores WHERE merchant_id = 3003", Long.class);
+
+        // Rating a store needs a purchase.
+        String me = storeUser("Farai Moyo", "0779000666");
+        assertTrue(form(storePath + "/rate", Map.of("stars", "5"), me).location().contains("rated=no"), "only after buying");
+        String c = form(url + "/buy", Map.of("qty", "1"), me).cookie();
+        String k = key();
+        assertEquals(302, form(storePath + "/checkout", Map.of("k", k, "method", "PICKUP"), c + "; " + me).status());
+        String ref = orderRefOf(k);
+        PSP.set(3003, ref + "-1", "PAID", "PAID");
+        reader.poll();
+        assertTrue(form(storePath + "/rate", Map.of("stars", "4"), me).location().contains("rated=1"));
+        Res store = page(storePath, me);
+        assertTrue(store.body().contains("★★★★☆") && store.body().contains("Rating"), "rating in gold stars: " + store.body());
+
+        // Reviewing from the product page; swearing is refused, a plain bad review is fine.
+        Res bad = form(url + "/review", Map.of("rating", "1", "comment", "This is shit"), me);
+        assertTrue(bad.body().contains("offensive language"), bad.body());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM reviews WHERE store_id = ? AND comment LIKE '%shit%'", Integer.class, storeId));
+        Res ok = form(url + "/review", Map.of("rating", "2", "comment", "Useless, it broke in a week"), me);
+        assertTrue(ok.location().contains("reviewed=1"), ok.body());
+        assertTrue(page(url).body().contains("Useless, it broke in a week"));
+
+        // Prohibited material: the product is hidden, the store disabled and Payport told.
+        Res porn = api("POST", "/api/commerce/products", charlie, Map.of("name", "XXX porn DVD", "priceMinor", 500, "currency", "USD"));
+        assertEquals(409, porn.status(), porn.body());
+        assertEquals("HIDDEN", jdbc.queryForObject("SELECT status FROM products WHERE name = 'XXX porn DVD'", String.class));
+        assertEquals(404, page(storePath).status(), "a disabled store is not shown");
+        assertTrue(waitForMessage("REPORT|SELLER|Prohibited material") != null, PSP.messages.toString());
+        assertTrue(api("GET", "/api/commerce/store", charlie, null).data().path("suspendedReason").asText().contains("Prohibited"));
+
+        // Payport switches it back on, and can disable it by hand.
+        Res list = channel("GET", "/api/channel/admin/stores?q=", null, FakePsp.KEY);
+        assertTrue(list.body().contains("\"disabled\":true"), list.body());
+        assertEquals(200, channel("POST", "/api/channel/admin/stores/" + storeId + "/enable", Map.of(), FakePsp.KEY).status());
+        assertEquals(200, page(storePath).status());
+        assertEquals(200, channel("POST", "/api/channel/admin/stores/" + storeId + "/disable", Map.of("by", "staff:ops"), FakePsp.KEY).status());
+        assertEquals(404, page(storePath).status());
+        assertFalse(page("/").body().contains(storePath), "not on the stores page");
+        channel("POST", "/api/channel/admin/stores/" + storeId + "/enable", Map.of(), FakePsp.KEY);
     }
 }

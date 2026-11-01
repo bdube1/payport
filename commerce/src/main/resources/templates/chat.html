@@ -14,7 +14,7 @@
   <nav class="crumbs" aria-label="Breadcrumb">
     <a href="/">Stores</a><span class="sep">/</span>
     <a th:href="@{/s/{s}(s=${store.slug})}" th:text="${store.name}">Store</a><span class="sep">/</span>
-    <b>Chat</b>
+    <b>Contact seller</b>
   </nav>
   <p th:if="${problem != null}" th:text="${problem}" class="notice" role="alert"></p>
   <section class="chat-box">
@@ -30,12 +30,11 @@
     <form method="post" th:action="@{/s/{s}/chat(s=${store.slug})}" class="chat-form">
       <input th:if="${productId != null}" type="hidden" name="p" th:value="${productId}">
       <p th:if="${about != null}" class="muted small" th:text="'About: ' + ${about}"></p>
-      <input th:if="${me == null and !started}" name="name" maxlength="60" placeholder="Your name" autocomplete="name">
       <div class="chat-send">
         <textarea name="text" maxlength="1000" required placeholder="Type a message" aria-label="Message"></textarea>
         <button type="submit" class="pay">Send</button>
       </div>
-      <p class="muted small">Messages are encrypted. Pay only through Payport.</p>
+      <p class="muted small">Messages are encrypted and kept on your <a href="/messages">Messages</a> page. Pay only through Payport.</p>
     </form>
   </section>
   <a th:href="@{/s/{s}/report(s=${store.slug})}" class="report-link">Report this store</a>

@@ -97,6 +97,13 @@ public class StoreController {
         }, req);
     }
 
+    /** The signed-in customer's conversations with every store (Messages). */
+    @GetMapping("/api/v1/store/chats")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<Object>> chats(HttpServletRequest req) {
+        return Web.run(() -> plain(store.chats(me().getPhone())), req);
+    }
+
     @GetMapping("/api/v1/store/report-reasons")
     public ResponseEntity<ApiResponse<Object>> reasons(HttpServletRequest req) {
         return Web.run(() -> plain(store.reportReasons()), req);

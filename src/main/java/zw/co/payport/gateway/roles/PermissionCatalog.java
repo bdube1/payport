@@ -101,6 +101,7 @@ public final class PermissionCatalog {
             f("channels", "Platform setup", "Channels & product lines", List.of("/channels"), List.of(A + "channels", A + "service-lines", A + "payments"),
                     ADMIN, OPS, FINANCE, COMPLIANCE),
             f("markets", "Platform setup", "Markets, currencies & FX", List.of("/markets"), List.of(A + "markets", A + "fx"), ADMIN, OPS, FINANCE, COMPLIANCE),
+            f("stores", "Platform setup", "Payport Store: stores", List.of("/stores"), List.of(A + "store-admin"), ADMIN, OPS, COMPLIANCE),
             f("ussd_whatsapp", "Platform setup", "USSD & WhatsApp", List.of("/ussd-whatsapp"), List.of(A + "ussd", A + "whatsapp"), ADMIN, OPS, COMPLIANCE),
             f("config", "Platform setup", "Payment methods & configuration", List.of("/config"), List.of(A + "config"), ADMIN, OPS),
             f("session_timeouts", "Platform setup", "Session time-outs", List.of("/session-timeouts"), List.of(A + "session-timeouts"), ADMIN),

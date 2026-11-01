@@ -28,6 +28,7 @@ public class StoreTalk {
     private final Chats chats;
     private final Shoppers shoppers;
     private final Storefront storefront;
+    @org.springframework.beans.factory.annotation.Autowired Growth growth;
 
     public StoreTalk(Shop shop, Chats chats, Shoppers shoppers, Storefront storefront) {
         this.shop = shop;
@@ -58,6 +59,8 @@ public class StoreTalk {
     public String chat(@PathVariable String slug, @RequestParam(name = "p", required = false) Long productId,
                        @CookieValue(name = Shoppers.COOKIE, required = false) String me, @CookieValue(name = Chats.COOKIE, required = false) String token,
                        Model model, HttpServletResponse res) {
+        // Contact seller (owner, 1 Nov 2026): conversations belong to the customer's account, kept on their Messages page.
+        if (shoppers.current(me).isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode("/s/" + slug + "/chat", StandardCharsets.UTF_8);
         return page(slug, productId, me, token, null, model, res);
     }
 
@@ -94,9 +97,9 @@ public class StoreTalk {
                        Model model, HttpServletResponse res) {
         Optional<Map<String, Object>> s = shop.publicStore(slug);
         if (s.isEmpty()) return storefront.missing(model, res, "This store does not exist");
-        String t = chatToken(token, res);
+        if (shoppers.current(me).isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode("/s/" + slug + "/chat", StandardCharsets.UTF_8);
+        String t = token;
         Chats.Who w = who(me, t);
-        if (w.shopperId() == null) w = new Chats.Who(null, t, null, name, "WEB");
         try {
             Long pid = productId == null ? null : shop.jdbc().queryForList("SELECT id FROM products WHERE id = ? AND store_id = ?", Long.class, productId, s.get().get("id"))
                     .stream().findFirst().orElse(null);
@@ -120,6 +123,59 @@ public class StoreTalk {
             chats.customerRead(id);
         });
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(out);
+    }
+
+    // ─── the customer's messages (every conversation, for the record) ────────
+
+    @GetMapping("/messages")
+    public String messages(@CookieValue(name = Shoppers.COOKIE, required = false) String me, Model model, HttpServletResponse res) {
+        Optional<Shoppers.Shopper> s = shoppers.current(me);
+        if (s.isEmpty()) return "redirect:/signin?next=/messages";
+        model.addAttribute("me", storefront.meModel());
+        model.addAttribute("chats", chats.forShopper(s.get().id()));
+        model.addAttribute("title", "Messages | Payport Store");
+        res.setHeader("Cache-Control", "no-store");
+        return "messages";
+    }
+
+    // ─── rating a store, reviewing an item ───────────────────────────────────
+
+    @PostMapping("/s/{slug}/rate")
+    public String rate(@PathVariable String slug, @RequestParam(name = "stars", required = false) String stars,
+                       @CookieValue(name = Shoppers.COOKIE, required = false) String me) {
+        Optional<Shoppers.Shopper> s = shoppers.current(me);
+        if (s.isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode("/s/" + slug, StandardCharsets.UTF_8);
+        Optional<Map<String, Object>> st = shop.publicStore(slug);
+        if (st.isEmpty()) return "redirect:/";
+        try {
+            growth.rateStore(s.get().id(), ((Number) st.get().get("id")).longValue(), stars);
+        } catch (IllegalArgumentException e) {
+            return "redirect:/s/" + slug + "?rated=no#rating";
+        }
+        return "redirect:/s/" + slug + "?rated=1#rating";
+    }
+
+    @PostMapping("/s/{slug}/{product}/review")
+    public String review(@PathVariable String slug, @PathVariable String product, @RequestParam(name = "rating", required = false) String rating,
+                         @RequestParam(name = "comment", required = false) String comment, @CookieValue(name = Shoppers.COOKIE, required = false) String me,
+                         Model model, HttpServletResponse res) {
+        Optional<Shoppers.Shopper> s = shoppers.current(me);
+        String back = "/s/" + slug + "/" + product;
+        if (s.isEmpty()) return "redirect:/signin?next=" + URLEncoder.encode(back, StandardCharsets.UTF_8);
+        Optional<Map<String, Object>> st = shop.publicStore(slug);
+        if (st.isEmpty()) return "redirect:/";
+        Optional<Map<String, Object>> p = shop.publicProduct(((Number) st.get().get("id")).longValue(), product);
+        if (p.isEmpty()) return "redirect:/s/" + slug;
+        long pid = ((Number) p.get().get("id")).longValue();
+        Optional<Map<String, Object>> order = growth.reviewableOrder(s.get().id(), pid);
+        if (order.isEmpty()) return "redirect:" + back + "#reviews";
+        try {
+            growth.review(order.get(), pid, rating, comment, s.get().firstName());
+        } catch (IllegalArgumentException e) {
+            model.addAttribute("reviewProblem", e.getMessage());
+            return storefront.productPage(st.get(), p.get(), model, null);
+        }
+        return "redirect:" + back + "?reviewed=1#reviews";
     }
 
     // ─── reports ─────────────────────────────────────────────────────────────

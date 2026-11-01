@@ -760,7 +760,7 @@ public class UssdService {
         Map<Long, com.fasterxml.jackson.databind.JsonNode> chosen = new java.util.LinkedHashMap<>();
         // After the items: message the seller, or report the store (the same as the website and the app).
         List<com.fasterxml.jackson.databind.JsonNode> first = new ArrayList<>(items);
-        first.add(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("_action", "CHAT").put("name", "Message the seller").put("price", ""));
+        first.add(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("_action", "CHAT").put("name", "Contact seller").put("price", ""));
         first.add(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("_action", "REPORT").put("name", "Report this store").put("price", ""));
         for (int round = 0; round < 5; round++) {
             Step<com.fasterxml.jackson.databind.JsonNode> pi = choose(c, in, name + (cart.isEmpty() ? ":" : ": add an item"), cart.isEmpty() ? first : items,

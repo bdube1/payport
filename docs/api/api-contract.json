@@ -1015,6 +1015,18 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/admin/store-admin/stores"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/store-admin/stores/{id}/disable"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/store-admin/stores/{id}/enable"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/admin/transactions-export/csv"
   },
   {
@@ -1800,6 +1812,10 @@
   {
    "method": "GET",
    "path": "/api/v1/session-timeouts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/store/chats"
   },
   {
    "method": "GET",

@@ -61,7 +61,42 @@ public class Growth {
                 .orElseThrow(() -> new Shop.NotFound("No store yet"));
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    Moderation moderation;
+
     // ─── reviews ─────────────────────────────────────────────────────────────
+
+    /** The signed-in shopper's paid order that contains this product and is not reviewed yet (to review from the product page). */
+    public Optional<Map<String, Object>> reviewableOrder(long shopperId, long productId) {
+        return jdbc.queryForList("SELECT o.* FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.shopper_id = ? AND i.product_id = ? AND o.payment_status = 'PAID' "
+                + "AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.order_id = o.id AND r.product_id = i.product_id) ORDER BY o.id DESC LIMIT 1", shopperId, productId).stream().findFirst();
+    }
+
+    /** A customer who bought from a store (paid, or collected and paid on delivery) rates the store, 1 to 5 stars; again to change it. */
+    public void rateStore(long shopperId, long storeId, Object stars) {
+        int n;
+        try {
+            n = Integer.parseInt(String.valueOf(stars).trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Choose 1 to 5 stars");
+        }
+        if (n < 1 || n > 5) throw new IllegalArgumentException("Choose 1 to 5 stars");
+        Integer bought = jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE shopper_id = ? AND store_id = ? AND (payment_status = 'PAID' OR order_status = 'FULFILLED')",
+                Integer.class, shopperId, storeId);
+        if (bought == null || bought == 0) throw new IllegalArgumentException("You can rate a store after buying from it");
+        jdbc.update("INSERT INTO store_ratings (shopper_id, store_id, stars, created_at, updated_at) VALUES (?,?,?,?,?) "
+                + "ON DUPLICATE KEY UPDATE stars = VALUES(stars), updated_at = VALUES(updated_at)", shopperId, storeId, n, Shop.now(), Shop.now());
+    }
+
+    public Integer myStoreRating(long shopperId, long storeId) {
+        return jdbc.queryForList("SELECT stars FROM store_ratings WHERE shopper_id = ? AND store_id = ?", Integer.class, shopperId, storeId).stream().findFirst().orElse(null);
+    }
+
+    public boolean canRateStore(long shopperId, long storeId) {
+        Integer bought = jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE shopper_id = ? AND store_id = ? AND (payment_status = 'PAID' OR order_status = 'FULFILLED')",
+                Integer.class, shopperId, storeId);
+        return bought != null && bought > 0;
+    }
 
     /** A buyer's review: the order must be theirs (its link) and paid, and contain the product. One per product per order. */
     public void review(Map<String, Object> order, long productId, Object rating, String comment, String name) {
@@ -78,6 +113,10 @@ public class Growth {
         if (r < 1 || r > 5) throw new IllegalArgumentException("Choose 1 to 5 stars");
         String c = Shop.text(comment, 600, false, "review");
         String n = Shop.text(name, 60, false, "name");
+        if (moderation != null) {
+            String why = moderation.offensiveReview((c == null ? "" : c) + " " + (n == null ? "" : n));
+            if (why != null) throw new IllegalArgumentException(why);
+        }
         if (n == null && order.get("customer_name") != null) n = String.valueOf(order.get("customer_name")).split("\\s+")[0];
         try {
             jdbc.update("INSERT INTO reviews (merchant_id, store_id, product_id, order_id, rating, comment, name, created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -154,13 +193,15 @@ public class Growth {
         return out;
     }
 
-    /** "★ 4.6 (12)" for a product, or null with no reviews. */
+    /** "★★★★☆" (the average, as gold stars) for a product, or null with no reviews. */
     public String ratingOf(long productId) {
         return rating(jdbc.queryForMap("SELECT AVG(rating) AS a, COUNT(*) AS n FROM reviews WHERE product_id = ? AND hidden = FALSE", productId));
     }
 
+    /** A store's rating: its customers' store ratings and the ratings in their reviews, together. */
     public String storeRating(long storeId) {
-        return rating(jdbc.queryForMap("SELECT AVG(rating) AS a, COUNT(*) AS n FROM reviews WHERE store_id = ? AND hidden = FALSE", storeId));
+        return rating(jdbc.queryForMap("SELECT AVG(x.r) AS a, COUNT(*) AS n FROM (SELECT rating AS r FROM reviews WHERE store_id = ? AND hidden = FALSE "
+                + "UNION ALL SELECT stars FROM store_ratings WHERE store_id = ?) x", storeId, storeId));
     }
 
     /** Ratings of every product in a store at once (for the product grid). */
@@ -175,7 +216,7 @@ public class Growth {
         long n = r.get("n") == null ? 0 : ((Number) r.get("n")).longValue();
         if (n == 0) return null;
         double a = ((Number) r.get("a")).doubleValue();
-        return "★ " + String.format(Locale.ROOT, "%.1f", a) + " (" + n + ")";
+        return stars((int) Math.max(1, Math.min(5, Math.round(a))));
     }
 
     static String stars(int n) {

@@ -34,7 +34,7 @@
       <h1 class="title" th:text="${product.name}">Shoes</h1>
       <p class="price-big"><span th:text="${product.price}">USD 20.00</span><s th:if="${product.was != null}" th:text="${product.was}"></s></p>
       <p th:if="${product.description != null}" class="lead" th:text="${product.description}">Step Step</p>
-      <a th:if="${product.rating != null}" href="#reviews" class="rate-line"><span th:text="${product.rating}"></span></a>
+      <a th:if="${product.rating != null}" href="#reviews" class="rate-line">Rating <span class="gold" th:text="${product.rating}"></span></a>
       <p th:if="${product.soldOut}" class="notice">Sold out</p>
       <p th:if="${product.few != null and !product.service}" class="muted" th:text="${product.few}"></p>
 
@@ -70,12 +70,6 @@
           <div><strong>Pay on delivery</strong><span>Available if the store allows it</span></div></li>
       </ul>
 
-      <div class="talk">
-        <a th:href="@{/s/{s}/chat(s=${store.slug},p=${product.id})}" class="btn-soft">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6A8 8 0 1 1 21 12z"/></svg>
-          Chat with seller</a>
-        <a th:if="${store.whatsapp != null}" th:href="${store.whatsapp + '?text=' + chatText}" class="btn-soft" target="_blank" rel="noopener">WhatsApp the seller</a>
-      </div>
 
       <section th:replace="~{fragments :: share(${share})}"></section>
       <a th:href="@{/s/{s}/report(s=${store.slug})}" class="report-link">Report this store</a>
@@ -83,16 +77,22 @@
   </div>
 
   <section class="reviews" id="reviews">
-    <h2>Reviews</h2>
-    <div class="rv-head">
-      <div class="rv-score"><span th:text="${summary.average}">4.6</span><small th:text="${summary.count} + (${summary.count == 1} ? ' review' : ' reviews')">12 reviews</small></div>
-      <div class="bars">
-        <div th:each="b : ${summary.bars}" class="bar"><span th:text="${b.stars} + '★'">5★</span><i><b th:class="'w' + ${b.tenth}"></b></i><span th:text="${b.count}">0</span></div>
-      </div>
-    </div>
-    <p th:if="${#lists.isEmpty(reviews)}" class="muted">No reviews yet. Buyers can review an item from their order page once it is paid.</p>
+    <h2>Rating</h2>
+    <p class="rating-big"><span th:if="${product.rating != null}" class="gold" th:text="${product.rating}">★★★★★</span><span th:if="${product.rating == null}" class="muted">Not rated yet</span></p>
+    <p th:if="${param.reviewed != null}" class="notice ok" role="status">Thank you for your review.</p>
+    <p th:if="${reviewProblem != null}" class="notice" role="alert" th:text="${reviewProblem}"></p>
+    <form th:if="${canReview}" method="post" th:action="${product.url + '/review'}" class="buy review-form">
+      <span class="muted">Rate and review this item</span>
+      <span class="star-pick star-radio">
+        <label th:each="n : ${#numbers.sequence(5, 1, -1)}"><input type="radio" name="rating" th:value="${n}" required><span th:aria-label="${n} + ' stars'">★</span></label>
+      </span>
+      <textarea name="comment" maxlength="600" placeholder="What did you think?"></textarea>
+      <button type="submit" class="pay">Post review</button>
+    </form>
+    <h2 class="sub-h">Reviews</h2>
+    <p th:if="${#lists.isEmpty(reviews)}" class="muted">No reviews yet.</p>
     <div th:each="r : ${reviews}" class="review">
-      <p><span class="st" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong><span class="verified">Verified purchase</span> <span class="muted small" th:text="${r.date}"></span></p>
+      <p><span class="gold" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong><span class="verified">Verified purchase</span> <span class="muted small" th:text="${r.date}"></span></p>
       <p th:if="${r.comment != null}" th:text="${r.comment}"></p>
       <p th:if="${r.reply != null}" class="reply" th:text="${store.name} + ': ' + ${r.reply}"></p>
     </div>

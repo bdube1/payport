@@ -404,7 +404,7 @@ class PlatformControlsScenarioTest {
         // Message the seller, and report the store, from the same menu (the answer comes back by SMS).
         String s2 = "AT-SHOP-" + SEQ.incrementAndGet();
         String withActions = ussd(s2, ph, "8*2*1", true).body().path("text").asText();
-        assertTrue(withActions.contains("2. Message the seller") && withActions.contains("3. Report this store"), withActions);
+        assertTrue(withActions.contains("2. Contact seller") && withActions.contains("3. Report this store"), withActions);
         assertTrue(ussd(s2, ph, "8*2*1*2", true).body().path("text").asText().contains("Message Mai's Kitchen"));
         String asked = ussd(s2, ph, "8*2*1*2*Is the beef ready", true).body().path("text").asText();
         assertTrue(asked.startsWith("END Sent to Mai's Kitchen") && asked.contains("by SMS"), asked);

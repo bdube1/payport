@@ -39,6 +39,20 @@ public class MerchantApi {
     @org.springframework.beans.factory.annotation.Autowired Ai ai;
     @org.springframework.beans.factory.annotation.Autowired Marketing marketing;
     @org.springframework.beans.factory.annotation.Autowired Chats chats;
+    @org.springframework.beans.factory.annotation.Autowired Moderation moderation;
+
+    static final String TAKEN_DOWN = "This is not allowed on Payport Store. Your store has been disabled; contact Payport.";
+
+    /** Prohibited wording: the product (if any) is hidden, the store disabled and Payport told; the merchant is told why. */
+    private void checkWording(long merchantId, Long productId, Object... parts) {
+        StringBuilder t = new StringBuilder();
+        for (Object o : parts) if (o != null) t.append(o).append(' ');
+        String why = moderation.prohibitedText(t.toString());
+        if (why == null) return;
+        moderation.takeDown(merchantId, productId, "TEXT", why);
+        throw new IllegalStateException(TAKEN_DOWN);
+    }
+    @org.springframework.beans.factory.annotation.Autowired Bell bell;
 
     public MerchantApi(Shop shop, Payments payments, Psp psp, Tokens tokens, EventReader reader, Domains domains, Insights insights, Catalog catalog) {
         this.catalog = catalog;
@@ -141,13 +155,21 @@ public class MerchantApi {
 
     @PutMapping("/api/commerce/store")
     public Map<String, Object> saveStore(@RequestBody Map<String, Object> b, HttpServletRequest req) {
-        return ok(shop.updateStore(manager(req).merchantId(), b));
+        long m = manager(req).merchantId();
+        Map<String, Object> saved = shop.updateStore(m, b);
+        checkWording(m, null, b.get("name"), b.get("about"), b.get("tagline"), b.get("announcement"));
+        return ok(saved);
     }
 
     @PostMapping("/api/commerce/images")
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file, HttpServletRequest req) throws java.io.IOException {
         Tokens.Merchant m = manager(req);
         Images.Clean img = Images.clean(file.getBytes());
+        String why = moderation.prohibitedPicture(img.bytes(), img.contentType());
+        if (why != null) {
+            moderation.takeDown(m.merchantId(), null, "IMAGE", why);
+            throw new IllegalStateException(TAKEN_DOWN);
+        }
         return ok(Map.of("imageId", shop.saveImage(m.merchantId(), img), "width", img.width(), "height", img.height()));
     }
 
@@ -164,7 +186,9 @@ public class MerchantApi {
     public Map<String, Object> newProduct(@RequestBody Map<String, Object> b, HttpServletRequest req) {
         long m = manager(req).merchantId();
         if (b.get("collectionIds") instanceof List<?> ids) catalog.own(m, ids);
-        return ok(withCollections(m, shop.saveProduct(m, null, b), b));
+        Map<String, Object> saved = withCollections(m, shop.saveProduct(m, null, b), b);
+        checkWording(m, ((Number) saved.get("id")).longValue(), b.get("name"), b.get("description"), b.get("category"));
+        return ok(saved);
     }
 
     @GetMapping("/api/commerce/products/{id}")
@@ -178,7 +202,9 @@ public class MerchantApi {
     public Map<String, Object> saveProduct(@PathVariable long id, @RequestBody Map<String, Object> b, HttpServletRequest req) {
         long m = manager(req).merchantId();
         if (b.get("collectionIds") instanceof List<?> ids) catalog.own(m, ids);
-        return ok(withCollections(m, shop.saveProduct(m, id, b), b));
+        Map<String, Object> saved = withCollections(m, shop.saveProduct(m, id, b), b);
+        checkWording(m, id, b.get("name"), b.get("description"), b.get("category"));
+        return ok(saved);
     }
 
     private Map<String, Object> withCollections(long merchantId, Map<String, Object> p, Map<String, Object> b) {
@@ -239,6 +265,14 @@ public class MerchantApi {
         options.refresh(m);
         return ok(options.choices(m));
     }
+
+    // ─── the notification bell ───────────────────────────────────────────────
+
+    @GetMapping("/api/commerce/notifications")
+    public Map<String, Object> notifications(HttpServletRequest req) { return ok(bell.merchant(me(req).merchantId())); }
+
+    @PostMapping("/api/commerce/notifications/seen")
+    public Map<String, Object> notificationsSeen(HttpServletRequest req) { return ok(bell.merchantSeen(me(req).merchantId())); }
 
     // ─── chat with customers ─────────────────────────────────────────────────
 
