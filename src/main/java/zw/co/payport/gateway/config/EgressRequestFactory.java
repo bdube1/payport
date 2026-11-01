@@ -75,7 +75,7 @@ public class EgressRequestFactory implements ClientHttpRequestFactory {
      * True only when the request certainly never reached the provider: the connection, the proxy's route or the TLS
      * handshake failed before any of the request was written.
      */
-    static boolean neverSent(Throwable error) {
+    public static boolean neverSent(Throwable error) {
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof ConnectException || t instanceof UnknownHostException || t instanceof NoRouteToHostException) return true;
             if (t instanceof javax.net.ssl.SSLHandshakeException) return true;
