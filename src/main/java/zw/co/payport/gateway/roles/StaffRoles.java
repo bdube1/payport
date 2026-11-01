@@ -82,8 +82,12 @@ public class StaffRoles {
         return r;
     }
 
+    private volatile long cachedAt = System.currentTimeMillis();
+
     public Role role(String code) {
         if (code == null) return null;
+        // With several servers, a change made on one reaches the others within a minute.
+        if (System.currentTimeMillis() - cachedAt > 60_000) { cache.clear(); cachedAt = System.currentTimeMillis(); }
         Role hit = cache.get(code);
         if (hit != null) return hit;
         List<Map<String, Object>> rows;

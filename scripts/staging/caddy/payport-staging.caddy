@@ -3,7 +3,24 @@
 # The portals are served straight from their builds (no Node process), compressed; the hashed files under /assets
 # are cached by browsers for a year, everything else is re-checked so a new build shows at once.
 
+# Browser security for the portals (pilot security review, 2 Nov 2026): https only, no framing (clickjacking),
+# no type sniffing, no referrer leaks, and a content security policy. The policy is REPORT-ONLY for the first pilot
+# week (browsers report what it would block, nothing breaks); switch "Content-Security-Policy-Report-Only" to
+# "Content-Security-Policy" once the reports are clean.
+(portal_security) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
 admin-staging.payport.africa {
+	import portal_security
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(), nfc=()"
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.payport.africa; connect-src 'self' https://*.payport.africa; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
 	root * /opt/payport/staging-ops/dist
 	encode zstd gzip
 	@assets path /assets/*
@@ -15,6 +32,9 @@ admin-staging.payport.africa {
 }
 
 app-staging.payport.africa {
+	import portal_security
+	header Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(self)"
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://*.oppwa.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.oppwa.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.payport.africa https://*.oppwa.com; connect-src 'self' https://*.payport.africa https://*.oppwa.com; frame-src https://*.oppwa.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.oppwa.com"
 	root * /opt/payport/staging-consumer/dist
 	encode zstd gzip
 	@assets path /assets/*
@@ -26,6 +46,9 @@ app-staging.payport.africa {
 }
 
 merchant-staging.payport.africa {
+	import portal_security
+	header Permissions-Policy "camera=(self), microphone=(self), geolocation=(), nfc=(self)"
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.payport.africa; media-src 'self' blob: https://*.payport.africa; connect-src 'self' https://*.payport.africa; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
 	root * /opt/payport/staging-merchant/dist
 	encode zstd gzip
 	@assets path /assets/*

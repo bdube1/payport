@@ -2,7 +2,6 @@ package zw.co.payport.commerce;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Payport Commerce: payment links, product pages and mini-stores for Payport merchants.
@@ -14,7 +13,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * checked again by reading status (Payments.reconcile), so nothing is lost while either side is down.
  */
 @SpringBootApplication
-@EnableScheduling
 public class CommerceApplication {
     public static void main(String[] args) {
         SpringApplication.run(CommerceApplication.class, args);
