@@ -21,6 +21,8 @@ public final class SubmissionErrors {
     private SubmissionErrors() {}
 
     public static Kind classify(Throwable error) {
+        // The proxy (EcoCash's egress) refused or could not route, or TLS was cut before the request was written.
+        if (zw.co.payport.gateway.config.EgressRequestFactory.neverSent(error)) return Kind.NOT_SENT;
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof UnknownHostException || t instanceof ConnectException || t instanceof NoRouteToHostException) {
                 return Kind.NOT_SENT;
