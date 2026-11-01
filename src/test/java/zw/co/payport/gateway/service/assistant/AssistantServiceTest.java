@@ -30,6 +30,9 @@ class AssistantServiceTest {
         when(conversations.save(any())).thenAnswer(i -> i.getArgument(0));
         when(messages.findByConversationIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
         when(gemini.isConfigured()).thenReturn(false);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "maxMessageLength", 2000);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "maxHistoryTurns", 20);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "dailyQuota", 900);
     }
 
     private Transaction tx(TransactionStatus s, String reason) {
