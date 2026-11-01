@@ -219,8 +219,20 @@ public class CommerceFacade {
      * A text about a store order: to the merchant (its registered contact phone; Commerce never chooses that number) or
      * to the customer who placed the order. Short, capped per merchant per day; the number is not stored.
      */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private zw.co.payport.gateway.notifications.PushNotificationService push;
+
     public Map<String, Object> message(NewMessage b) {
         if ("STORE_USER".equals(b.to())) return storeUserMessage(b);
+        // A seller's chat message to an app or website customer: a push to their phone (no SMS).
+        if ("PUSH".equals(b.to())) {
+            String t = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
+            if (t.isEmpty() || t.length() > 300) throw new IllegalArgumentException("A message is 1 to 300 characters");
+            int colon = t.indexOf(": ");
+            boolean sent = push != null && push.pushToPhone(b.phone(), colon > 0 && colon < 60 ? t.substring(0, colon) : "Payport Store",
+                    colon > 0 && colon < 60 ? t.substring(colon + 2) : t, Map.of("type", "chat", "reference", b.reference() == null ? "" : b.reference()));
+            return Map.of("queued", sent);
+        }
         Merchant m = merchant(b.merchantId());
         if (!"ACTIVE".equals(m.getStatus())) throw new IllegalStateException("This merchant cannot send messages at the moment");
         String text = b.text() == null ? "" : b.text().replaceAll("[\\u0000-\\u001F]", " ").trim();
@@ -240,6 +252,8 @@ public class CommerceFacade {
             return Map.of("queued", true);
         }
         if (sms != null) sms.sendText(phone, text, ref == null ? "STORE" : ref, toMerchant ? "STORE_ORDER_ALERT" : chat ? "STORE_CHAT" : "STORE_ORDER_UPDATE");
+        // Order updates also reach the customer's app as a push.
+        if (!toMerchant && !chat && push != null) push.pushToPhone(phone, "Your order", text, Map.of("type", "order", "reference", ref == null ? "" : ref));
         return Map.of("queued", true);
     }
 
