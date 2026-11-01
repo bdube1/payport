@@ -184,11 +184,14 @@ public class Chats {
     private void forwardToPhone(Map<String, Object> c, long merchantId, long chatId, String b) {
         String channel = (String) c.get("channel");
         String phone = sealed.open((String) c.get("phone_enc"));
-        if (phone == null || !("WHATSAPP".equals(channel) || "USSD".equals(channel))) return;
+        if (phone == null && c.get("shopper_id") != null)
+            phone = jdbc.queryForList("SELECT phone FROM shoppers WHERE id = ?", String.class, c.get("shopper_id")).stream().findFirst().orElse(null);
+        if (phone == null) return;
+        boolean byPhone = "WHATSAPP".equals(channel) || "USSD".equals(channel);
         String store = jdbc.queryForList("SELECT name FROM stores WHERE id = ?", String.class, c.get("store_id")).stream().findFirst().orElse("The store");
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("merchantId", merchantId);
-        m.put("to", "CHAT_CUSTOMER");
+        m.put("to", byPhone ? "CHAT_CUSTOMER" : "PUSH");     // app and website customers get a push on their phone
         m.put("channel", channel);
         m.put("phone", phone);
         m.put("text", Shop.clip(store + ": " + b, 300));

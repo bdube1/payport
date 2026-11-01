@@ -184,6 +184,46 @@ public class PushNotificationService {
         }
     }
 
+    /**
+     * A push to every device of the customer with this phone (store chats and orders). Best effort, off the caller's
+     * thread; returns whether a customer with devices was found.
+     */
+    public boolean pushToPhone(String phone, String title, String body, Map<String, Object> data) {
+        if (!enabled || phone == null) return false;
+        String d = phone.replaceAll("\\D", "");
+        if (d.length() < 9) return false;
+        List<String> tokens = jdbc.queryForList("SELECT p.token FROM push_tokens p JOIN users u ON u.id = p.user_id WHERE u.role = 'CUSTOMER' "
+                + "AND RIGHT(REGEXP_REPLACE(u.phone, '[^0-9]', ''), 9) = ? AND p.disabled_at IS NULL", String.class, d.substring(d.length() - 9));
+        if (tokens.isEmpty()) return false;
+        Thread.startVirtualThread(() -> {
+            try {
+                List<Map<String, Object>> batch = new ArrayList<>();
+                for (String t : tokens) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("to", t);
+                    m.put("title", title.length() > 60 ? title.substring(0, 60) : title);
+                    m.put("body", body.length() > 200 ? body.substring(0, 197) + "..." : body);
+                    m.put("sound", "default");
+                    m.put("data", data == null ? Map.of() : data);
+                    batch.add(m);
+                }
+                HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(expoUrl)).timeout(Duration.ofSeconds(10))
+                        .header("Content-Type", "application/json").header("Accept", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(batch)));
+                if (expoAccessToken != null && !expoAccessToken.isBlank()) req.header("Authorization", "Bearer " + expoAccessToken);
+                HttpResponse<String> resp = http.send(req.build(), HttpResponse.BodyHandlers.ofString());
+                JsonNode tickets = json.readTree(resp.body()).path("data");
+                for (int i = 0; i < tokens.size() && i < tickets.size(); i++) {
+                    if ("DeviceNotRegistered".equals(tickets.get(i).path("details").path("error").asText()))
+                        jdbc.update("UPDATE push_tokens SET disabled_at = ?, disabled_reason = 'DeviceNotRegistered' WHERE token = ?", Timestamp.valueOf(LocalDateTime.now()), tokens.get(i));
+                }
+            } catch (Exception e) {
+                log.info("[PUSH] store push not sent: {}", e.getMessage());
+            }
+        });
+        return true;
+    }
+
     /** Title and body for an outcome: the same words the customer sees in the app. */
     static Map<String, String> message(TransactionOutcomeService.Result r, String product, Long amountMinor, String currency) {
         String what = (product == null ? "Your payment" : product) + (amountMinor == null ? "" : String.format(" %s %d.%02d", currency, amountMinor / 100, amountMinor % 100));
