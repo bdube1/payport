@@ -179,6 +179,7 @@ public class Shop {
         v.put("deliveryNote", r.get("delivery_note"));
         v.put("design", r.get("design"));
         v.put("bannerImage", r.get("banner_image"));
+        v.put("suspendedReason", r.get("suspended_reason"));
         v.put("tagline", r.get("tagline"));
         v.put("deliveryProvider", r.get("delivery_provider"));
         v.put("businessType", r.get("business_type"));
@@ -352,7 +353,7 @@ public class Shop {
         return product(merchantId, id);
     }
 
-    static final int MAX_PICTURES = 8;
+    static final int MAX_PICTURES = 5;
 
     /** The product's pictures in order (the first is the cover): "imageIds", or the single "imageId" of older clients. */
     List<String> pictures(long merchantId, Map<String, Object> b) {
@@ -496,7 +497,8 @@ public class Shop {
     // ─── public lookups (store pages) ────────────────────────────────────────
 
     public Optional<Map<String, Object>> publicStore(String slug) {
-        return jdbc.queryForList("SELECT s.*, m.business_name, m.psp_status FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id WHERE s.slug = ?",
+        // A store Payport has disabled is not shown anywhere (owner, 1 Nov 2026).
+        return jdbc.queryForList("SELECT s.*, m.business_name, m.psp_status FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id WHERE s.slug = ? AND s.suspended_reason IS NULL",
                 slug == null ? "" : slug.toLowerCase(Locale.ROOT)).stream().findFirst();
     }
 

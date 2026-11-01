@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title th:text="${title}">Messages</title>
+  <link rel="stylesheet" th:href="@{/assets/store.css}">
+  <script th:src="@{/assets/store.js}" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="/"><span class="brand-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 8.5h17"/></svg></span><span class="brand-name">Payport Store</span></a>
+    <nav class="top-right"><a href="/me" class="top-link" th:text="'Hi, ' + ${me.first}">Hi</a></nav>
+  </div>
+</header>
+<main class="wrap narrow">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Stores</a><span class="sep">/</span><b>Messages</b></nav>
+  <h1>Messages</h1>
+  <p th:if="${#lists.isEmpty(chats)}" class="muted">No messages yet. Use Contact seller on a store to ask a question.</p>
+  <ul class="threads">
+    <li th:each="c : ${chats}">
+      <a th:href="${c.url}" class="thread">
+        <span class="thread-main"><strong th:text="${c.store}">Store</strong><span class="muted small" th:text="${c.preview}"></span></span>
+        <span class="thread-side"><span class="muted small" th:text="${c.time}"></span><span th:if="${c.unread > 0}" class="cart-n" th:text="${c.unread}">1</span></span>
+      </a>
+    </li>
+  </ul>
+</main>
+<footer th:replace="~{fragments :: foot}"></footer>
+</body>
+</html>

@@ -192,7 +192,7 @@ public class Catalog {
                 + "EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE' AND p.compare_at_minor IS NOT NULL) AS on_sale, "
                 + "(SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND o.payment_status = 'PAID' AND o.paid_at >= NOW() - INTERVAL 30 DAY) AS orders30, "
                 + "(SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE') AS products FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id "
-                + "WHERE s.listed = TRUE AND s.status = 'OPEN' AND m.psp_status = 'ACTIVE' AND EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE')");
+                + "WHERE s.listed = TRUE AND s.status = 'OPEN' AND s.suspended_reason IS NULL AND m.psp_status = 'ACTIVE' AND EXISTS (SELECT 1 FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE')");
         List<Object> args = new ArrayList<>();
         if (type != null && TYPES.containsKey(type)) {
             sql.append(" AND s.business_type = ?");
@@ -228,7 +228,7 @@ public class Catalog {
         }
         String sql = "SELECT p.id, p.slug, p.name, p.price_minor, p.currency, p.image_id, p.compare_at_minor, s.slug AS store_slug, s.name AS store_name, s.cod_enabled, "
                 + score + " AS score FROM products p JOIN stores s ON s.id = p.store_id JOIN merchants m ON m.merchant_id = s.merchant_id "
-                + "WHERE p.status = 'ACTIVE' AND (p.stock IS NULL OR p.stock > 0) AND s.listed = TRUE AND s.status = 'OPEN' AND m.psp_status = 'ACTIVE' AND " + any
+                + "WHERE p.status = 'ACTIVE' AND (p.stock IS NULL OR p.stock > 0) AND s.listed = TRUE AND s.status = 'OPEN' AND s.suspended_reason IS NULL AND m.psp_status = 'ACTIVE' AND " + any
                 + (q.delivery() ? " AND s.delivery_enabled = TRUE" : "") + (q.cashOnDelivery() ? " AND s.cod_enabled = TRUE" : "")
                 + " ORDER BY " + (q.cheap() ? "p.price_minor, score DESC" : "score DESC, p.price_minor") + " LIMIT " + Math.max(1, Math.min(limit, 60));
         return jdbc.queryForList(sql, all.toArray());

@@ -290,6 +290,64 @@ public class ChannelApi {
         return out;
     }
 
+    // ─── Payport staff (ops portal, through Payport Payments): disable or switch a store back on ─
+
+    @org.springframework.beans.factory.annotation.Autowired Moderation moderation;
+
+    /** Every store, with whether Payport has disabled it and why (newest first; search by name or link). */
+    @GetMapping("/api/channel/admin/stores")
+    public Map<String, Object> adminStores(@RequestHeader(value = KEY, required = false) String key, @RequestParam(required = false) String q) {
+        requireKey(key);
+        String like = q == null || q.isBlank() ? "%" : "%" + q.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> s : shop.jdbc().queryForList("SELECT s.id, s.merchant_id, s.name, s.slug, s.status, s.listed, s.suspended_reason, s.suspended_by, s.suspended_at, m.business_name, "
+                + "(SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status = 'ACTIVE') AS products, "
+                + "(SELECT COUNT(*) FROM conduct_reports r WHERE r.store_id = s.id AND r.by_side = 'CUSTOMER') AS reports, "
+                + "(SELECT COUNT(*) FROM moderation_events e WHERE e.store_id = s.id) AS flags "
+                + "FROM stores s JOIN merchants m ON m.merchant_id = s.merchant_id WHERE LOWER(s.name) LIKE ? OR LOWER(s.slug) LIKE ? ORDER BY s.id DESC LIMIT 500", like, like)) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("id", ((Number) s.get("id")).longValue());
+            v.put("merchantId", ((Number) s.get("merchant_id")).longValue());
+            v.put("name", s.get("name"));
+            v.put("business", s.get("business_name"));
+            v.put("url", settings.publicUrl + "/s/" + s.get("slug"));
+            v.put("open", "OPEN".equals(s.get("status")));
+            v.put("listed", Shop.bool(s.get("listed")));
+            v.put("disabled", s.get("suspended_reason") != null);
+            v.put("disabledReason", s.get("suspended_reason"));
+            v.put("disabledBy", s.get("suspended_by"));
+            v.put("products", ((Number) s.get("products")).longValue());
+            v.put("reports", ((Number) s.get("reports")).longValue());
+            v.put("flags", ((Number) s.get("flags")).longValue());
+            v.put("rating", growth.storeRating(((Number) s.get("id")).longValue()));
+            out.add(v);
+        }
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("stores", out);
+        v.put("flagged", shop.jdbc().queryForList("SELECT e.id, e.merchant_id AS merchantId, s.name AS store, e.product_id AS productId, e.kind, e.reason, e.action, e.created_at AS createdAt "
+                + "FROM moderation_events e LEFT JOIN stores s ON s.id = e.store_id ORDER BY e.id DESC LIMIT 100"));
+        return MerchantApi.ok(v);
+    }
+
+    /** Disable a store: it disappears from the stores page, search and every channel; orders already placed are kept. */
+    @PostMapping("/api/channel/admin/stores/{id}/disable")
+    public Map<String, Object> disable(@RequestHeader(value = KEY, required = false) String key, @PathVariable long id, @RequestBody Map<String, Object> b) {
+        requireKey(key);
+        String reason = b.get("reason") == null || String.valueOf(b.get("reason")).isBlank() ? "Disabled by Payport" : Shop.clip(String.valueOf(b.get("reason")).trim(), 200);
+        String by = b.get("by") == null ? "Payport" : Shop.clip(String.valueOf(b.get("by")), 80);
+        if (shop.jdbc().update("UPDATE stores SET suspended_reason = ?, suspended_by = ?, suspended_at = ? WHERE id = ?", reason, by, Shop.now(), id) == 0)
+            throw new Shop.NotFound("No such store");
+        return MerchantApi.ok(Map.of("disabled", true));
+    }
+
+    @PostMapping("/api/channel/admin/stores/{id}/enable")
+    public Map<String, Object> enable(@RequestHeader(value = KEY, required = false) String key, @PathVariable long id) {
+        requireKey(key);
+        if (shop.jdbc().update("UPDATE stores SET suspended_reason = NULL, suspended_by = NULL, suspended_at = NULL WHERE id = ?", id) == 0)
+            throw new Shop.NotFound("No such store");
+        return MerchantApi.ok(Map.of("disabled", false));
+    }
+
     // ─── chat with the seller (the same conversations as the website) ───────
 
     /** A customer's message to a store from the app, WhatsApp or USSD (the channel tells who the customer is: their phone). */
@@ -304,6 +362,13 @@ public class ChannelApi {
         Chats.Who who = new Chats.Who(null, null, phone, b.get("name") == null ? null : String.valueOf(b.get("name")), channel);
         long id = chats.customerSays(st, who, b.get("text") == null ? null : String.valueOf(b.get("text")), null);
         return MerchantApi.ok(Map.of("chatId", id, "messages", chats.messages(id, 0)));
+    }
+
+    /** All of an app customer's conversations with stores (their Messages). */
+    @GetMapping("/api/channel/chats")
+    public Map<String, Object> chatsOf(@RequestHeader(value = KEY, required = false) String key, @RequestParam String phone) {
+        requireKey(key);
+        return MerchantApi.ok(chats.forPhone(phone));
     }
 
     /** The customer's conversation with a store (app). */

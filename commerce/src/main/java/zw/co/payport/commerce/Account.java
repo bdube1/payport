@@ -21,6 +21,8 @@ import java.util.Optional;
 @Controller
 public class Account {
 
+    @org.springframework.beans.factory.annotation.Autowired Chats chats;
+
     private final Shoppers shoppers;
     private final Settings settings;
     private final Payments payments;
@@ -145,7 +147,8 @@ public class Account {
             v.put("reorder", o.get("store_id") != null);
             orders.add(v);
         }
-        model.addAttribute("me", Map.of("name", s.get().name() == null ? "" : s.get().name(), "first", s.get().firstName(), "phone", s.get().phone() == null ? "" : s.get().phone()));
+        model.addAttribute("me", Map.of("name", s.get().name() == null ? "" : s.get().name(), "first", s.get().firstName(), "phone", s.get().phone() == null ? "" : s.get().phone(),
+                "unread", chats.unreadForShopper(s.get().id())));
         model.addAttribute("orders", orders);
         model.addAttribute("addresses", shoppers.addresses(s.get()));
         model.addAttribute("favourites", shoppers.favourites(s.get()));

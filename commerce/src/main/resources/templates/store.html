@@ -13,13 +13,13 @@
     <div>
       <h1 th:text="${store.name}">Store</h1>
       <p th:if="${store.tagline != null}" th:text="${store.tagline}" class="tagline"></p>
-      <a th:if="${store.rating != null}" href="#store-reviews" class="rate-line"><span th:text="${store.rating}"></span></a>
+      <a th:if="${store.rating != null}" href="#rating" class="rate-line">Rating <span class="gold" th:text="${store.rating}"></span></a>
       <p th:if="${store.about != null}" th:text="${store.about}" class="muted about"></p>
     </div>
     <div class="hero-acts">
       <a th:href="@{/s/{s}/chat(s=${store.slug})}" class="btn-soft">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6A8 8 0 1 1 21 12z"/></svg>
-        Chat with seller</a>
+        Contact seller</a>
       <form method="post" th:action="@{/s/{s}/favourite(s=${store.slug})}" class="fav-form">
         <button type="submit" class="btn-soft fav" th:classappend="${store.favourite} ? 'on'" th:text="${store.favourite} ? '♥ Favourite' : '♡ Add to favourites'">♡ Add to favourites</button>
       </form>
@@ -72,16 +72,21 @@
     </li>
   </ul>
 
-  <section class="reviews" id="store-reviews">
-    <h2>What customers say</h2>
-    <div class="rv-head">
-      <div class="rv-score"><span th:text="${summary.average}">4.6</span><small th:text="${summary.count} + (${summary.count == 1} ? ' review' : ' reviews')">12 reviews</small></div>
-      <div class="bars">
-        <div th:each="b : ${summary.bars}" class="bar"><span th:text="${b.stars} + '★'">5★</span><i><b th:class="'w' + ${b.tenth}"></b></i><span th:text="${b.count}">0</span></div>
-      </div>
-    </div>
+  <section class="reviews" id="rating">
+    <h2>Rating</h2>
+    <p class="rating-big"><span th:if="${store.rating != null}" class="gold" th:text="${store.rating}">★★★★★</span><span th:if="${store.rating == null}" class="muted">Not rated yet</span></p>
+    <p th:if="${param.rated != null and param.rated[0] == '1'}" class="notice ok" role="status">Thank you for rating this store.</p>
+    <p th:if="${param.rated != null and param.rated[0] == 'no'}" class="notice" role="alert">You can rate a store after buying from it.</p>
+    <form th:if="${canRate}" method="post" th:action="@{/s/{s}/rate(s=${store.slug})}" class="rate-form">
+      <span th:text="${myRating != null} ? 'Your rating' : 'Rate this store'">Rate this store</span>
+      <span class="star-pick">
+        <button th:each="n : ${#numbers.sequence(1, 5)}" type="submit" name="stars" th:value="${n}" class="star" th:classappend="${myRating != null and n <= myRating} ? 'on'" th:aria-label="${n} + ' stars'">★</button>
+      </span>
+    </form>
+    <h2 class="sub-h">Reviews</h2>
+    <p th:if="${#lists.isEmpty(reviews)}" class="muted">No reviews yet.</p>
     <div th:each="r : ${reviews}" class="review">
-      <p><span class="st" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong><span class="verified">Verified purchase</span> <span class="muted small" th:text="${r.date}"></span></p>
+      <p><span class="gold" th:text="${r.stars}"></span> <strong th:text="${r.name}"></strong><span class="verified">Verified purchase</span> <span class="muted small" th:text="${r.date}"></span></p>
       <p class="muted small" th:if="${r.product != null}" th:text="${r.product}"></p>
       <p th:if="${r.comment != null}" th:text="${r.comment}"></p>
       <p th:if="${r.reply != null}" class="reply" th:text="${store.name} + ': ' + ${r.reply}"></p>

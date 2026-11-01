@@ -200,6 +200,39 @@ public class Ai {
         return null;
     }
 
+    /**
+     * Asks the model a yes/no question about a picture (when the model is on). True only for a clear YES; anything
+     * else (off, slow, unclear) is false, and the rules-based checks still apply.
+     */
+    public boolean pictureIs(byte[] bytes, String contentType, String question) {
+        if (!modelOn() || bytes == null || bytes.length == 0) return false;
+        try {
+            Map<String, Object> image = Map.of("type", "image", "source", Map.of("type", "base64", "media_type", contentType,
+                    "data", java.util.Base64.getEncoder().encodeToString(bytes)));
+            Map<String, Object> text = Map.of("type", "text", "text", question + " Answer with one word: YES or NO.");
+            Map<String, Object> body = Map.of("model", model, "max_tokens", 5, "messages", List.of(Map.of("role", "user", "content", List.of(image, text))));
+            HttpRequest r = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(15))
+                    .header("content-type", "application/json").header("x-api-key", key).header("anthropic-version", "2023-06-01")
+                    .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build();
+            HttpResponse<String> res = http.send(r, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() != 200) return false;
+            StringBuilder out = new StringBuilder();
+            for (JsonNode c : JSON.readTree(res.body()).path("content")) if ("text".equals(c.path("type").asText())) out.append(c.path("text").asText());
+            return out.toString().trim().toUpperCase(Locale.ROOT).startsWith("YES");
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.info("[COMMERCE] AI picture check not reached: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** A yes/no question about a text (when the model is on); false when off or unclear. */
+    public boolean textIs(String text, String question) {
+        if (!modelOn() || text == null || text.isBlank()) return false;
+        String out = complete(question + "\nText: \"" + text.replace("\"", "'") + "\"\nAnswer with one word: YES or NO.", 5);
+        return out != null && out.trim().toUpperCase(Locale.ROOT).startsWith("YES");
+    }
+
     /** One call to the language model; null when it is off, slow or refuses. */
     String complete(String prompt, int maxTokens) {
         try {

@@ -105,7 +105,7 @@ a{color:inherit}
 .d-tag{font-size:1.25rem;font-weight:500;border-radius:999px;padding:.35rem .95rem}
 .d-tag.cod{background:var(--cod-bg);color:var(--cod)}
 .d-tag.sale{background:var(--sale-bg);color:var(--sale)}
-.d-tag.rate{background:#FFF4E0;color:#9A5B00}
+.d-tag.rate{background:#FFF4E0;color:#E6A019;letter-spacing:2px}
 .d-empty{color:var(--muted);font-size:1.4rem}
 
 /* Payport AI answer */
@@ -212,3 +212,5 @@ a{color:inherit}
 .d-auth-err{background:#FFF1F0;color:#A8071A;border-radius:1rem;padding:1rem 1.2rem;font-size:1.3rem;margin:0 0 1.2rem}
 @media (max-width:700px){.d-auth{padding:24px 16px}.d-auth-card{padding:22px 18px;border-radius:18px}.d-auth-card h1{font-size:24px}
   .d-form label{font-size:14px}.d-form input{font-size:16px;padding:12px}.d-auth-btn{font-size:16px;padding:13px}.d-auth-alt,.d-auth-sub,.d-auth-err{font-size:14px}}
+.d-bell{position:relative}
+.d-bell-n{position:absolute;top:-.3rem;right:-.3rem;min-width:1.7rem;height:1.7rem;padding:0 .45rem;border-radius:999px;background:#0E6E9B;color:#fff;font-size:1.05rem;font-weight:800;display:grid;place-items:center}

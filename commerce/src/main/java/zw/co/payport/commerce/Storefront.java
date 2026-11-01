@@ -58,9 +58,11 @@ public class Storefront {
         return Optional.empty();
     }
 
+    @org.springframework.beans.factory.annotation.Autowired Chats chats;
+
     Map<String, Object> meModel() {
         return shopper().<Map<String, Object>>map(s -> new LinkedHashMap<>(Map.of("first", s.firstName(), "name", s.name() == null ? "" : s.name(),
-                "phone", s.phone() == null ? "" : s.phone().replaceFirst("^\\+263", "0")))).orElse(null);
+                "phone", s.phone() == null ? "" : s.phone().replaceFirst("^\\+263", "0"), "id", s.id(), "unread", chats.unreadForShopper(s.id())))).orElse(null);
     }
     @org.springframework.beans.factory.annotation.Value("${commerce.directory-announcement:Free delivery this weekend at selected stores}") String directoryAnnouncement;
 
@@ -243,8 +245,8 @@ public class Storefront {
         if (query == null && type == null) {
             Map<Long, Map<String, Object>> byId = new LinkedHashMap<>();
             for (Map<String, Object> st : all) if (st.get("id") != null) byId.put(((Number) st.get("id")).longValue(), st);
-            for (Map<String, Object> r : shop.jdbc().queryForList("SELECT store_id, AVG(rating) AS a, COUNT(*) AS n FROM reviews WHERE hidden = FALSE "
-                    + "GROUP BY store_id HAVING AVG(rating) >= 4 ORDER BY a DESC, n DESC LIMIT 8")) {
+            for (Map<String, Object> r : shop.jdbc().queryForList("SELECT x.store_id, AVG(x.r) AS a, COUNT(*) AS n FROM (SELECT store_id, rating AS r FROM reviews WHERE hidden = FALSE "
+                    + "UNION ALL SELECT store_id, stars FROM store_ratings) x GROUP BY x.store_id HAVING AVG(x.r) >= 4 ORDER BY a DESC, n DESC LIMIT 8")) {
                 Map<String, Object> st = byId.get(((Number) r.get("store_id")).longValue());
                 if (st != null) topRated.add(storeCard(st));
             }
@@ -353,6 +355,8 @@ public class Storefront {
         model.addAttribute("products", items);
         model.addAttribute("summary", growth.summary(true, storeId));
         model.addAttribute("reviews", growth.storeReviews(storeId));
+        model.addAttribute("canRate", who.map(x -> growth.canRateStore(x.id(), storeId)).orElse(false));
+        model.addAttribute("myRating", who.map(x -> growth.myStoreRating(x.id(), storeId)).orElse(null));
         model.addAttribute("share", share("/s/" + st.get("slug"), st.get("name") + " on Payport"));
         model.addAttribute("title", st.get("name"));
         model.addAttribute("description", st.get("about") == null ? "Shop " + st.get("name") + " and pay securely with Payport." : st.get("about"));
@@ -401,6 +405,8 @@ public class Storefront {
         pm.put("images", shop.images(pid, (String) p.get("image_id")).stream().map(i -> "/img/" + i).toList());
         model.addAttribute("summary", growth.summary(false, pid));
         model.addAttribute("saved", shopper().map(x -> shoppers.saved(x, pid)).orElse(false));
+        model.addAttribute("canReview", shopper().flatMap(x -> growth.reviewableOrder(x.id(), pid)).isPresent());
+        if (!model.containsAttribute("reviewProblem")) model.addAttribute("reviewProblem", null);
         if (!model.containsAttribute("added")) model.addAttribute("added", false);
         model.addAttribute("me", meModel());
         model.addAttribute("chatText", enc("Hi, I am interested in " + p.get("name") + " (" + settings.publicUrl + pm.get("url") + ")"));

@@ -226,3 +226,28 @@ h1{font-size:clamp(28px,2.6vw,44px);font-weight:800;line-height:1.15;margin:8px 
 .foot{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:28px 16px;color:var(--muted);font-size:15px}
 .foot a{color:var(--muted)}
 .foot strong{color:var(--navy)}
+
+/* ── bell, ratings (gold stars only), messages list ── */
+.bell{position:relative;width:52px;height:52px;border-radius:50%;background:var(--tint);display:grid;place-items:center;color:var(--blue-d);text-decoration:none}
+.bell svg{width:23px;height:23px}
+@media (max-width:640px){.bell{width:44px;height:44px}}
+.gold{color:var(--star);letter-spacing:2px}
+.rate-line .gold{font-size:1.15em}
+.rating-big{font-size:clamp(26px,2.4vw,38px);margin:0 0 14px}
+.sub-h{margin-top:clamp(20px,2vw,30px)}
+.rate-form{display:flex;flex-wrap:wrap;align-items:center;gap:14px;background:#fff;border-radius:var(--r-md);box-shadow:var(--shadow-s);padding:14px 18px;margin:0 0 16px;font-weight:700}
+.star-pick{display:inline-flex;gap:4px}
+.star{border:0;background:none;font-size:32px;line-height:1;color:#D5DEE6;cursor:pointer;padding:0 2px}
+.star.on,.star-pick:hover .star{color:var(--star)}
+.star-pick .star:hover~.star{color:#D5DEE6}
+.star-radio{flex-direction:row-reverse;justify-content:flex-end}
+.star-radio input{position:absolute;opacity:0;width:1px;height:1px}
+.star-radio span{font-size:34px;color:#D5DEE6;cursor:pointer;padding:0 2px}
+.star-radio label:hover span,.star-radio label:hover~label span,.star-radio input:checked+span,.star-radio label:has(input:checked)~label span{color:var(--star)}
+.review-form{max-width:680px}
+.threads{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.thread{display:flex;justify-content:space-between;gap:14px;background:#fff;border-radius:var(--r-md);box-shadow:var(--shadow-s);padding:16px 18px;text-decoration:none;color:var(--navy)}
+.thread-main{display:grid;gap:2px;min-width:0}
+.thread-main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread-side{display:grid;justify-items:end;gap:6px;flex:none}
+.thread-side .cart-n{position:static}

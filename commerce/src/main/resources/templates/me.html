@@ -16,6 +16,7 @@
   <div class="d-wrap d-account">
     <h1 class="d-hello" th:text="'Hi, ' + ${me.first}">Hi</h1>
     <p class="d-sub" th:text="${me.phone}"></p>
+    <p><a href="/messages" class="d-btn">Messages<span th:if="${me.unread > 0}" th:text="' (' + ${me.unread} + ')'"></span></a></p>
 
     <section class="d-section">
       <div class="d-section-head"><h2>My orders</h2><a href="/" class="d-link">Shop</a></div>

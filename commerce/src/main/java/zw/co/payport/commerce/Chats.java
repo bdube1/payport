@@ -177,6 +177,52 @@ public class Chats {
         jdbc.update("UPDATE chats SET unread_customer = 0 WHERE id = ?", chatId);
     }
 
+    // ─── the customer's messages page (all their conversations, kept for the record) ─
+
+    /** Every conversation of a signed-in store user, newest first. Messages are never deleted. */
+    public List<Map<String, Object>> forShopper(long shopperId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> c : jdbc.queryForList("SELECT c.*, s.name AS store_name, s.slug AS store_slug FROM chats c JOIN stores s ON s.id = c.store_id "
+                + "WHERE c.shopper_id = ? ORDER BY c.last_at DESC LIMIT 200", shopperId)) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            long id = ((Number) c.get("id")).longValue();
+            v.put("store", c.get("store_name"));
+            v.put("url", "/s/" + c.get("store_slug") + "/chat");
+            v.put("unread", ((Number) c.get("unread_customer")).intValue());
+            v.put("time", Shop.time(c.get("last_at")).toString().replace('T', ' ').substring(0, 16));
+            List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", id);
+            String t = last.isEmpty() ? "" : sealed.open((String) last.get(0).get("body_enc"));
+            v.put("preview", t == null ? "" : ("SELLER".equals(last.get(0).get("sender")) ? "" : "You: ") + Shop.clip(t, 90));
+            out.add(v);
+        }
+        return out;
+    }
+
+    /** Every conversation of an app customer (found by their phone), newest first. */
+    public List<Map<String, Object>> forPhone(String phone) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> c : jdbc.queryForList("SELECT c.*, s.name AS store_name, s.slug AS store_slug FROM chats c JOIN stores s ON s.id = c.store_id "
+                + "WHERE c.phone_hash = ? AND c.shopper_id IS NULL ORDER BY c.last_at DESC LIMIT 200", sealed.lookup(phone9(phone)))) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            long id = ((Number) c.get("id")).longValue();
+            v.put("store", c.get("store_name"));
+            v.put("slug", c.get("store_slug"));
+            v.put("unread", ((Number) c.get("unread_customer")).intValue());
+            v.put("time", Shop.time(c.get("last_at")).toString().replace('T', ' ').substring(0, 16));
+            List<Map<String, Object>> last = jdbc.queryForList("SELECT sender, body_enc FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1", id);
+            String t = last.isEmpty() ? "" : sealed.open((String) last.get(0).get("body_enc"));
+            v.put("preview", t == null ? "" : ("SELLER".equals(last.get(0).get("sender")) ? "" : "You: ") + Shop.clip(t, 90));
+            out.add(v);
+        }
+        return out;
+    }
+
+    /** Messages from sellers the store user has not read yet (the bell). */
+    public int unreadForShopper(long shopperId) {
+        Integer n = jdbc.queryForObject("SELECT COALESCE(SUM(unread_customer), 0) FROM chats WHERE shopper_id = ?", Integer.class, shopperId);
+        return n == null ? 0 : n;
+    }
+
     // ─── the seller's side (merchant portal) ─────────────────────────────────
 
     private Map<String, Object> mine(long merchantId, long chatId) {
