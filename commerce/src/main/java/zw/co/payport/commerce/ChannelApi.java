@@ -436,6 +436,7 @@ public class ChannelApi {
         v.put("currency", o.get("currency"));
         v.put("total", Storefront.price(((Number) o.get("amount_minor")).longValue(), (String) o.get("currency")));
         v.put("paymentStatus", o.get("payment_status"));
+        v.put("paymentReason", "PAID".equals(o.get("payment_status")) ? null : o.get("payment_reason"));
         v.put("orderStatus", o.get("order_status"));
         v.put("deliveryMethod", o.get("delivery_method"));
         v.put("deliveryStatus", o.get("delivery_status"));
