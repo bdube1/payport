@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * The notification bell (owner, 1 Nov 2026). For a merchant: unread customer messages, and new orders and reviews
- * since the bell was last opened. For a store customer: sellers' answers not read yet.
+ * since the bell was last opened (a store customer's unread answers are counted by Chats).
  */
 @Service
 public class Bell {
@@ -77,27 +77,5 @@ public class Bell {
     public Map<String, Object> merchantSeen(long merchantId) {
         jdbc.update("UPDATE merchants SET bell_seen_at = ? WHERE merchant_id = ?", Shop.now(), merchantId);
         return merchant(merchantId);
-    }
-
-    /** A store customer's conversations (signed in, or this browser's), with unread answers first. */
-    public List<Map<String, Object>> customer(Long shopperId, String token) {
-        if (shopperId == null && (token == null || token.isBlank())) return List.of();
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> c : jdbc.queryForList("SELECT c.unread_customer, c.last_at, s.name, s.slug FROM chats c JOIN stores s ON s.id = c.store_id "
-                        + "WHERE (c.shopper_id = ? OR c.token_hash = ?) ORDER BY c.unread_customer > 0 DESC, c.last_at DESC LIMIT 30",
-                shopperId == null ? -1L : shopperId, token == null ? "-" : Shop.sha256(token))) {
-            int n = ((Number) c.get("unread_customer")).intValue();
-            Map<String, Object> v = item("CHAT", n > 0 ? c.get("name") + " answered" + (n > 1 ? " (" + n + ")" : "") : c.get("name"), "/s/" + c.get("slug") + "/chat", c.get("last_at"), n > 0);
-            v.put("count", n);
-            out.add(v);
-        }
-        return out;
-    }
-
-    public int customerUnread(Long shopperId, String token) {
-        if (shopperId == null && (token == null || token.isBlank())) return 0;
-        Integer n = jdbc.queryForObject("SELECT COALESCE(SUM(unread_customer), 0) FROM chats WHERE shopper_id = ? OR token_hash = ?", Integer.class,
-                shopperId == null ? -1L : shopperId, token == null ? "-" : Shop.sha256(token));
-        return n == null ? 0 : n;
     }
 }

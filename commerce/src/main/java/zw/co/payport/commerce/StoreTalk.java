@@ -28,6 +28,7 @@ public class StoreTalk {
     private final Chats chats;
     private final Shoppers shoppers;
     private final Storefront storefront;
+    @org.springframework.beans.factory.annotation.Autowired Growth growth;
 
     public StoreTalk(Shop shop, Chats chats, Shoppers shoppers, Storefront storefront) {
         this.shop = shop;
