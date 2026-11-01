@@ -263,7 +263,9 @@ public class Payments {
             case "PENDING" -> "PENDING";
             default -> "EXPIRED".equals(status) || "CANCELLED".equals(status) ? "EXPIRED" : "AWAITING_PAYMENT";
         };
-        jdbc.update("UPDATE order_attempts SET status = ?, updated_at = ? WHERE id = ? AND status <> 'PAID'", attemptStatus, Shop.now(), attemptId);
+        String reason = view.path("reason").asText("").trim();
+        jdbc.update("UPDATE order_attempts SET status = ?, reason = ?, updated_at = ? WHERE id = ? AND status <> 'PAID'", attemptStatus,
+                reason.isEmpty() || "PAID".equals(attemptStatus) ? null : Shop.clip(reason, 300), Shop.now(), attemptId);
         recompute(orderId);
         if (view.has("refunds")) applyRefunds(merchantId, orderId, view.path("refunds"));
     }
@@ -279,6 +281,12 @@ public class Payments {
         else if (tries.contains("PENDING")) next = "PENDING";
         else if (!tries.isEmpty()) next = tries.get(tries.size() - 1);   // the latest try: AWAITING_PAYMENT, FAILED or EXPIRED
         else next = current;
+        if (!"PAID".equals(current)) {
+            // the latest try's reason (the provider's words), cleared once paid
+            List<String> why = jdbc.queryForList("SELECT reason FROM order_attempts WHERE order_id = ? ORDER BY id DESC LIMIT 1", String.class, orderId);
+            String reason = "PAID".equals(next) || why.isEmpty() ? null : why.get(0);
+            jdbc.update("UPDATE orders SET payment_reason = ? WHERE id = ?", reason, orderId);
+        }
         if ("PAID".equals(current) || next.equals(current)) return;
         // The payment definitively did not happen: the reserved items go back on sale (an uncertain one keeps them).
         if ("FAILED".equals(next) || "EXPIRED".equals(next)) {

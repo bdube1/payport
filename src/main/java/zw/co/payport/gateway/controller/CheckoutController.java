@@ -54,6 +54,12 @@ public class CheckoutController {
             // Public endpoint keyed by a sequential id: never return the full phone number (R3).
             body.put("customerPhone", maskPhone(session.getCustomerPhone()));
             body.put("testMode", !Boolean.TRUE.equals(session.getLivemode()));
+            // The provider's own reason for a failed payment (the same words every channel shows).
+            if ("FAILED".equals(session.getStatus()) && session.getTransactionReference() != null) {
+                transactionRepository.findByReference(session.getTransactionReference())
+                        .map(zw.co.payport.gateway.entity.Transaction::getFailureReason).filter(r -> r != null && !r.isBlank())
+                        .ifPresent(r -> body.put("failureReason", r));
+            }
             // Only the methods this merchant accepts; the one the customer chose in the store first.
             body.put("methods", acceptedMethods.accepted(session.getMerchantId()));
             body.put("preferredMethod", jdbc.queryForList("SELECT preferred_method FROM checkout_sessions WHERE id = ?", String.class, session.getId())

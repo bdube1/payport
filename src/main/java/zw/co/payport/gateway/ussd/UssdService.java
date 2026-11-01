@@ -968,7 +968,7 @@ public class UssdService {
             case "PAID" -> "paid";
             case "ON_DELIVERY" -> "pay on delivery";
             case "PENDING", "CONFIRMING" -> "confirming";
-            case "FAILED", "EXPIRED" -> "not paid";
+            case "FAILED", "EXPIRED" -> o.path("paymentReason").asText("").isBlank() ? "not paid" : "not paid: " + o.path("paymentReason").asText().trim();
             default -> "awaiting payment";
         };
     }

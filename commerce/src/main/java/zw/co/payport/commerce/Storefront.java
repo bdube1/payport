@@ -845,6 +845,7 @@ public class Storefront {
             case "EXPIRED" -> "expired";
             default -> "unpaid";
         });
+        om.put("reason", "PAID".equals(ps) || "ON_DELIVERY".equals(ps) ? null : o.get("payment_reason"));
         om.put("refund", switch (String.valueOf(o.get("refund_status"))) {
             case "REQUESTED" -> "A refund has been requested. You will receive it once it has been paid out.";
             case "PARTIAL" -> "Part of this payment has been refunded.";

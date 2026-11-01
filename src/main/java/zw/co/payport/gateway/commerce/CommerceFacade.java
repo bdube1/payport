@@ -151,6 +151,15 @@ public class CommerceFacade {
             }
         }
         v.put("outcome", outcome);
+        // The provider's own words for a failed or unclear payment (the same reason the app and WhatsApp show).
+        if (!"PAID".equals(outcome) && s.getTransactionReference() != null) {
+            try {
+                outcomes.current(s.getTransactionReference()).map(TransactionOutcomeService.Result::message)
+                        .filter(m -> m != null && !m.isBlank()).ifPresent(m -> v.put("reason", m.length() > 300 ? m.substring(0, 300) : m));
+            } catch (RuntimeException ignored) {
+                // no reason to show
+            }
+        }
         List<Map<String, Object>> rf = jdbc.queryForList("SELECT r.id, r.amount_cents AS amountMinor, r.reversal_ref AS reversalRef, "
                 + "COALESCE(v.status, CASE WHEN r.reversal_ref IS NULL AND ? = FALSE THEN 'EXECUTED' ELSE 'AWAITING_PAYOUT' END) AS payoutStatus, r.created_at AS createdAt FROM refunds r "
                 + "LEFT JOIN reversal_requests v ON v.reversal_ref = r.reversal_ref WHERE r.checkout_session_id = ? AND r.status = 'COMPLETED' ORDER BY r.id", Boolean.TRUE.equals(s.getLivemode()), s.getId());

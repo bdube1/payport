@@ -167,7 +167,7 @@ public class Account {
             case "PAID" -> "Paid";
             case "ON_DELIVERY" -> "Pay on delivery";
             case "PENDING", "CONFIRMING" -> "Waiting for payment";
-            case "FAILED", "EXPIRED" -> "Not paid";
+            case "FAILED", "EXPIRED" -> o.get("payment_reason") == null ? "Not paid" : "Not paid: " + o.get("payment_reason");
             default -> "Awaiting payment";
         };
     }
