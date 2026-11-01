@@ -258,6 +258,16 @@ public class Storefront {
             if (!counts.containsKey(code)) continue;
             tiles.add(Map.of("code", code, "name", SHORT.get(code), "count", counts.get(code), "on", code.equals(type), "icon", code, "url", "/?t=" + code));
         }
+        // Picked for a signed-in customer from what they and similar customers buy (home page, no search).
+        List<Map<String, Object>> picked = new ArrayList<>();
+        if (query == null && type == null) shopper().ifPresent(s -> {
+            for (Map<String, Object> p : insights.forShopper(s.id(), null, 8)) {
+                Map<String, Object> m = productModel(p, (String) p.get("store_slug"));
+                m.put("store", p.get("store_name"));
+                picked.add(m);
+            }
+        });
+        model.addAttribute("picked", picked);
         model.addAttribute("announcement", directoryAnnouncement.isBlank() ? null : directoryAnnouncement);
         model.addAttribute("signIn", "/signin");
         model.addAttribute("me", meModel());
@@ -350,6 +360,11 @@ public class Storefront {
         sm.put("rating", growth.storeRating(storeId));
         Optional<Shoppers.Shopper> who = shopper();
         sm.put("favourite", who.map(x -> shoppers.favourite(x, storeId)).orElse(false));
+        List<Map<String, Object>> forYou = new ArrayList<>();
+        if ((category == null || category.isBlank()) && (q == null || q.isBlank())) who.ifPresent(x -> {
+            for (Map<String, Object> p : insights.forShopper(x.id(), merchant, 4)) forYou.add(productModel(p, (String) st.get("slug")));
+        });
+        model.addAttribute("forYou", forYou);
         model.addAttribute("me", meModel());
         model.addAttribute("store", sm);
         model.addAttribute("products", items);
